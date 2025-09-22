@@ -14,8 +14,10 @@ import { formatTime24, formatDateTime24 } from "@/lib/time-utils";
 import { FontSizeControl } from "@/components/ui/font-size-control";
 import { 
   Clock, Users, CheckCircle, LogOut, ArrowLeft, History, MessageCircle, Calendar,
-  BookOpen, GraduationCap, Settings, Menu, X, Home, Bell, FileText, ClipboardList, Download, Search
+  BookOpen, GraduationCap, Settings, Menu, X, Home, Bell, FileText, ClipboardList, Download, Search,
+  Edit, XCircle, Filter, Eye, ChevronLeft, ChevronRight
 } from "lucide-react";
+import ExcelPreview from './ExcelPreview';
 
 interface TeacherDashboardProps {
   userData: {
@@ -247,6 +249,12 @@ const AttendanceView = ({ schedule, user, onBack }: {
   const [notes, setNotes] = useState<{[key: number]: string}>({});
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  
+  // State untuk edit absen dengan rentang tanggal
+  const [selectedDate, setSelectedDate] = useState<string>(new Date().toISOString().split('T')[0]);
+  const [isEditMode, setIsEditMode] = useState(false);
+  const [maxDate, setMaxDate] = useState<string>(new Date().toISOString().split('T')[0]);
+  const [minDate, setMinDate] = useState<string>(new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]);
 
   useEffect(() => {
     // Fetch students for the class
@@ -300,6 +308,56 @@ const AttendanceView = ({ schedule, user, onBack }: {
     fetchStudents();
   }, [schedule.id]);
 
+  // Fetch students by date for edit mode
+  const fetchStudentsByDate = async (tanggal: string) => {
+    try {
+      setLoading(true);
+      console.log(`🔍 Fetching students for schedule ID: ${schedule.id} on date: ${tanggal}`);
+      const data = await apiCall(`/api/schedule/${schedule.id}/students-by-date?tanggal=${tanggal}`);
+      console.log(`✅ Received ${data.length} students for date ${tanggal}:`, data);
+      setStudents(data);
+      
+      // Initialize attendance with existing data or default to 'Hadir'
+      const initialAttendance: {[key: number]: AttendanceStatus} = {};
+      const initialNotes: {[key: number]: string} = {};
+      data.forEach((student: any) => {
+        initialAttendance[student.id] = (student.attendance_status as AttendanceStatus) || 'Hadir';
+        if (student.attendance_note) {
+          initialNotes[student.id] = student.attendance_note;
+        }
+      });
+      setAttendance(initialAttendance);
+      setNotes(initialNotes);
+    } catch (error) {
+      console.error('❌ Error fetching students by date:', error);
+      toast({ 
+        title: "Error", 
+        description: "Gagal memuat data siswa untuk tanggal tersebut", 
+        variant: "destructive" 
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Toggle edit mode
+  const toggleEditMode = () => {
+    setIsEditMode(!isEditMode);
+    if (!isEditMode) {
+      // Switching to edit mode
+      setSelectedDate(new Date().toISOString().split('T')[0]);
+    } else {
+      // Switching back to normal mode, reload today's data
+      fetchStudents();
+    }
+  };
+
+  // Handle date change
+  const handleDateChange = (newDate: string) => {
+    setSelectedDate(newDate);
+    fetchStudentsByDate(newDate);
+  };
+
   const handleSubmit = async () => {
     setSubmitting(true);
     try {
@@ -340,7 +398,8 @@ const AttendanceView = ({ schedule, user, onBack }: {
           scheduleId: schedule.id,
           attendance,
           notes,
-          guruId: user.guru_id || user.id
+          guruId: user.guru_id || user.id,
+          tanggal_absen: isEditMode ? selectedDate : undefined
         }),
       });
 
@@ -377,22 +436,83 @@ const AttendanceView = ({ schedule, user, onBack }: {
             <ArrowLeft className="w-4 h-4 mr-2" />
             Kembali ke Jadwal
           </Button>
-          <h2 className="text-2xl font-bold">Ambil Absensi</h2>
+          <h2 className="text-2xl font-bold">{isEditMode ? 'Edit Absensi Siswa' : 'Ambil Absensi'}</h2>
           <p className="text-gray-600">{schedule.nama_mapel} - {schedule.nama_kelas}</p>
           <p className="text-sm text-gray-500">{schedule.jam_mulai} - {schedule.jam_selesai}</p>
+          {isEditMode && (
+            <p className="text-sm text-blue-600 mt-1">
+              Mengedit absensi untuk tanggal: {new Date(selectedDate).toLocaleDateString('id-ID', { 
+                weekday: 'long', 
+                year: 'numeric', 
+                month: 'long', 
+                day: 'numeric' 
+              })}
+            </p>
+          )}
         </div>
-        <Button 
-          onClick={() => window.location.reload()} 
-          variant="outline" 
-          size="sm"
-          title="Refresh halaman untuk memuat data terbaru"
-        >
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-          </svg>
-          Refresh
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            onClick={toggleEditMode}
+            variant={isEditMode ? "destructive" : "default"}
+            size="sm"
+            className="flex items-center gap-2"
+          >
+            {isEditMode ? (
+              <>
+                <XCircle className="w-4 h-4" />
+                Keluar Edit Mode
+              </>
+            ) : (
+              <>
+                <Edit className="w-4 h-4" />
+                Edit Absen (30 Hari)
+              </>
+            )}
+          </Button>
+          <Button 
+            onClick={() => window.location.reload()} 
+            variant="outline" 
+            size="sm"
+            title="Refresh halaman untuk memuat data terbaru"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+            Refresh
+          </Button>
+        </div>
       </div>
+
+      {/* Edit Mode Controls */}
+      {isEditMode && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Calendar className="w-5 h-5" />
+              Pilih Tanggal Absensi
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="flex items-center gap-4">
+              <Label htmlFor="date-picker" className="text-sm font-medium">
+                Tanggal:
+              </Label>
+              <input
+                id="date-picker"
+                type="date"
+                value={selectedDate}
+                min={minDate}
+                max={maxDate}
+                onChange={(e) => handleDateChange(e.target.value)}
+                className="px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              />
+              <div className="text-sm text-gray-600">
+                (Maksimal 30 hari yang lalu)
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       <Card>
         <CardHeader>
@@ -520,12 +640,14 @@ const AttendanceView = ({ schedule, user, onBack }: {
   );
 };
 
-// Teacher Reports View (summary per kelas & rentang tanggal)
-const TeacherReportsView = ({ user }: { user: TeacherDashboardProps['userData'] }) => {
-  const [dateRange, setDateRange] = useState({ startDate: '', endDate: '' });
+// Laporan Kehadiran Siswa View
+const LaporanKehadiranSiswaView = ({ user }: { user: TeacherDashboardProps['userData'] }) => {
   const [kelasOptions, setKelasOptions] = useState<{id:number, nama_kelas:string}[]>([]);
   const [selectedKelas, setSelectedKelas] = useState('');
-  const [rows, setRows] = useState<any[]>([]);
+  const [reportData, setReportData] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [mapelInfo, setMapelInfo] = useState<{nama_mapel: string, nama_guru: string} | null>(null);
 
   useEffect(() => {
     (async ()=>{
@@ -535,107 +657,1374 @@ const TeacherReportsView = ({ user }: { user: TeacherDashboardProps['userData'] 
   }, []);
 
   const fetchData = async () => {
-    const params = new URLSearchParams({ startDate: dateRange.startDate, endDate: dateRange.endDate });
-    if (selectedKelas && selectedKelas !== 'all') params.append('kelas_id', selectedKelas);
-    const res = await apiCall(`/api/guru/attendance-summary?${params.toString()}`);
-    setRows(res);
+    if (!selectedKelas) {
+      setError('Mohon pilih kelas');
+      return;
+    }
+
+    try {
+      setLoading(true);
+      setError('');
+      const res = await apiCall(`/api/guru/laporan-kehadiran-siswa?kelas_id=${selectedKelas}`);
+      setReportData(Array.isArray(res.data) ? res.data : []);
+      setMapelInfo(res.mapel_info || null);
+    } catch (err) {
+      console.error('Error fetching report data:', err);
+      setError('Gagal memuat data laporan');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const downloadExcel = async () => {
-    const params = new URLSearchParams({ startDate: dateRange.startDate, endDate: dateRange.endDate });
-    if (selectedKelas && selectedKelas !== 'all') params.append('kelas_id', selectedKelas);
-    const url = `http://localhost:3001/api/guru/download-attendance-excel?${params.toString()}`;
-    const resp = await fetch(url, { credentials: 'include' });
-    const blob = await resp.blob();
-    const link = document.createElement('a');
-    link.href = URL.createObjectURL(blob);
-    link.download = `laporan-kehadiran-guru-${dateRange.startDate}-${dateRange.endDate}.xlsx`;
-    link.click();
+    try {
+      const url = `http://localhost:3001/api/guru/download-laporan-kehadiran-siswa?kelas_id=${selectedKelas}`;
+      const resp = await fetch(url, { credentials: 'include' });
+      const blob = await resp.blob();
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = `laporan-kehadiran-siswa-${selectedKelas}.xlsx`;
+      link.click();
+    } catch (err) {
+      console.error('Error downloading excel:', err);
+      setError('Gagal mengunduh file Excel');
+    }
   };
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Laporan Kehadiran (Ringkas)</CardTitle>
-      </CardHeader>
-      <CardContent>
-        <div className="flex flex-wrap gap-4 items-end mb-4">
-          <div>
-            <Label>Dari</Label>
-            <Input type="date" value={dateRange.startDate} onChange={(e)=>setDateRange(p=>({...p,startDate:e.target.value}))} />
-          </div>
-          <div>
-            <Label>Sampai</Label>
-            <Input type="date" value={dateRange.endDate} onChange={(e)=>setDateRange(p=>({...p,endDate:e.target.value}))} />
-          </div>
-          <div>
-            <Label>Kelas</Label>
-            <Select value={selectedKelas} onValueChange={setSelectedKelas}>
-              <SelectTrigger className="w-56"><SelectValue placeholder="Pilih Kelas"/></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Semua</SelectItem>
-                {kelasOptions.map(k=> (<SelectItem key={k.id} value={String(k.id)}>{k.nama_kelas}</SelectItem>))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="flex items-center gap-2">
-            <Button onClick={fetchData}><Search className="w-4 h-4 mr-2"/>Tampilkan</Button>
-            <Button variant="outline" onClick={downloadExcel}><Download className="w-4 h-4 mr-2"/>Excel</Button>
-          </div>
+    <div className="space-y-6">
+      <div className="flex items-center gap-4">
+        <Button variant="outline" size="icon" onClick={() => window.history.back()}>
+          <ArrowLeft className="w-4 h-4" />
+        </Button>
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Laporan Kehadiran Siswa</h1>
+          <p className="text-gray-600">Laporan kehadiran siswa berdasarkan jadwal pertemuan</p>
         </div>
+      </div>
 
-        <div className="overflow-auto border rounded-lg">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="w-12">No</TableHead>
-                <TableHead>Nama</TableHead>
-                <TableHead className="w-28">NIS</TableHead>
-                <TableHead className="w-28">Kelas</TableHead>
-                <TableHead className="text-center">H</TableHead>
-                <TableHead className="text-center">I</TableHead>
-                <TableHead className="text-center">S</TableHead>
-                <TableHead className="text-center">A</TableHead>
-                <TableHead className="text-center">D</TableHead>
-                <TableHead className="text-center">Presentase</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {rows?.length ? rows.map((r:any,idx:number)=> (
-                <TableRow key={idx}>
-                  <TableCell>{idx+1}</TableCell>
-                  <TableCell className="font-medium">{r.nama}</TableCell>
-                  <TableCell>{r.nis || '-'}</TableCell>
-                  <TableCell>{r.nama_kelas || '-'}</TableCell>
-                  <TableCell className="text-center bg-emerald-50 text-emerald-700 font-semibold">{r.H||0}</TableCell>
-                  <TableCell className="text-center bg-blue-50 text-blue-700 font-semibold">{r.I||0}</TableCell>
-                  <TableCell className="text-center bg-red-50 text-red-700 font-semibold">{r.S||0}</TableCell>
-                  <TableCell className="text-center bg-yellow-50 text-yellow-700 font-semibold">{r.A||0}</TableCell>
-                  <TableCell className="text-center bg-purple-50 text-purple-700 font-semibold">{r.D||0}</TableCell>
-                  <TableCell className="text-center">{Number(r.presentase||0).toFixed(2)}%</TableCell>
-                </TableRow>
-              )) : (
-                <TableRow><TableCell colSpan={10} className="text-center py-6 text-gray-500">Tidak ada data</TableCell></TableRow>
-              )}
-            </TableBody>
-          </Table>
+      {/* Error Display */}
+      {error && (
+        <Card className="p-4 border-red-200 bg-red-50">
+          <div className="flex items-center gap-2 text-red-700">
+            <XCircle className="w-5 h-5" />
+            <p className="font-medium">{error}</p>
+          </div>
+        </Card>
+      )}
+
+      {/* Filter */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Filter className="w-5 h-5" />
+            Filter Laporan
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-end">
+            <div>
+              <Label className="text-sm font-medium">Kelas</Label>
+              <Select value={selectedKelas} onValueChange={setSelectedKelas}>
+                <SelectTrigger className="mt-1">
+                  <SelectValue placeholder="Pilih Kelas"/>
+                </SelectTrigger>
+                <SelectContent>
+                  {kelasOptions.map(k=> (<SelectItem key={k.id} value={String(k.id)}>{k.nama_kelas}</SelectItem>))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button onClick={fetchData} disabled={loading} className="flex-1">
+                <Search className="w-4 h-4 mr-2"/>
+                {loading ? 'Memuat...' : 'Tampilkan'}
+              </Button>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {reportData.length > 0 && (
+        <div className="space-y-4">
+          {/* Laporan dengan Kop */}
+          <Card>
+            <CardContent className="p-0">
+              {/* Kop Surat */}
+              <div className="border-b border-gray-200 p-6 text-center">
+                <div className="space-y-2">
+                  <h2 className="text-xl font-bold">SMK NEGERI 13 BANDUNG</h2>
+                  <p className="text-sm text-gray-600">Jl. Soekarno Hatta No. 123, Bandung</p>
+                  <p className="text-sm text-gray-600">Telp: (022) 1234567 | Email: info@smkn13bandung.sch.id</p>
+                </div>
+              </div>
+
+              {/* Header Laporan */}
+              <div className="p-6 space-y-4">
+                <div className="text-center">
+                  <h3 className="text-lg font-bold mb-2">LAPORAN KEHADIRAN SISWA</h3>
+                  {mapelInfo && (
+                    <div className="space-y-1">
+                      <p className="text-sm"><strong>Mata Pelajaran:</strong> {mapelInfo.nama_mapel}</p>
+                      <p className="text-sm"><strong>Guru:</strong> {mapelInfo.nama_guru}</p>
+                    </div>
+                  )}
+                </div>
+
+                {/* Tabel Laporan */}
+                <div className="overflow-x-auto">
+                  <table className="w-full border-collapse border border-gray-300 text-sm">
+                    <thead>
+                      <tr className="bg-gray-50">
+                        <th className="border border-gray-300 px-2 py-2 text-center font-semibold">No</th>
+                        <th className="border border-gray-300 px-2 py-2 text-center font-semibold">Nama</th>
+                        <th className="border border-gray-300 px-2 py-2 text-center font-semibold">NIS</th>
+                        <th className="border border-gray-300 px-2 py-2 text-center font-semibold">L/P</th>
+                        {reportData[0]?.pertemuan_dates?.map((date: string, index: number) => (
+                          <th key={index} className="border border-gray-300 px-1 py-2 text-center font-semibold text-xs">
+                            {new Date(date).getDate()}
+                          </th>
+                        ))}
+                        <th className="border border-gray-300 px-2 py-2 text-center font-semibold">H</th>
+                        <th className="border border-gray-300 px-2 py-2 text-center font-semibold">I</th>
+                        <th className="border border-gray-300 px-2 py-2 text-center font-semibold">Z</th>
+                        <th className="border border-gray-300 px-2 py-2 text-center font-semibold">D</th>
+                        <th className="border border-gray-300 px-2 py-2 text-center font-semibold">%</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {reportData.map((student, index) => (
+                        <tr key={student.id_siswa}>
+                          <td className="border border-gray-300 px-2 py-2 text-center">{index + 1}</td>
+                          <td className="border border-gray-300 px-2 py-2">{student.nama}</td>
+                          <td className="border border-gray-300 px-2 py-2 text-center">{student.nis}</td>
+                          <td className="border border-gray-300 px-2 py-2 text-center">{student.jenis_kelamin}</td>
+                          {student.pertemuan_dates?.map((date: string, dateIndex: number) => {
+                            const attendance = student.attendance_by_date?.[date];
+                            return (
+                              <td key={dateIndex} className="border border-gray-300 px-1 py-2 text-center text-xs">
+                                {attendance === 'Hadir' ? 'H' : 
+                                 attendance === 'Izin' ? 'I' : 
+                                 attendance === 'Sakit' ? 'S' : 
+                                 attendance === 'Alpa' ? 'A' : 
+                                 attendance === 'Dispen' ? 'D' : '-'}
+                              </td>
+                            );
+                          })}
+                          <td className="border border-gray-300 px-2 py-2 text-center font-semibold">{student.total_hadir || 0}</td>
+                          <td className="border border-gray-300 px-2 py-2 text-center font-semibold">{student.total_izin || 0}</td>
+                          <td className="border border-gray-300 px-2 py-2 text-center font-semibold">{student.total_sakit || 0}</td>
+                          <td className="border border-gray-300 px-2 py-2 text-center font-semibold">{student.total_alpa || 0}</td>
+                          <td className="border border-gray-300 px-2 py-2 text-center font-semibold">{student.persentase_kehadiran || '0%'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Tombol Download */}
+                <div className="flex justify-center mt-6">
+                  <Button onClick={downloadExcel} className="bg-green-600 hover:bg-green-700">
+                    <Download className="w-4 h-4 mr-2" />
+                    Download Excel
+                  </Button>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
         </div>
-      </CardContent>
-    </Card>
+      )}
+
+      {!loading && reportData.length === 0 && !error && selectedKelas && (
+        <Card>
+          <CardContent className="flex flex-col items-center justify-center py-12">
+            <FileText className="w-16 h-16 text-gray-400 mb-4" />
+            <h3 className="text-lg font-medium text-gray-900 mb-2">Belum ada data laporan</h3>
+            <p className="text-gray-600 text-center">Pilih kelas dan klik "Tampilkan" untuk melihat laporan kehadiran siswa</p>
+          </CardContent>
+        </Card>
+      )}
+    </div>
+  );
+};
+
+// Riwayat Pengajuan Izin Report View
+const RiwayatPengajuanIzinView = ({ user }: { user: TeacherDashboardProps['userData'] }) => {
+  const [dateRange, setDateRange] = useState({ startDate: '', endDate: '' });
+  const [kelasOptions, setKelasOptions] = useState<{id:number, nama_kelas:string}[]>([]);
+  const [selectedKelas, setSelectedKelas] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [reportData, setReportData] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    (async ()=>{
+      const res = await apiCall('/api/guru/classes');
+      setKelasOptions(res);
+    })();
+  }, []);
+
+  const fetchData = async () => {
+    if (!dateRange.startDate || !dateRange.endDate) {
+      setError('Mohon pilih periode mulai dan akhir');
+      return;
+    }
+
+    try {
+      setLoading(true);
+      setError('');
+      const params = new URLSearchParams({ 
+        startDate: dateRange.startDate, 
+        endDate: dateRange.endDate 
+      });
+      if (selectedKelas && selectedKelas !== 'all') params.append('kelas_id', selectedKelas);
+      if (statusFilter && statusFilter !== 'all') params.append('status', statusFilter);
+      
+      const res = await apiCall(`/api/guru/pengajuan-izin-history?${params.toString()}`);
+      setReportData(Array.isArray(res) ? res : []);
+    } catch (err) {
+      console.error('Error fetching pengajuan izin history:', err);
+      setError('Gagal memuat data riwayat pengajuan izin');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const downloadExcel = async () => {
+    try {
+      const params = new URLSearchParams({ 
+        startDate: dateRange.startDate, 
+        endDate: dateRange.endDate 
+      });
+      if (selectedKelas && selectedKelas !== 'all') params.append('kelas_id', selectedKelas);
+      if (statusFilter && statusFilter !== 'all') params.append('status', statusFilter);
+      
+      const url = `http://localhost:3001/api/export/riwayat-pengajuan-izin?${params.toString()}`;
+      const response = await fetch(url, { 
+        credentials: 'include',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token') || ''}`
+        }
+      });
+      
+      if (!response.ok) {
+        throw new Error('Gagal mengunduh file Excel');
+      }
+      
+      const blob = await response.blob();
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = `riwayat-pengajuan-izin-${dateRange.startDate}-${dateRange.endDate}.xlsx`;
+      link.click();
+      
+      toast({
+        title: "Berhasil!",
+        description: "File Excel berhasil diunduh"
+      });
+    } catch (err) {
+      console.error('Error downloading Excel:', err);
+      setError('Gagal mengunduh file Excel');
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      {/* Filter Section */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <FileText className="w-5 h-5" />
+            Filter Laporan Riwayat Pengajuan Izin
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 items-end">
+            <div>
+              <Label className="text-sm font-medium">Periode Mulai</Label>
+              <Input 
+                type="date" 
+                value={dateRange.startDate} 
+                onChange={(e)=>setDateRange(p=>({...p,startDate:e.target.value}))}
+                className="mt-1"
+              />
+            </div>
+            <div>
+              <Label className="text-sm font-medium">Periode Akhir</Label>
+              <Input 
+                type="date" 
+                value={dateRange.endDate} 
+                onChange={(e)=>setDateRange(p=>({...p,endDate:e.target.value}))}
+                className="mt-1"
+              />
+            </div>
+            <div>
+              <Label className="text-sm font-medium">Kelas</Label>
+              <Select value={selectedKelas} onValueChange={setSelectedKelas}>
+                <SelectTrigger className="mt-1">
+                  <SelectValue placeholder="Pilih Kelas"/>
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Semua Kelas</SelectItem>
+                  {kelasOptions.map(k=> (<SelectItem key={k.id} value={String(k.id)}>{k.nama_kelas}</SelectItem>))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label className="text-sm font-medium">Status</Label>
+              <Select value={statusFilter} onValueChange={setStatusFilter}>
+                <SelectTrigger className="mt-1">
+                  <SelectValue placeholder="Pilih Status"/>
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Semua Status</SelectItem>
+                  <SelectItem value="pending">Pending</SelectItem>
+                  <SelectItem value="approved">Disetujui</SelectItem>
+                  <SelectItem value="rejected">Ditolak</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button onClick={fetchData} disabled={loading} className="flex-1">
+                <Search className="w-4 h-4 mr-2"/>
+                {loading ? 'Memuat...' : 'Tampilkan'}
+              </Button>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {error && (
+        <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+          <p className="text-red-600">{error}</p>
+        </div>
+      )}
+
+      {reportData.length > 0 && (
+        <div className="space-y-4">
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <CardTitle className="flex items-center gap-2">
+                  <FileText className="w-5 h-5" />
+                  Riwayat Pengajuan Izin
+                </CardTitle>
+                <Button onClick={downloadExcel} className="bg-green-600 hover:bg-green-700">
+                  <Download className="w-4 h-4 mr-2" />
+                  Export Excel
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>No</TableHead>
+                      <TableHead>Tanggal</TableHead>
+                      <TableHead>Nama Siswa</TableHead>
+                      <TableHead>NIS</TableHead>
+                      <TableHead>Kelas</TableHead>
+                      <TableHead>Jenis Izin</TableHead>
+                      <TableHead>Alasan</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>Tanggal Disetujui</TableHead>
+                      <TableHead>Catatan</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {reportData.map((item, index) => (
+                      <TableRow key={item.id}>
+                        <TableCell>{index + 1}</TableCell>
+                        <TableCell>{new Date(item.tanggal_pengajuan).toLocaleDateString('id-ID')}</TableCell>
+                        <TableCell>{item.nama_siswa}</TableCell>
+                        <TableCell>{item.nis}</TableCell>
+                        <TableCell>{item.nama_kelas}</TableCell>
+                        <TableCell>{item.jenis_izin}</TableCell>
+                        <TableCell>{item.alasan}</TableCell>
+                        <TableCell>
+                          <Badge 
+                            variant={item.status === 'approved' ? 'default' : 
+                                   item.status === 'rejected' ? 'destructive' : 'secondary'}
+                          >
+                            {item.status === 'approved' ? 'Disetujui' : 
+                             item.status === 'rejected' ? 'Ditolak' : 'Pending'}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          {item.tanggal_disetujui ? 
+                            new Date(item.tanggal_disetujui).toLocaleDateString('id-ID') : 
+                            '-'
+                          }
+                        </TableCell>
+                        <TableCell>{item.catatan || '-'}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// Riwayat Pengajuan Banding Absen Report View
+const RiwayatBandingAbsenView = ({ user }: { user: TeacherDashboardProps['userData'] }) => {
+  const [dateRange, setDateRange] = useState({ startDate: '', endDate: '' });
+  const [kelasOptions, setKelasOptions] = useState<{id:number, nama_kelas:string}[]>([]);
+  const [selectedKelas, setSelectedKelas] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [reportData, setReportData] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    (async ()=>{
+      const res = await apiCall('/api/guru/classes');
+      setKelasOptions(res);
+    })();
+  }, []);
+
+  const fetchData = async () => {
+    if (!dateRange.startDate || !dateRange.endDate) {
+      setError('Mohon pilih periode mulai dan akhir');
+      return;
+    }
+
+    try {
+      setLoading(true);
+      setError('');
+      const params = new URLSearchParams({ 
+        startDate: dateRange.startDate, 
+        endDate: dateRange.endDate 
+      });
+      if (selectedKelas && selectedKelas !== 'all') params.append('kelas_id', selectedKelas);
+      if (statusFilter && statusFilter !== 'all') params.append('status', statusFilter);
+      
+      const res = await apiCall(`/api/guru/banding-absen-history?${params.toString()}`);
+      setReportData(Array.isArray(res) ? res : []);
+    } catch (err) {
+      console.error('Error fetching banding absen history:', err);
+      setError('Gagal memuat data riwayat banding absen');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const downloadExcel = async () => {
+    try {
+      const params = new URLSearchParams({ 
+        startDate: dateRange.startDate, 
+        endDate: dateRange.endDate 
+      });
+      if (selectedKelas && selectedKelas !== 'all') params.append('kelas_id', selectedKelas);
+      if (statusFilter && statusFilter !== 'all') params.append('status', statusFilter);
+      
+      const url = `http://localhost:3001/api/export/riwayat-banding-absen?${params.toString()}`;
+      const response = await fetch(url, { 
+        credentials: 'include',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token') || ''}`
+        }
+      });
+      
+      if (!response.ok) {
+        throw new Error('Gagal mengunduh file Excel');
+      }
+      
+      const blob = await response.blob();
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = `riwayat-banding-absen-${dateRange.startDate}-${dateRange.endDate}.xlsx`;
+      link.click();
+      
+      toast({
+        title: "Berhasil!",
+        description: "File Excel berhasil diunduh"
+      });
+    } catch (err) {
+      console.error('Error downloading Excel:', err);
+      setError('Gagal mengunduh file Excel');
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      {/* Filter Section */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <MessageCircle className="w-5 h-5" />
+            Filter Laporan Riwayat Banding Absen
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 items-end">
+            <div>
+              <Label className="text-sm font-medium">Periode Mulai</Label>
+              <Input 
+                type="date" 
+                value={dateRange.startDate} 
+                onChange={(e)=>setDateRange(p=>({...p,startDate:e.target.value}))}
+                className="mt-1"
+              />
+            </div>
+            <div>
+              <Label className="text-sm font-medium">Periode Akhir</Label>
+              <Input 
+                type="date" 
+                value={dateRange.endDate} 
+                onChange={(e)=>setDateRange(p=>({...p,endDate:e.target.value}))}
+                className="mt-1"
+              />
+            </div>
+            <div>
+              <Label className="text-sm font-medium">Kelas</Label>
+              <Select value={selectedKelas} onValueChange={setSelectedKelas}>
+                <SelectTrigger className="mt-1">
+                  <SelectValue placeholder="Pilih Kelas"/>
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Semua Kelas</SelectItem>
+                  {kelasOptions.map(k=> (<SelectItem key={k.id} value={String(k.id)}>{k.nama_kelas}</SelectItem>))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label className="text-sm font-medium">Status</Label>
+              <Select value={statusFilter} onValueChange={setStatusFilter}>
+                <SelectTrigger className="mt-1">
+                  <SelectValue placeholder="Pilih Status"/>
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Semua Status</SelectItem>
+                  <SelectItem value="pending">Pending</SelectItem>
+                  <SelectItem value="approved">Disetujui</SelectItem>
+                  <SelectItem value="rejected">Ditolak</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button onClick={fetchData} disabled={loading} className="flex-1">
+                <Search className="w-4 h-4 mr-2"/>
+                {loading ? 'Memuat...' : 'Tampilkan'}
+              </Button>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {error && (
+        <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+          <p className="text-red-600">{error}</p>
+        </div>
+      )}
+
+      {reportData.length > 0 && (
+        <div className="space-y-4">
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <CardTitle className="flex items-center gap-2">
+                  <MessageCircle className="w-5 h-5" />
+                  Riwayat Pengajuan Banding Absen
+                </CardTitle>
+                <Button onClick={downloadExcel} className="bg-green-600 hover:bg-green-700">
+                  <Download className="w-4 h-4 mr-2" />
+                  Export Excel
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>No</TableHead>
+                      <TableHead>Tanggal</TableHead>
+                      <TableHead>Nama Siswa</TableHead>
+                      <TableHead>NIS</TableHead>
+                      <TableHead>Kelas</TableHead>
+                      <TableHead>Tanggal Absen</TableHead>
+                      <TableHead>Status Absen</TableHead>
+                      <TableHead>Alasan Banding</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>Tanggal Disetujui</TableHead>
+                      <TableHead>Catatan</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {reportData.map((item, index) => (
+                      <TableRow key={item.id}>
+                        <TableCell>{index + 1}</TableCell>
+                        <TableCell>{new Date(item.tanggal_pengajuan).toLocaleDateString('id-ID')}</TableCell>
+                        <TableCell>{item.nama_siswa}</TableCell>
+                        <TableCell>{item.nis}</TableCell>
+                        <TableCell>{item.nama_kelas}</TableCell>
+                        <TableCell>{new Date(item.tanggal_absen).toLocaleDateString('id-ID')}</TableCell>
+                        <TableCell>
+                          <Badge variant="outline">{item.status_absen}</Badge>
+                        </TableCell>
+                        <TableCell>{item.alasan_banding}</TableCell>
+                        <TableCell>
+                          <Badge 
+                            variant={item.status === 'approved' ? 'default' : 
+                                   item.status === 'rejected' ? 'destructive' : 'secondary'}
+                          >
+                            {item.status === 'approved' ? 'Disetujui' : 
+                             item.status === 'rejected' ? 'Ditolak' : 'Pending'}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          {item.tanggal_disetujui ? 
+                            new Date(item.tanggal_disetujui).toLocaleDateString('id-ID') : 
+                            '-'
+                          }
+                        </TableCell>
+                        <TableCell>{item.catatan || '-'}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// Presensi Siswa SMK 13 Report View
+const PresensiSiswaSMKN13View = ({ user }: { user: TeacherDashboardProps['userData'] }) => {
+  const [dateRange, setDateRange] = useState({ startDate: '', endDate: '' });
+  const [kelasOptions, setKelasOptions] = useState<{id:number, nama_kelas:string}[]>([]);
+  const [selectedKelas, setSelectedKelas] = useState('');
+  const [reportData, setReportData] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    (async ()=>{
+      const res = await apiCall('/api/guru/classes');
+      setKelasOptions(res);
+    })();
+  }, []);
+
+  const fetchData = async () => {
+    if (!dateRange.startDate || !dateRange.endDate) {
+      setError('Mohon pilih periode mulai dan akhir');
+      return;
+    }
+
+    try {
+      setLoading(true);
+      setError('');
+      const params = new URLSearchParams({ 
+        startDate: dateRange.startDate, 
+        endDate: dateRange.endDate 
+      });
+      if (selectedKelas && selectedKelas !== 'all') params.append('kelas_id', selectedKelas);
+      
+      const res = await apiCall(`/api/guru/presensi-siswa-smkn13?${params.toString()}`);
+      setReportData(Array.isArray(res) ? res : []);
+    } catch (err) {
+      console.error('Error fetching presensi siswa SMKN 13:', err);
+      setError('Gagal memuat data presensi siswa');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const downloadExcel = async () => {
+    try {
+      const params = new URLSearchParams({ 
+        startDate: dateRange.startDate, 
+        endDate: dateRange.endDate 
+      });
+      if (selectedKelas && selectedKelas !== 'all') params.append('kelas_id', selectedKelas);
+      
+      const url = `http://localhost:3001/api/export/presensi-siswa-smkn13?${params.toString()}`;
+      const response = await fetch(url, { 
+        credentials: 'include',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token') || ''}`
+        }
+      });
+      
+      if (!response.ok) {
+        throw new Error('Gagal mengunduh file Excel');
+      }
+      
+      const blob = await response.blob();
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = `presensi-siswa-smkn13-${dateRange.startDate}-${dateRange.endDate}.xlsx`;
+      link.click();
+      
+      toast({
+        title: "Berhasil!",
+        description: "File Excel berhasil diunduh"
+      });
+    } catch (err) {
+      console.error('Error downloading Excel:', err);
+      setError('Gagal mengunduh file Excel');
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      {/* Filter Section */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <FileText className="w-5 h-5" />
+            Filter Laporan Presensi Siswa SMK 13
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 items-end">
+            <div>
+              <Label className="text-sm font-medium">Periode Mulai</Label>
+              <Input 
+                type="date" 
+                value={dateRange.startDate} 
+                onChange={(e)=>setDateRange(p=>({...p,startDate:e.target.value}))}
+                className="mt-1"
+              />
+            </div>
+            <div>
+              <Label className="text-sm font-medium">Periode Akhir</Label>
+              <Input 
+                type="date" 
+                value={dateRange.endDate} 
+                onChange={(e)=>setDateRange(p=>({...p,endDate:e.target.value}))}
+                className="mt-1"
+              />
+            </div>
+            <div>
+              <Label className="text-sm font-medium">Kelas</Label>
+              <Select value={selectedKelas} onValueChange={setSelectedKelas}>
+                <SelectTrigger className="mt-1">
+                  <SelectValue placeholder="Pilih Kelas"/>
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Semua Kelas</SelectItem>
+                  {kelasOptions.map(k=> (<SelectItem key={k.id} value={String(k.id)}>{k.nama_kelas}</SelectItem>))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button onClick={fetchData} disabled={loading} className="flex-1">
+                <Search className="w-4 h-4 mr-2"/>
+                {loading ? 'Memuat...' : 'Tampilkan'}
+              </Button>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {error && (
+        <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+          <p className="text-red-600">{error}</p>
+        </div>
+      )}
+
+      {reportData.length > 0 && (
+        <div className="space-y-4">
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <CardTitle className="flex items-center gap-2">
+                  <FileText className="w-5 h-5" />
+                  Presensi Siswa SMK 13
+                </CardTitle>
+                <Button onClick={downloadExcel} className="bg-blue-600 hover:bg-blue-700">
+                  <Download className="w-4 h-4 mr-2" />
+                  Export Excel
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>No</TableHead>
+                      <TableHead>Tanggal</TableHead>
+                      <TableHead>Hari</TableHead>
+                      <TableHead>Jam</TableHead>
+                      <TableHead>Mata Pelajaran</TableHead>
+                      <TableHead>Kelas</TableHead>
+                      <TableHead>Guru</TableHead>
+                      <TableHead>Total Siswa</TableHead>
+                      <TableHead>Hadir</TableHead>
+                      <TableHead>Izin</TableHead>
+                      <TableHead>Sakit</TableHead>
+                      <TableHead>Alpa</TableHead>
+                      <TableHead>Dispen</TableHead>
+                      <TableHead>Presentase</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {reportData.map((item, index) => {
+                      const total = item.total_siswa || 0;
+                      const hadir = item.hadir || 0;
+                      const presentase = total > 0 ? ((hadir / total) * 100).toFixed(1) : '0.0';
+                      
+                      return (
+                        <TableRow key={item.id}>
+                          <TableCell>{index + 1}</TableCell>
+                          <TableCell>{new Date(item.tanggal).toLocaleDateString('id-ID')}</TableCell>
+                          <TableCell>{item.hari}</TableCell>
+                          <TableCell>{item.jam_mulai} - {item.jam_selesai}</TableCell>
+                          <TableCell>{item.mata_pelajaran}</TableCell>
+                          <TableCell>{item.nama_kelas}</TableCell>
+                          <TableCell>{item.nama_guru}</TableCell>
+                          <TableCell>
+                            <Badge variant="outline">{total}</Badge>
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant="default" className="bg-green-500">{item.hadir || 0}</Badge>
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant="secondary" className="bg-yellow-500">{item.izin || 0}</Badge>
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant="secondary" className="bg-orange-500">{item.sakit || 0}</Badge>
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant="destructive">{item.alpa || 0}</Badge>
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant="secondary" className="bg-purple-500">{item.dispen || 0}</Badge>
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant="outline" className="bg-blue-100">
+                              {presentase}%
+                            </Badge>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// Rekap Ketidakhadiran Report View
+const RekapKetidakhadiranView = ({ user }: { user: TeacherDashboardProps['userData'] }) => {
+  const [dateRange, setDateRange] = useState({ startDate: '', endDate: '' });
+  const [kelasOptions, setKelasOptions] = useState<{id:number, nama_kelas:string}[]>([]);
+  const [selectedKelas, setSelectedKelas] = useState('');
+  const [reportType, setReportType] = useState('bulanan'); // bulanan atau tahunan
+  const [reportData, setReportData] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    (async ()=>{
+      const res = await apiCall('/api/guru/classes');
+      setKelasOptions(res);
+    })();
+  }, []);
+
+  const fetchData = async () => {
+    if (!dateRange.startDate || !dateRange.endDate) {
+      setError('Mohon pilih periode mulai dan akhir');
+      return;
+    }
+
+    try {
+      setLoading(true);
+      setError('');
+      const params = new URLSearchParams({ 
+        startDate: dateRange.startDate, 
+        endDate: dateRange.endDate,
+        reportType: reportType
+      });
+      if (selectedKelas && selectedKelas !== 'all') params.append('kelas_id', selectedKelas);
+      
+      const res = await apiCall(`/api/guru/rekap-ketidakhadiran?${params.toString()}`);
+      setReportData(Array.isArray(res) ? res : []);
+    } catch (err) {
+      console.error('Error fetching rekap ketidakhadiran:', err);
+      setError('Gagal memuat data rekap ketidakhadiran');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const downloadExcel = async () => {
+    try {
+      const params = new URLSearchParams({ 
+        startDate: dateRange.startDate, 
+        endDate: dateRange.endDate,
+        reportType: reportType
+      });
+      if (selectedKelas && selectedKelas !== 'all') params.append('kelas_id', selectedKelas);
+      
+      const url = `http://localhost:3001/api/export/rekap-ketidakhadiran?${params.toString()}`;
+      const response = await fetch(url, { 
+        credentials: 'include',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token') || ''}`
+        }
+      });
+      
+      if (!response.ok) {
+        throw new Error('Gagal mengunduh file Excel');
+      }
+      
+      const blob = await response.blob();
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = `rekap-ketidakhadiran-${reportType}-${dateRange.startDate}-${dateRange.endDate}.xlsx`;
+      link.click();
+      
+      toast({
+        title: "Berhasil!",
+        description: "File Excel berhasil diunduh"
+      });
+    } catch (err) {
+      console.error('Error downloading Excel:', err);
+      setError('Gagal mengunduh file Excel');
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      {/* Filter Section */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <ClipboardList className="w-5 h-5" />
+            Filter Laporan Rekap Ketidakhadiran
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 items-end">
+            <div>
+              <Label className="text-sm font-medium">Periode Mulai</Label>
+              <Input 
+                type="date" 
+                value={dateRange.startDate} 
+                onChange={(e)=>setDateRange(p=>({...p,startDate:e.target.value}))}
+                className="mt-1"
+              />
+            </div>
+            <div>
+              <Label className="text-sm font-medium">Periode Akhir</Label>
+              <Input 
+                type="date" 
+                value={dateRange.endDate} 
+                onChange={(e)=>setDateRange(p=>({...p,endDate:e.target.value}))}
+                className="mt-1"
+              />
+            </div>
+            <div>
+              <Label className="text-sm font-medium">Kelas</Label>
+              <Select value={selectedKelas} onValueChange={setSelectedKelas}>
+                <SelectTrigger className="mt-1">
+                  <SelectValue placeholder="Pilih Kelas"/>
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Semua Kelas</SelectItem>
+                  {kelasOptions.map(k=> (<SelectItem key={k.id} value={String(k.id)}>{k.nama_kelas}</SelectItem>))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label className="text-sm font-medium">Jenis Laporan</Label>
+              <Select value={reportType} onValueChange={setReportType}>
+                <SelectTrigger className="mt-1">
+                  <SelectValue placeholder="Pilih Jenis"/>
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="bulanan">Bulanan</SelectItem>
+                  <SelectItem value="tahunan">Tahunan</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button onClick={fetchData} disabled={loading} className="flex-1">
+                <Search className="w-4 h-4 mr-2"/>
+                {loading ? 'Memuat...' : 'Tampilkan'}
+              </Button>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {error && (
+        <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+          <p className="text-red-600">{error}</p>
+        </div>
+      )}
+
+      {reportData.length > 0 && (
+        <div className="space-y-4">
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <CardTitle className="flex items-center gap-2">
+                  <ClipboardList className="w-5 h-5" />
+                  Rekap Ketidakhadiran {reportType === 'bulanan' ? 'Bulanan' : 'Tahunan'}
+                </CardTitle>
+                <Button onClick={downloadExcel} className="bg-green-600 hover:bg-green-700">
+                  <Download className="w-4 h-4 mr-2" />
+                  Export Excel
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>No</TableHead>
+                      <TableHead>Periode</TableHead>
+                      <TableHead>Kelas</TableHead>
+                      <TableHead>Total Siswa</TableHead>
+                      <TableHead>Hadir</TableHead>
+                      <TableHead>Izin</TableHead>
+                      <TableHead>Sakit</TableHead>
+                      <TableHead>Alpa</TableHead>
+                      <TableHead>Dispen</TableHead>
+                      <TableHead>Total Absen</TableHead>
+                      <TableHead>Presentase Hadir</TableHead>
+                      <TableHead>Presentase Absen</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {reportData.map((item, index) => {
+                      const totalSiswa = item.total_siswa || 0;
+                      const hadir = item.hadir || 0;
+                      const totalAbsen = item.izin + item.sakit + item.alpa + item.dispen || 0;
+                      const presentaseHadir = totalSiswa > 0 ? ((hadir / totalSiswa) * 100).toFixed(1) : '0.0';
+                      const presentaseAbsen = totalSiswa > 0 ? ((totalAbsen / totalSiswa) * 100).toFixed(1) : '0.0';
+                      
+                      return (
+                        <TableRow key={item.id || index}>
+                          <TableCell>{index + 1}</TableCell>
+                          <TableCell>{item.periode}</TableCell>
+                          <TableCell>{item.nama_kelas}</TableCell>
+                          <TableCell>
+                            <Badge variant="outline">{totalSiswa}</Badge>
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant="default" className="bg-green-500">{hadir}</Badge>
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant="secondary" className="bg-yellow-500">{item.izin || 0}</Badge>
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant="secondary" className="bg-orange-500">{item.sakit || 0}</Badge>
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant="destructive">{item.alpa || 0}</Badge>
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant="secondary" className="bg-purple-500">{item.dispen || 0}</Badge>
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant="outline" className="bg-red-100">{totalAbsen}</Badge>
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant="outline" className="bg-green-100">
+                              {presentaseHadir}%
+                            </Badge>
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant="outline" className="bg-red-100">
+                              {presentaseAbsen}%
+                            </Badge>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// Teacher Reports View (summary per kelas & rentang tanggal)
+const TeacherReportsView = ({ user }: { user: TeacherDashboardProps['userData'] }) => {
+  const [dateRange, setDateRange] = useState({ startDate: '', endDate: '' });
+  const [kelasOptions, setKelasOptions] = useState<{id:number, nama_kelas:string}[]>([]);
+  const [selectedKelas, setSelectedKelas] = useState('');
+  const [reportData, setReportData] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    (async ()=>{
+      const res = await apiCall('/api/guru/classes');
+      setKelasOptions(res);
+    })();
+  }, []);
+
+  const fetchData = async () => {
+    if (!dateRange.startDate || !dateRange.endDate) {
+      setError('Mohon pilih periode mulai dan akhir');
+      return;
+    }
+
+    try {
+      setLoading(true);
+      setError('');
+      const params = new URLSearchParams({ startDate: dateRange.startDate, endDate: dateRange.endDate });
+      if (selectedKelas && selectedKelas !== 'all') params.append('kelas_id', selectedKelas);
+      const res = await apiCall(`/api/guru/attendance-summary?${params.toString()}`);
+      setReportData(Array.isArray(res) ? res : []);
+    } catch (err) {
+      console.error('Error fetching report data:', err);
+      setError('Gagal memuat data laporan');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const downloadExcel = async () => {
+    try {
+      const params = new URLSearchParams({ startDate: dateRange.startDate, endDate: dateRange.endDate });
+      if (selectedKelas && selectedKelas !== 'all') params.append('kelas_id', selectedKelas);
+      const url = `http://localhost:3001/api/guru/download-attendance-excel?${params.toString()}`;
+      const resp = await fetch(url, { credentials: 'include' });
+      const blob = await resp.blob();
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = `laporan-kehadiran-siswa-${dateRange.startDate}-${dateRange.endDate}.xlsx`;
+      link.click();
+    } catch (err) {
+      console.error('Error downloading excel:', err);
+      setError('Gagal mengunduh file Excel');
+    }
+  };
+
+  const downloadSMKN13Format = async () => {
+    try {
+      const params = new URLSearchParams({ startDate: dateRange.startDate, endDate: dateRange.endDate });
+      if (selectedKelas && selectedKelas !== 'all') params.append('kelas_id', selectedKelas);
+      
+      const url = `http://localhost:3001/api/export/ringkasan-kehadiran-siswa-smkn13?${params.toString()}`;
+      const response = await fetch(url, { 
+        credentials: 'include',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token') || ''}`
+        }
+      });
+      
+      if (!response.ok) {
+        throw new Error('Gagal mengunduh file format SMKN 13');
+      }
+      
+      const blob = await response.blob();
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = `laporan-kehadiran-siswa-smkn13-${dateRange.startDate}-${dateRange.endDate}.xlsx`;
+      link.click();
+      
+      toast({
+        title: "Berhasil!",
+        description: "File format SMKN 13 berhasil diunduh"
+      });
+    } catch (err) {
+      console.error('Error downloading SMKN 13 format:', err);
+      setError('Gagal mengunduh file format SMKN 13');
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center gap-4">
+        <Button variant="outline" size="icon" onClick={() => window.history.back()}>
+          <ArrowLeft className="w-4 h-4" />
+        </Button>
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Ringkasan Kehadiran Siswa</h1>
+          <p className="text-gray-600">Download ringkasan kehadiran siswa dalam format Excel</p>
+        </div>
+      </div>
+
+      {/* Error Display */}
+      {error && (
+        <Card className="p-4 border-red-200 bg-red-50">
+          <div className="flex items-center gap-2 text-red-700">
+            <XCircle className="w-5 h-5" />
+            <p className="font-medium">{error}</p>
+          </div>
+        </Card>
+      )}
+
+      {/* Filter */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Filter className="w-5 h-5" />
+            Filter Laporan
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 items-end">
+            <div>
+              <Label className="text-sm font-medium">Periode Mulai</Label>
+              <Input 
+                type="date" 
+                value={dateRange.startDate} 
+                onChange={(e)=>setDateRange(p=>({...p,startDate:e.target.value}))}
+                className="mt-1"
+              />
+            </div>
+            <div>
+              <Label className="text-sm font-medium">Periode Akhir</Label>
+              <Input 
+                type="date" 
+                value={dateRange.endDate} 
+                onChange={(e)=>setDateRange(p=>({...p,endDate:e.target.value}))}
+                className="mt-1"
+              />
+            </div>
+            <div>
+              <Label className="text-sm font-medium">Kelas</Label>
+              <Select value={selectedKelas} onValueChange={setSelectedKelas}>
+                <SelectTrigger className="mt-1">
+                  <SelectValue placeholder="Pilih Kelas"/>
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Semua Kelas</SelectItem>
+                  {kelasOptions.map(k=> (<SelectItem key={k.id} value={String(k.id)}>{k.nama_kelas}</SelectItem>))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button onClick={fetchData} disabled={loading} className="flex-1">
+                <Search className="w-4 h-4 mr-2"/>
+                {loading ? 'Memuat...' : 'Tampilkan'}
+              </Button>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {reportData.length > 0 && (
+        <div className="space-y-4">
+          <ExcelPreview
+            title="Ringkasan Kehadiran Siswa"
+            data={reportData.map((record, index) => ({
+              no: index + 1,
+              nama: record.nama,
+              nis: record.nis || '-',
+              kelas: record.nama_kelas || '-',
+              hadir: record.H || 0,
+              izin: record.I || 0,
+              sakit: record.S || 0,
+              alpa: record.A || 0,
+              dispen: record.D || 0,
+              presentase: Number(record.presentase || 0).toFixed(2) + '%'
+            }))}
+            columns={[
+              { key: 'no', label: 'No', width: 60, align: 'center', format: 'number' },
+              { key: 'nama', label: 'Nama Siswa', width: 200, align: 'left' },
+              { key: 'nis', label: 'NIS', width: 120, align: 'left' },
+              { key: 'kelas', label: 'Kelas', width: 100, align: 'center' },
+              { key: 'hadir', label: 'H', width: 80, align: 'center', format: 'number' },
+              { key: 'izin', label: 'I', width: 80, align: 'center', format: 'number' },
+              { key: 'sakit', label: 'S', width: 80, align: 'center', format: 'number' },
+              { key: 'alpa', label: 'A', width: 80, align: 'center', format: 'number' },
+              { key: 'dispen', label: 'D', width: 80, align: 'center', format: 'number' },
+              { key: 'presentase', label: 'Presentase', width: 100, align: 'center', format: 'percentage' }
+            ]}
+            onExport={downloadExcel}
+          />
+          
+          {/* SMK 13 Format Export */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <FileText className="w-5 h-5" />
+                Export Format SMK 13
+              </CardTitle>
+              <p className="text-sm text-gray-600">
+                Download laporan dalam format resmi SMK Negeri 13 Bandung
+              </p>
+            </CardHeader>
+            <CardContent>
+              <div className="flex items-center gap-3">
+                <Button 
+                  onClick={downloadSMKN13Format}
+                  className="bg-blue-600 hover:bg-blue-700"
+                >
+                  <Download className="w-4 h-4 mr-2" />
+                  Export Format SMK 13
+                </Button>
+                <div className="text-sm text-gray-500">
+                  Format resmi dengan header sekolah dan styling profesional
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {!loading && reportData.length === 0 && !error && (
+        <Card>
+          <CardContent className="flex flex-col items-center justify-center py-12">
+            <FileText className="w-16 h-16 text-gray-400 mb-4" />
+            <h3 className="text-lg font-medium text-gray-900 mb-2">Belum ada data laporan</h3>
+            <p className="text-gray-600 text-center">Pilih periode dan kelas, lalu klik "Tampilkan" untuk melihat laporan kehadiran siswa</p>
+          </CardContent>
+        </Card>
+      )}
+    </div>
   );
 };
 // Pengajuan Izin View for Teachers - to approve/reject student leave requests
 const PengajuanIzinView = ({ user }: { user: TeacherDashboardProps['userData'] }) => {
   const [pengajuanList, setPengajuanList] = useState<PengajuanIzin[]>([]);
   const [loading, setLoading] = useState(true);
+  const [filterPending, setFilterPending] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalPending, setTotalPending] = useState(0);
+  const [totalAll, setTotalAll] = useState(0);
+  const limit = 10; // Increased from 5 to 10 for better UX
 
   useEffect(() => {
     const fetchPengajuanIzin = async () => {
       try {
         setLoading(true);
-        // Fetch pengajuan izin for this teacher to approve
-        const response = await apiCall(`/api/guru/${user.guru_id || user.id}/pengajuan-izin`);
-        setPengajuanList(Array.isArray(response) ? response : (response.data || []));
+        // Fetch pengajuan izin for this teacher to approve with pagination and filter
+        const params = new URLSearchParams({
+          page: currentPage.toString(),
+          limit: limit.toString(),
+          filter_pending: filterPending.toString()
+        });
+        
+        const response = await apiCall(`/api/guru/${user.guru_id || user.id}/pengajuan-izin?${params}`);
+        
+        if (response && typeof response === 'object') {
+          setPengajuanList(response.data || []);
+          setTotalPages(response.totalPages || 1);
+          setTotalPending(response.totalPending || 0);
+          setTotalAll(response.totalAll || 0);
+        } else {
+          setPengajuanList(Array.isArray(response) ? response : []);
+        }
       } catch (error) {
         console.error('Error fetching pengajuan izin:', error);
         toast({ 
@@ -649,7 +2038,16 @@ const PengajuanIzinView = ({ user }: { user: TeacherDashboardProps['userData'] }
     };
 
     fetchPengajuanIzin();
-  }, [user.guru_id, user.id]);
+  }, [user.guru_id, user.id, currentPage, filterPending]);
+
+  const handleFilterToggle = () => {
+    setFilterPending(!filterPending);
+    setCurrentPage(1); // Reset to first page when filter changes
+  };
+
+  const handlePageChange = (page: number) => {
+    setCurrentPage(page);
+  };
 
   const handleApprovePengajuan = async (pengajuanId: number, status: 'disetujui' | 'ditolak', catatan: string = '') => {
     try {
@@ -667,12 +2065,21 @@ const PengajuanIzinView = ({ user }: { user: TeacherDashboardProps['userData'] }
         description: `Pengajuan izin berhasil ${status}` 
       });
       
-      // Refresh the list
-      setPengajuanList(prev => prev.map(p => 
-        p.id === pengajuanId 
-          ? { ...p, status_persetujuan: status, catatan_guru: catatan, disetujui_oleh: user.guru_id || user.id }
-          : p
-      ));
+      // Refresh the list by refetching data
+      const params = new URLSearchParams({
+        page: currentPage.toString(),
+        limit: limit.toString(),
+        filter_pending: filterPending.toString()
+      });
+      
+      const response = await apiCall(`/api/guru/${user.guru_id || user.id}/pengajuan-izin?${params}`);
+      
+      if (response && typeof response === 'object') {
+        setPengajuanList(response.data || []);
+        setTotalPages(response.totalPages || 1);
+        setTotalPending(response.totalPending || 0);
+        setTotalAll(response.totalAll || 0);
+      }
     } catch (error) {
       console.error('Error updating pengajuan izin:', error);
       toast({ 
@@ -686,10 +2093,56 @@ const PengajuanIzinView = ({ user }: { user: TeacherDashboardProps['userData'] }
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <FileText className="w-5 h-5" />
-          Pengajuan Izin Siswa
-        </CardTitle>
+        <div className="flex flex-col gap-4">
+          <div className="flex items-center justify-between">
+            <CardTitle className="flex items-center gap-2">
+              <FileText className="w-5 h-5" />
+              Pengajuan Izin Siswa
+            </CardTitle>
+            <div className="text-sm text-gray-600">
+              Halaman {currentPage} dari {totalPages}
+            </div>
+          </div>
+          
+          {/* Filter Section */}
+          <div className="flex items-center justify-between bg-gray-50 p-3 rounded-lg">
+            <div className="flex items-center gap-4">
+              <div className="flex items-center gap-2">
+                <div className="w-3 h-3 bg-blue-500 rounded-full"></div>
+                <span className="text-sm font-medium">Total: {totalAll}</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="w-3 h-3 bg-orange-500 rounded-full"></div>
+                <span className="text-sm font-medium">Belum di-acc: {totalPending}</span>
+              </div>
+              {filterPending && (
+                <div className="flex items-center gap-2">
+                  <div className="w-3 h-3 bg-green-500 rounded-full"></div>
+                  <span className="text-sm font-medium">Menampilkan: Belum di-acc</span>
+                </div>
+              )}
+            </div>
+            
+            <Button
+              variant={filterPending ? "default" : "outline"}
+              size="sm"
+              onClick={handleFilterToggle}
+              className={filterPending ? "bg-orange-600 hover:bg-orange-700 text-white" : "border-orange-300 text-orange-600 hover:bg-orange-50"}
+            >
+              {filterPending ? (
+                <>
+                  <Eye className="w-4 h-4 mr-2" />
+                  Tampilkan Semua
+                </>
+              ) : (
+                <>
+                  <Filter className="w-4 h-4 mr-2" />
+                  Filter Belum di-acc ({totalPending})
+                </>
+              )}
+            </Button>
+          </div>
+        </div>
       </CardHeader>
       <CardContent>
         {loading ? (
@@ -836,6 +2289,67 @@ const PengajuanIzinView = ({ user }: { user: TeacherDashboardProps['userData'] }
             ))}
           </div>
         )}
+        
+        {/* Pagination */}
+        {!loading && pengajuanList.length > 0 && totalPages > 1 && (
+          <div className="flex items-center justify-between mt-6 pt-4 border-t">
+            <div className="text-sm text-gray-600">
+              Menampilkan {pengajuanList.length} dari {filterPending ? totalPending : totalAll} pengajuan
+              {filterPending && (
+                <span className="ml-2 px-2 py-1 bg-orange-100 text-orange-800 rounded-full text-xs">
+                  Filter: Belum di-acc
+                </span>
+              )}
+            </div>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => handlePageChange(currentPage - 1)}
+                disabled={currentPage === 1}
+              >
+                <ChevronLeft className="w-4 h-4" />
+                Sebelumnya
+              </Button>
+              
+              {/* Page numbers */}
+              {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                let pageNum;
+                if (totalPages <= 5) {
+                  pageNum = i + 1;
+                } else if (currentPage <= 3) {
+                  pageNum = i + 1;
+                } else if (currentPage >= totalPages - 2) {
+                  pageNum = totalPages - 4 + i;
+                } else {
+                  pageNum = currentPage - 2 + i;
+                }
+                
+                return (
+                  <Button
+                    key={pageNum}
+                    variant={currentPage === pageNum ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => handlePageChange(pageNum)}
+                    className={currentPage === pageNum ? "bg-blue-600 hover:bg-blue-700" : ""}
+                  >
+                    {pageNum}
+                  </Button>
+                );
+              })}
+              
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => handlePageChange(currentPage + 1)}
+                disabled={currentPage === totalPages}
+              >
+                Selanjutnya
+                <ChevronRight className="w-4 h-4" />
+              </Button>
+            </div>
+          </div>
+        )}
       </CardContent>
     </Card>
   );
@@ -845,14 +2359,34 @@ const PengajuanIzinView = ({ user }: { user: TeacherDashboardProps['userData'] }
 const BandingAbsenView = ({ user }: { user: TeacherDashboardProps['userData'] }) => {
   const [bandingList, setBandingList] = useState<BandingAbsenTeacher[]>([]);
   const [loading, setLoading] = useState(true);
+  const [filterPending, setFilterPending] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalPending, setTotalPending] = useState(0);
+  const [totalAll, setTotalAll] = useState(0);
+  const limit = 5;
 
   useEffect(() => {
     const fetchBandingAbsen = async () => {
       try {
         setLoading(true);
-        // Fetch banding absen for this teacher to process
-        const response = await apiCall(`/api/guru/${user.guru_id || user.id}/banding-absen`);
-        setBandingList(Array.isArray(response) ? response : (response.data || []));
+        // Fetch banding absen for this teacher to process with pagination and filter
+        const params = new URLSearchParams({
+          page: currentPage.toString(),
+          limit: limit.toString(),
+          filter_pending: filterPending.toString()
+        });
+        
+        const response = await apiCall(`/api/guru/${user.guru_id || user.id}/banding-absen?${params}`);
+        
+        if (response && typeof response === 'object') {
+          setBandingList(response.data || []);
+          setTotalPages(response.totalPages || 1);
+          setTotalPending(response.totalPending || 0);
+          setTotalAll(response.totalAll || 0);
+        } else {
+          setBandingList(Array.isArray(response) ? response : []);
+        }
       } catch (error) {
         console.error('Error fetching banding absen:', error);
         toast({ 
@@ -866,7 +2400,16 @@ const BandingAbsenView = ({ user }: { user: TeacherDashboardProps['userData'] })
     };
 
     fetchBandingAbsen();
-  }, [user.guru_id, user.id]);
+  }, [user.guru_id, user.id, currentPage, filterPending]);
+
+  const handleFilterToggle = () => {
+    setFilterPending(!filterPending);
+    setCurrentPage(1); // Reset to first page when filter changes
+  };
+
+  const handlePageChange = (page: number) => {
+    setCurrentPage(page);
+  };
 
   const handleBandingResponse = async (bandingId: number, status: 'disetujui' | 'ditolak', catatan: string = '') => {
     try {
@@ -884,12 +2427,21 @@ const BandingAbsenView = ({ user }: { user: TeacherDashboardProps['userData'] })
         description: `Banding absen berhasil ${status}` 
       });
       
-      // Refresh the list
-      setBandingList(prev => prev.map(b => 
-        b.id_banding === bandingId 
-          ? { ...b, status_banding: status, catatan_guru: catatan, diproses_oleh: user.guru_id || user.id }
-          : b
-      ));
+      // Refresh the list by refetching data
+      const params = new URLSearchParams({
+        page: currentPage.toString(),
+        limit: limit.toString(),
+        filter_pending: filterPending.toString()
+      });
+      
+      const response = await apiCall(`/api/guru/${user.guru_id || user.id}/banding-absen?${params}`);
+      
+      if (response && typeof response === 'object') {
+        setBandingList(response.data || []);
+        setTotalPages(response.totalPages || 1);
+        setTotalPending(response.totalPending || 0);
+        setTotalAll(response.totalAll || 0);
+      }
     } catch (error) {
       console.error('Error responding to banding absen:', error);
       toast({ 
@@ -903,10 +2455,35 @@ const BandingAbsenView = ({ user }: { user: TeacherDashboardProps['userData'] })
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <MessageCircle className="w-5 h-5" />
-          Pengajuan Banding Absen
-        </CardTitle>
+        <div className="flex items-center justify-between">
+          <CardTitle className="flex items-center gap-2">
+            <MessageCircle className="w-5 h-5" />
+            Pengajuan Banding Absen
+          </CardTitle>
+          <div className="flex items-center gap-3">
+            <div className="text-sm text-gray-600">
+              Total: {totalAll} | Belum di-acc: {totalPending}
+            </div>
+            <Button
+              variant={filterPending ? "default" : "outline"}
+              size="sm"
+              onClick={handleFilterToggle}
+              className={filterPending ? "bg-orange-600 hover:bg-orange-700" : ""}
+            >
+              {filterPending ? (
+                <>
+                  <Eye className="w-4 h-4 mr-1" />
+                  Tampilkan Semua
+                </>
+              ) : (
+                <>
+                  <Filter className="w-4 h-4 mr-1" />
+                  Belum di-acc ({totalPending})
+                </>
+              )}
+            </Button>
+          </div>
+        </div>
       </CardHeader>
       <CardContent>
         {loading ? (
@@ -1063,6 +2640,63 @@ const BandingAbsenView = ({ user }: { user: TeacherDashboardProps['userData'] })
             ))}
           </div>
         )}
+        
+        {/* Pagination */}
+        {!loading && bandingList.length > 0 && totalPages > 1 && (
+          <div className="flex items-center justify-between mt-6 pt-4 border-t">
+            <div className="text-sm text-gray-600">
+              Halaman {currentPage} dari {totalPages} 
+              {filterPending ? ` (${totalPending} belum di-acc)` : ` (${totalAll} total)`}
+            </div>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => handlePageChange(currentPage - 1)}
+                disabled={currentPage === 1}
+              >
+                <ChevronLeft className="w-4 h-4" />
+                Sebelumnya
+              </Button>
+              
+              {/* Page numbers */}
+              {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                let pageNum;
+                if (totalPages <= 5) {
+                  pageNum = i + 1;
+                } else if (currentPage <= 3) {
+                  pageNum = i + 1;
+                } else if (currentPage >= totalPages - 2) {
+                  pageNum = totalPages - 4 + i;
+                } else {
+                  pageNum = currentPage - 2 + i;
+                }
+                
+                return (
+                  <Button
+                    key={pageNum}
+                    variant={currentPage === pageNum ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => handlePageChange(pageNum)}
+                    className={currentPage === pageNum ? "bg-blue-600 hover:bg-blue-700" : ""}
+                  >
+                    {pageNum}
+                  </Button>
+                );
+              })}
+              
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => handlePageChange(currentPage + 1)}
+                disabled={currentPage === totalPages}
+              >
+                Selanjutnya
+                <ChevronRight className="w-4 h-4" />
+              </Button>
+            </div>
+          </div>
+        )}
       </CardContent>
     </Card>
   );
@@ -1072,16 +2706,41 @@ const BandingAbsenView = ({ user }: { user: TeacherDashboardProps['userData'] })
 const HistoryView = ({ user }: { user: TeacherDashboardProps['userData'] }) => {
   const [historyData, setHistoryData] = useState<HistoryData>({});
   const [loading, setLoading] = useState(true);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalDays, setTotalDays] = useState(0);
+  const limit = 7; // 7 hari kebelakang
 
   useEffect(() => {
     const fetchHistory = async () => {
       try {
         setLoading(true);
-        // Gunakan endpoint baru: /api/guru/student-attendance-history
-        const res = await apiCall(`/api/guru/student-attendance-history`);
+        // Gunakan endpoint dengan pagination: /api/guru/student-attendance-history
+        const params = new URLSearchParams({
+          page: currentPage.toString(),
+          limit: limit.toString()
+        });
+        
+        const res = await apiCall(`/api/guru/student-attendance-history?${params}`);
         console.log('📊 Raw response from API:', res);
-        const flat: Array<FlatHistoryRow>
-          = Array.isArray(res) ? res : (res.data || []);
+        
+        let flat: Array<FlatHistoryRow>;
+        let totalDaysCount = 0;
+        
+        if (res && typeof res === 'object' && res.data) {
+          flat = res.data;
+          totalDaysCount = res.totalDays || 0;
+          setTotalPages(res.totalPages || 1);
+          setTotalDays(totalDaysCount);
+        } else {
+          flat = Array.isArray(res) ? res : [];
+          // Fallback: hitung total days dari data yang ada
+          const uniqueDates = new Set(flat.map(row => new Date(row.tanggal).toISOString().split('T')[0]));
+          totalDaysCount = uniqueDates.size;
+          setTotalPages(Math.ceil(totalDaysCount / limit));
+          setTotalDays(totalDaysCount);
+        }
+        
         console.log('📊 Flattened data:', flat);
 
         const normalizeStatus = (s: string): AttendanceStatus => {
@@ -1134,15 +2793,26 @@ const HistoryView = ({ user }: { user: TeacherDashboardProps['userData'] }) => {
     };
 
     fetchHistory();
-  }, [user.guru_id, user.id]);
+  }, [user.guru_id, user.id, currentPage]);
+
+  const handlePageChange = (page: number) => {
+    setCurrentPage(page);
+  };
 
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <History className="w-5 h-5" />
-          Riwayat Absensi
-        </CardTitle>
+        <div className="flex items-center justify-between">
+          <CardTitle className="flex items-center gap-2">
+            <History className="w-5 h-5" />
+            Riwayat Absensi
+          </CardTitle>
+          {!loading && totalDays > 0 && (
+            <div className="text-sm text-gray-600">
+              Total: {totalDays} hari | Halaman {currentPage} dari {totalPages}
+            </div>
+          )}
+        </div>
       </CardHeader>
       <CardContent>
         {loading ? (
@@ -1249,6 +2919,62 @@ const HistoryView = ({ user }: { user: TeacherDashboardProps['userData'] }) => {
             ))}
           </div>
         )}
+        
+        {/* Pagination */}
+        {!loading && Object.keys(historyData).length > 0 && totalPages > 1 && (
+          <div className="flex items-center justify-between mt-6 pt-4 border-t">
+            <div className="text-sm text-gray-600">
+              Menampilkan {Object.keys(historyData).length} hari dari {totalDays} total
+            </div>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => handlePageChange(currentPage - 1)}
+                disabled={currentPage === 1}
+              >
+                <ChevronLeft className="w-4 h-4" />
+                Sebelumnya
+              </Button>
+              
+              {/* Page numbers */}
+              {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                let pageNum;
+                if (totalPages <= 5) {
+                  pageNum = i + 1;
+                } else if (currentPage <= 3) {
+                  pageNum = i + 1;
+                } else if (currentPage >= totalPages - 2) {
+                  pageNum = totalPages - 4 + i;
+                } else {
+                  pageNum = currentPage - 2 + i;
+                }
+                
+                return (
+                  <Button
+                    key={pageNum}
+                    variant={currentPage === pageNum ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => handlePageChange(pageNum)}
+                    className={currentPage === pageNum ? "bg-blue-600 hover:bg-blue-700" : ""}
+                  >
+                    {pageNum}
+                  </Button>
+                );
+              })}
+              
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => handlePageChange(currentPage + 1)}
+                disabled={currentPage === totalPages}
+              >
+                Selanjutnya
+                <ChevronRight className="w-4 h-4" />
+              </Button>
+            </div>
+          </div>
+        )}
       </CardContent>
     </Card>
   );
@@ -1257,6 +2983,7 @@ const HistoryView = ({ user }: { user: TeacherDashboardProps['userData'] }) => {
 // Main TeacherDashboard Component
 export const TeacherDashboard = ({ userData, onLogout }: TeacherDashboardProps) => {
   const [activeView, setActiveView] = useState<'schedule' | 'history' | 'pengajuan-izin' | 'banding-absen' | 'reports'>('schedule');
+  const [activeReportView, setActiveReportView] = useState<string | null>(null);
   const [activeSchedule, setActiveSchedule] = useState<Schedule | null>(null);
   const [schedules, setSchedules] = useState<Schedule[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -1473,7 +3200,7 @@ export const TeacherDashboard = ({ userData, onLogout }: TeacherDashboardProps) 
           ) : activeView === 'banding-absen' ? (
             <BandingAbsenView user={user} />
           ) : activeView === 'reports' ? (
-            <TeacherReportsView user={user} />
+            <LaporanKehadiranSiswaView user={user} />
           ) : (
             <HistoryView user={user} />
           )}

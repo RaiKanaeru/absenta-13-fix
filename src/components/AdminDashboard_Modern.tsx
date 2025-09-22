@@ -15,10 +15,21 @@ import { FontSizeControl } from "@/components/ui/font-size-control";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import ErrorBoundary from "./ErrorBoundary";
+import BackupManagementView from "./BackupManagementView";
+import LoadBalancerView from "./LoadBalancerView";
+import MonitoringDashboard from "./MonitoringDashboard";
+import SimpleRestoreView from "./SimpleRestoreView";
+import { printReport } from "../utils/printLayouts";
+import ExcelPreview from './ExcelPreview';
+import ReportHeader from './ReportHeader';
+import PresensiSiswaView from './PresensiSiswaView';
+import RekapKetidakhadiranView from './RekapKetidakhadiranView';
+import RekapKetidakhadiranGuruView from './RekapKetidakhadiranGuruView';
 import { 
   UserPlus, BookOpen, Calendar, BarChart3, LogOut, ArrowLeft, Users, GraduationCap, 
   Eye, Download, FileText, Edit, Trash2, Plus, Search, Filter, Settings, Bell, Menu, X,
-  TrendingUp, BookPlus, Home, Clock, CheckCircle, XCircle, AlertCircle, AlertTriangle, MessageCircle, ClipboardList
+  TrendingUp, BookPlus, Home, Clock, CheckCircle, XCircle, AlertCircle, AlertTriangle, MessageCircle, ClipboardList,
+  Database, Archive, Activity, Server, Monitor, Shield, RefreshCw
 } from "lucide-react";
 
 // Utility function for API calls with consistent error handling
@@ -158,6 +169,10 @@ const menuItems = [
   { id: 'add-subject', title: 'Mata Pelajaran', icon: BookOpen, description: 'Kelola mata pelajaran', gradient: 'from-red-500 to-red-700' },
   { id: 'add-class', title: 'Kelas', icon: Home, description: 'Kelola kelas', gradient: 'from-indigo-500 to-indigo-700' },
   { id: 'add-schedule', title: 'Jadwal', icon: Calendar, description: 'Atur jadwal pelajaran', gradient: 'from-teal-500 to-teal-700' },
+  { id: 'backup-management', title: 'Backup & Archive', icon: Database, description: 'Kelola backup dan arsip data', gradient: 'from-cyan-500 to-cyan-700' },
+  { id: 'load-balancer', title: 'Load Balancer', icon: Activity, description: 'Monitoring performa sistem', gradient: 'from-emerald-500 to-emerald-700' },
+  { id: 'monitoring', title: 'System Monitoring', icon: Monitor, description: 'Real-time monitoring & alerting', gradient: 'from-violet-500 to-violet-700' },
+  { id: 'disaster-recovery', title: 'Restorasi Backup', icon: Shield, description: 'Restorasi dan pemulihan backup', gradient: 'from-amber-500 to-amber-700' },
   { id: 'reports', title: 'Laporan', icon: BarChart3, description: 'Pemantau siswa & guru live', gradient: 'from-pink-500 to-pink-700' }
 ];
 
@@ -564,7 +579,6 @@ const ManageTeacherAccountsView = ({ onBack, onLogout }: { onBack: () => void; o
   );
 };
 
-// Placeholder component for other views (will be implemented next)
 // ManageStudentDataView Component
 const ManageStudentDataView = ({ onBack, onLogout }: { onBack: () => void; onLogout: () => void }) => {
   const [formData, setFormData] = useState({ 
@@ -729,7 +743,7 @@ const ManageStudentDataView = ({ onBack, onLogout }: { onBack: () => void; onLog
                 </SelectTrigger>
                 <SelectContent>
                   {classes.map((cls) => (
-                    <SelectItem key={cls.id} value={cls.id.toString()}>
+                    <SelectItem key={cls.id} value={cls.id?.toString() || ''}>
                       {cls.nama_kelas}
                     </SelectItem>
                   ))}
@@ -938,33 +952,6 @@ const ManageStudentDataView = ({ onBack, onLogout }: { onBack: () => void; onLog
     </div>
   );
 };
-
-const PlaceholderView = ({ title, onBack, icon: Icon }: { title: string, onBack: () => void, icon: React.ComponentType<{ className?: string }> }) => (
-  <div className="space-y-6">
-    <div className="flex items-center gap-4">
-      <Button onClick={onBack} variant="outline" size="sm">
-        <ArrowLeft className="w-4 h-4 mr-2" />
-        Kembali
-      </Button>
-      <div>
-        <h1 className="text-3xl font-bold bg-gradient-to-r from-blue-600 to-blue-700 bg-clip-text text-transparent">
-          {title}
-        </h1>
-        <p className="text-gray-600">Fitur ini akan segera tersedia</p>
-      </div>
-    </div>
-    
-    <Card className="p-12 text-center">
-      <Icon className="w-24 h-24 mx-auto text-gray-400 mb-4" />
-      <h3 className="text-2xl font-semibold text-gray-900 mb-2">{title}</h3>
-      <p className="text-gray-600 mb-6">Fitur ini sedang dalam pengembangan dan akan segera tersedia.</p>
-      <Button onClick={onBack}>
-        <ArrowLeft className="w-4 h-4 mr-2" />
-        Kembali ke Menu Utama
-      </Button>
-    </Card>
-  </div>
-);
 
 // ManageTeacherDataView Component  
 const ManageTeacherDataView = ({ onBack, onLogout }: { onBack: () => void; onLogout: () => void }) => {
@@ -2085,7 +2072,7 @@ const ManageStudentsView = ({ onBack, onLogout }: { onBack: () => void; onLogout
                     </SelectTrigger>
                     <SelectContent>
                       {classes.map((kelas) => (
-                        <SelectItem key={kelas.id} value={kelas.id.toString()}>
+                        <SelectItem key={kelas.id} value={kelas.id?.toString() || ''}>
                           {kelas.nama_kelas} {kelas.tingkat ? `(${kelas.tingkat})` : ''}
                         </SelectItem>
                       ))}
@@ -2613,9 +2600,9 @@ const ManageSchedulesView = ({ onBack, onLogout }: { onBack: () => void; onLogou
 
   const handleEdit = (schedule: Schedule) => {
     setFormData({
-      kelas_id: schedule.kelas_id.toString(),
-      mapel_id: schedule.mapel_id.toString(),
-      guru_id: schedule.guru_id.toString(),
+      kelas_id: schedule.kelas_id?.toString() || '',
+      mapel_id: schedule.mapel_id?.toString() || '',
+      guru_id: schedule.guru_id?.toString() || '',
       hari: schedule.hari,
       jam_mulai: schedule.jam_mulai,
       jam_selesai: schedule.jam_selesai,
@@ -2681,7 +2668,7 @@ const ManageSchedulesView = ({ onBack, onLogout }: { onBack: () => void; onLogou
                   </SelectTrigger>
                   <SelectContent>
                     {classes.map((kelas) => (
-                      <SelectItem key={kelas.id} value={kelas.id.toString()}>
+                      <SelectItem key={kelas.id} value={kelas.id?.toString() || ''}>
                         {kelas.nama_kelas}
                       </SelectItem>
                     ))}
@@ -2700,7 +2687,7 @@ const ManageSchedulesView = ({ onBack, onLogout }: { onBack: () => void; onLogou
                   </SelectTrigger>
                   <SelectContent>
                     {subjects.map((subject) => (
-                      <SelectItem key={subject.id} value={subject.id.toString()}>
+                      <SelectItem key={subject.id} value={subject.id?.toString() || ''}>
                         {subject.nama_mapel}
                       </SelectItem>
                     ))}
@@ -2721,7 +2708,7 @@ const ManageSchedulesView = ({ onBack, onLogout }: { onBack: () => void; onLogou
                   </SelectTrigger>
                   <SelectContent>
                     {teachers.map((teacher) => (
-                      <SelectItem key={teacher.id} value={teacher.id.toString()}>
+                      <SelectItem key={teacher.id} value={teacher.id?.toString() || ''}>
                         {teacher.nama} (NIP: {teacher.nip})
                       </SelectItem>
                     ))}
@@ -2790,7 +2777,7 @@ const ManageSchedulesView = ({ onBack, onLogout }: { onBack: () => void; onLogou
               <div>
                 <Label htmlFor="consecutive-hours">Jumlah Jam Berurutan</Label>
                 <Select 
-                  value={consecutiveHours.toString()} 
+                  value={consecutiveHours?.toString() || '1'} 
                   onValueChange={(value) => setConsecutiveHours(parseInt(value))}
                 >
                   <SelectTrigger>
@@ -2798,7 +2785,7 @@ const ManageSchedulesView = ({ onBack, onLogout }: { onBack: () => void; onLogou
                   </SelectTrigger>
                   <SelectContent>
                     {[1, 2, 3, 4, 5, 6].map((num) => (
-                      <SelectItem key={num} value={num.toString()}>
+                      <SelectItem key={num} value={num?.toString() || '1'}>
                         {num} Jam
                       </SelectItem>
                     ))}
@@ -2886,12 +2873,34 @@ interface LiveStudentRow {
   status: string;
   waktu_absen: string | null;
   keterangan: string | null;
+  keterangan_waktu?: string;
+  periode_absen?: string;
 }
 
 const LiveStudentAttendanceView = ({ onBack, onLogout }: { onBack: () => void; onLogout: () => void }) => {
   const [attendanceData, setAttendanceData] = useState<LiveStudentRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [currentTime, setCurrentTime] = useState(new Date());
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 15;
+
+  // Update waktu setiap detik
+  useEffect(() => {
+    const timer = setInterval(() => setCurrentTime(new Date()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  // Reset to first page when data changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [attendanceData]);
+
+  // Calculate pagination
+  const totalPages = Math.ceil(attendanceData.length / itemsPerPage);
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const endIndex = startIndex + itemsPerPage;
+  const currentData = attendanceData.slice(startIndex, endIndex);
 
   useEffect(() => {
     const fetchStudentData = async () => {
@@ -2935,6 +2944,215 @@ const LiveStudentAttendanceView = ({ onBack, onLogout }: { onBack: () => void; o
     return () => clearInterval(interval);
   }, [onLogout]);
 
+  // Fungsi untuk mengelompokkan data berdasarkan waktu
+  const groupAttendanceByTime = (data: LiveStudentRow[]) => {
+    const groups = {
+      pagi: data.filter(item => {
+        if (!item.waktu_absen) return false;
+        const hour = parseInt(item.waktu_absen.split(':')[0]);
+        return hour >= 6 && hour < 12;
+      }),
+      siang: data.filter(item => {
+        if (!item.waktu_absen) return false;
+        const hour = parseInt(item.waktu_absen.split(':')[0]);
+        return hour >= 12 && hour < 15;
+      }),
+      sore: data.filter(item => {
+        if (!item.waktu_absen) return false;
+        const hour = parseInt(item.waktu_absen.split(':')[0]);
+        return hour >= 15 && hour < 18;
+      }),
+      belumAbsen: data.filter(item => !item.waktu_absen)
+    };
+    return groups;
+  };
+
+  // Komponen statistik kehadiran
+  const AttendanceStats = ({ data }: { data: LiveStudentRow[] }) => {
+    const total = data.length;
+    const hadir = data.filter(item => item.status === 'Hadir').length;
+    const izin = data.filter(item => item.status === 'Izin').length;
+    const sakit = data.filter(item => item.status === 'Sakit').length;
+    const alpa = data.filter(item => item.status === 'Alpa').length;
+    const dispen = data.filter(item => item.status === 'Dispen').length;
+    
+    const presentase = total > 0 ? Math.round((hadir / total) * 100) : 0;
+    
+    return (
+      <div className="grid grid-cols-2 md:grid-cols-6 gap-4 mb-6">
+        <Card className="border-green-200 bg-green-50">
+          <CardContent className="p-4 text-center">
+            <p className="text-2xl font-bold text-green-600">{hadir}</p>
+            <p className="text-sm text-green-600">Hadir</p>
+            <p className="text-xs text-green-500">{total > 0 ? Math.round((hadir/total)*100) : 0}%</p>
+          </CardContent>
+        </Card>
+        <Card className="border-yellow-200 bg-yellow-50">
+          <CardContent className="p-4 text-center">
+            <p className="text-2xl font-bold text-yellow-600">{izin}</p>
+            <p className="text-sm text-yellow-600">Izin</p>
+            <p className="text-xs text-yellow-500">{total > 0 ? Math.round((izin/total)*100) : 0}%</p>
+          </CardContent>
+        </Card>
+        <Card className="border-blue-200 bg-blue-50">
+          <CardContent className="p-4 text-center">
+            <p className="text-2xl font-bold text-blue-600">{sakit}</p>
+            <p className="text-sm text-blue-600">Sakit</p>
+            <p className="text-xs text-blue-500">{total > 0 ? Math.round((sakit/total)*100) : 0}%</p>
+          </CardContent>
+        </Card>
+        <Card className="border-red-200 bg-red-50">
+          <CardContent className="p-4 text-center">
+            <p className="text-2xl font-bold text-red-600">{alpa}</p>
+            <p className="text-sm text-red-600">Alpa</p>
+            <p className="text-xs text-red-500">{total > 0 ? Math.round((alpa/total)*100) : 0}%</p>
+          </CardContent>
+        </Card>
+        <Card className="border-purple-200 bg-purple-50">
+          <CardContent className="p-4 text-center">
+            <p className="text-2xl font-bold text-purple-600">{dispen}</p>
+            <p className="text-sm text-purple-600">Dispen</p>
+            <p className="text-xs text-purple-500">{total > 0 ? Math.round((dispen/total)*100) : 0}%</p>
+          </CardContent>
+        </Card>
+        <Card className="border-gray-200 bg-gray-50">
+          <CardContent className="p-4 text-center">
+            <p className="text-2xl font-bold text-gray-600">{total}</p>
+            <p className="text-sm text-gray-600">Total</p>
+            <p className="text-xs text-gray-500">{presentase}% Hadir</p>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  };
+
+  // Komponen progress bar kehadiran
+  const AttendanceProgress = ({ data }: { data: LiveStudentRow[] }) => {
+    const total = data.length;
+    const hadir = data.filter(item => item.status === 'Hadir').length;
+    
+    const presentase = total > 0 ? Math.round((hadir / total) * 100) : 0;
+    
+    return (
+      <Card className="border-green-200 bg-green-50 mb-6">
+        <CardContent className="p-6">
+          <div className="text-center mb-4">
+            <p className="text-3xl font-bold text-green-600">{presentase}%</p>
+            <p className="text-sm text-green-600">Tingkat Kehadiran Siswa Hari Ini</p>
+          </div>
+          <div className="space-y-2">
+            <div className="flex justify-between text-sm">
+              <span>Hadir: {hadir} dari {total} siswa</span>
+              <span className="text-green-600 font-medium">{presentase}%</span>
+            </div>
+            <div className="w-full bg-gray-200 rounded-full h-3">
+              <div 
+                className="bg-green-600 h-3 rounded-full transition-all duration-500 ease-out" 
+                style={{width: `${presentase}%`}}
+              ></div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  };
+
+  // Komponen pagination
+  const Pagination = () => {
+    if (totalPages <= 1) return null;
+
+    const getPageNumbers = () => {
+      const pages = [];
+      const maxVisiblePages = 5;
+      
+      if (totalPages <= maxVisiblePages) {
+        for (let i = 1; i <= totalPages; i++) {
+          pages.push(i);
+        }
+      } else {
+        if (currentPage <= 3) {
+          for (let i = 1; i <= 4; i++) {
+            pages.push(i);
+          }
+          pages.push('...');
+          pages.push(totalPages);
+        } else if (currentPage >= totalPages - 2) {
+          pages.push(1);
+          pages.push('...');
+          for (let i = totalPages - 3; i <= totalPages; i++) {
+            pages.push(i);
+          }
+        } else {
+          pages.push(1);
+          pages.push('...');
+          for (let i = currentPage - 1; i <= currentPage + 1; i++) {
+            pages.push(i);
+          }
+          pages.push('...');
+          pages.push(totalPages);
+        }
+      }
+      
+      return pages;
+    };
+
+    return (
+      <div className="flex items-center justify-between mt-4">
+        <div className="text-sm text-gray-600">
+          Menampilkan {startIndex + 1} - {Math.min(endIndex, attendanceData.length)} dari {attendanceData.length} data
+        </div>
+        <div className="flex items-center space-x-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setCurrentPage(1)}
+            disabled={currentPage === 1}
+          >
+            First
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setCurrentPage(currentPage - 1)}
+            disabled={currentPage === 1}
+          >
+            Previous
+          </Button>
+          
+          {getPageNumbers().map((page, index) => (
+            <Button
+              key={index}
+              variant={page === currentPage ? "default" : "outline"}
+              size="sm"
+              onClick={() => typeof page === 'number' && setCurrentPage(page)}
+              disabled={page === '...'}
+              className={page === '...' ? 'cursor-default' : ''}
+            >
+              {page}
+            </Button>
+          ))}
+          
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setCurrentPage(currentPage + 1)}
+            disabled={currentPage === totalPages}
+          >
+            Next
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setCurrentPage(totalPages)}
+            disabled={currentPage === totalPages}
+          >
+            Last
+          </Button>
+        </div>
+      </div>
+    );
+  };
+
   const handleExport = () => {
     try {
       if (!attendanceData || attendanceData.length === 0) {
@@ -2945,13 +3163,15 @@ const LiveStudentAttendanceView = ({ onBack, onLogout }: { onBack: () => void; o
       console.log('📤 Exporting live student attendance data...');
 
       // Prepare data for Excel export
-  const exportData = attendanceData.map((student: LiveStudentRow, index: number) => ({
+      const exportData = attendanceData.map((student: LiveStudentRow, index: number) => ({
         'No': index + 1,
         'Nama Siswa': student.nama || '',
         'NIS': student.nis || '',
         'Kelas': student.nama_kelas || '',
         'Status': student.status || '',
         'Waktu Absen': student.waktu_absen || '',
+        'Ket. Waktu': student.keterangan_waktu || '',
+        'Periode': student.periode_absen || '',
         'Keterangan': student.keterangan || ''
       }));
 
@@ -2998,6 +3218,38 @@ const LiveStudentAttendanceView = ({ onBack, onLogout }: { onBack: () => void; o
         Kembali ke Menu Laporan
       </Button>
 
+      {/* Info Hari dan Waktu */}
+      <Card className="border-blue-200 bg-blue-50">
+        <CardContent className="p-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <Clock className="w-5 h-5 text-blue-600" />
+              <div>
+                <p className="font-semibold text-blue-800">
+                  {currentTime.toLocaleDateString('id-ID', { 
+                    weekday: 'long', 
+                    year: 'numeric', 
+                    month: 'long', 
+                    day: 'numeric' 
+                  })}
+                </p>
+                <p className="text-sm text-blue-600">
+                  Jam: {currentTime.toLocaleTimeString('id-ID', { 
+                    hour: '2-digit', 
+                    minute: '2-digit', 
+                    second: '2-digit' 
+                  })}
+                </p>
+              </div>
+            </div>
+            <div className="text-right">
+              <p className="text-sm text-blue-600">Data Real-time</p>
+              <p className="text-xs text-blue-500">Update setiap 30 detik</p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
       {error && (
         <Card className="border-red-200 bg-red-50">
           <CardContent className="p-4">
@@ -3009,6 +3261,12 @@ const LiveStudentAttendanceView = ({ onBack, onLogout }: { onBack: () => void; o
         </Card>
       )}
 
+      {/* Statistik Kehadiran */}
+      <AttendanceStats data={attendanceData} />
+
+      {/* Progress Bar Kehadiran */}
+      <AttendanceProgress data={attendanceData} />
+
       <Card>
         <CardHeader>
           <div className="flex justify-between items-center">
@@ -3018,57 +3276,91 @@ const LiveStudentAttendanceView = ({ onBack, onLogout }: { onBack: () => void; o
                 Pemantauan Siswa Langsung
               </CardTitle>
               <CardDescription>
-                Daftar absensi siswa secara realtime. Data diperbarui setiap 30 detik.
+                Daftar absensi siswa secara realtime untuk hari ini. Data diperbarui setiap 30 detik.
               </CardDescription>
             </div>
             <Button onClick={handleExport} size="sm" disabled={!attendanceData?.length}>
               <Download className="w-4 h-4 mr-2" />
-              Export ke Excel
+              Export ke CSV
             </Button>
           </div>
         </CardHeader>
         <CardContent>
           {attendanceData && attendanceData.length > 0 ? (
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="w-12">No</TableHead>
-                    <TableHead>Nama Siswa</TableHead>
-                    <TableHead>NIS</TableHead>
-                    <TableHead>Kelas</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Waktu Absen</TableHead>
-                    <TableHead>Keterangan</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {attendanceData.map((student: LiveStudentRow, index: number) => (
-                    <TableRow key={student.id || index}>
-                      <TableCell>{index + 1}</TableCell>
-                      <TableCell className="font-medium">{student.nama}</TableCell>
-                      <TableCell>{student.nis}</TableCell>
-                      <TableCell>{student.nama_kelas}</TableCell>
-                      <TableCell>
-                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                          student.status === 'Hadir'
-                            ? 'bg-green-100 text-green-800'
-                            : student.status === 'Sakit' || student.status === 'Izin'
-                            ? 'bg-yellow-100 text-yellow-800'
-                            : student.status === 'Dispen'
-                            ? 'bg-purple-100 text-purple-800'
-                            : 'bg-red-100 text-red-800'
-                        }`}>
-                          {student.status}
-                        </span>
-                      </TableCell>
-                      <TableCell>{student.waktu_absen}</TableCell>
-                      <TableCell>{student.keterangan}</TableCell>
+            <>
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="w-12">No</TableHead>
+                      <TableHead>Nama Siswa</TableHead>
+                      <TableHead>NIS</TableHead>
+                      <TableHead>Kelas</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>Waktu Absen</TableHead>
+                      <TableHead>Ket. Waktu</TableHead>
+                      <TableHead>Periode</TableHead>
+                      <TableHead>Keterangan</TableHead>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
+                  </TableHeader>
+                  <TableBody>
+                    {currentData.map((student: LiveStudentRow, index: number) => (
+                      <TableRow key={student.id || index}>
+                        <TableCell>{startIndex + index + 1}</TableCell>
+                        <TableCell className="font-medium">{student.nama}</TableCell>
+                        <TableCell>{student.nis}</TableCell>
+                        <TableCell>{student.nama_kelas}</TableCell>
+                        <TableCell>
+                          <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                            student.status === 'Hadir'
+                              ? 'bg-green-100 text-green-800'
+                              : student.status === 'Sakit' || student.status === 'Izin'
+                              ? 'bg-yellow-100 text-yellow-800'
+                              : student.status === 'Dispen'
+                              ? 'bg-purple-100 text-purple-800'
+                              : 'bg-red-100 text-red-800'
+                          }`}>
+                            {student.status}
+                          </span>
+                        </TableCell>
+                        <TableCell>
+                          {student.waktu_absen ? (
+                            <span className="font-mono text-sm bg-gray-100 px-2 py-1 rounded">
+                              {student.waktu_absen}
+                            </span>
+                          ) : (
+                            <span className="text-gray-400">-</span>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                            student.keterangan_waktu === 'Tepat Waktu' ? 'bg-green-100 text-green-800' :
+                            student.keterangan_waktu === 'Terlambat Ringan' ? 'bg-yellow-100 text-yellow-800' :
+                            student.keterangan_waktu === 'Terlambat' ? 'bg-orange-100 text-orange-800' :
+                            student.keterangan_waktu === 'Terlambat Berat' ? 'bg-red-100 text-red-800' :
+                            'bg-gray-100 text-gray-600'
+                          }`}>
+                            {student.keterangan_waktu || '-'}
+                          </span>
+                        </TableCell>
+                        <TableCell>
+                          <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                            student.periode_absen === 'Pagi' ? 'bg-blue-100 text-blue-800' :
+                            student.periode_absen === 'Siang' ? 'bg-yellow-100 text-yellow-800' :
+                            student.periode_absen === 'Sore' ? 'bg-orange-100 text-orange-800' :
+                            'bg-gray-100 text-gray-600'
+                          }`}>
+                            {student.periode_absen || '-'}
+                          </span>
+                        </TableCell>
+                        <TableCell>{student.keterangan || '-'}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+              <Pagination />
+            </>
           ) : (
             <div className="text-center py-12 text-gray-500">
               <Users className="w-12 h-12 mx-auto mb-4 opacity-50" />
@@ -3137,6 +3429,16 @@ const BandingAbsenReportView = ({ onBack, onLogout }: { onBack: () => void; onLo
     }, [fetchClasses]);
 
     const fetchReportData = async () => {
+      if (!dateRange.startDate || !dateRange.endDate) {
+        setError('Mohon pilih tanggal mulai dan tanggal selesai');
+        toast({
+          title: "Error",
+          description: "Mohon pilih tanggal mulai dan tanggal selesai",
+          variant: "destructive"
+        });
+        return;
+      }
+
       setLoading(true);
       setError(null);
       setReportData([]); // Reset data sebelum load ulang
@@ -3144,16 +3446,14 @@ const BandingAbsenReportView = ({ onBack, onLogout }: { onBack: () => void; onLo
       try {
         const params = new URLSearchParams();
         
-        if (dateRange.startDate && dateRange.endDate) {
-          params.append('startDate', dateRange.startDate);
-          params.append('endDate', dateRange.endDate);
-        }
+        params.append('startDate', dateRange.startDate);
+        params.append('endDate', dateRange.endDate);
         
         if (selectedKelas && selectedKelas !== "all") {
           params.append('kelas_id', selectedKelas);
         }
         
-        if (selectedStatus) {
+        if (selectedStatus && selectedStatus !== "all") {
           params.append('status', selectedStatus);
         }
 
@@ -3173,10 +3473,17 @@ const BandingAbsenReportView = ({ onBack, onLogout }: { onBack: () => void; onLo
           
           if (Array.isArray(data)) {
             setReportData(data);
-            toast({
-              title: "Berhasil",
-              description: `Data laporan berhasil dimuat (${data.length} record)`
-            });
+            if (data.length > 0) {
+              toast({
+                title: "Berhasil",
+                description: `Data laporan berhasil dimuat (${data.length} record)`
+              });
+            } else {
+              toast({
+                title: "Info",
+                description: "Tidak ada data banding absen ditemukan untuk periode yang dipilih"
+              });
+            }
           } else {
             setReportData([]);
             toast({
@@ -3341,7 +3648,7 @@ const BandingAbsenReportView = ({ onBack, onLogout }: { onBack: () => void; onLo
                 <SelectContent>
                   <SelectItem value="all">Semua Kelas</SelectItem>
                   {classes.map((kelas) => (
-                    <SelectItem key={kelas.id} value={kelas.id.toString()}>
+                    <SelectItem key={kelas.id} value={kelas.id?.toString() || ''}>
                       {kelas.nama_kelas}
                     </SelectItem>
                   ))}
@@ -3388,96 +3695,94 @@ const BandingAbsenReportView = ({ onBack, onLogout }: { onBack: () => void; onLo
           <Card>
             <CardContent className="p-12 text-center">
               <MessageCircle className="w-12 h-12 mx-auto mb-4 text-gray-400" />
-              <p className="text-gray-600">Belum ada data untuk ditampilkan</p>
+              <p className="text-gray-600">Belum ada data banding absen untuk ditampilkan</p>
               <p className="text-sm text-gray-500">Pilih filter dan klik "Tampilkan Laporan" untuk melihat data</p>
+              <p className="text-xs text-gray-400 mt-2">Pastikan ada pengajuan banding absen dalam periode yang dipilih</p>
             </CardContent>
           </Card>
         )}
 
         {reportData.length > 0 && (
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center justify-between">
-                <span>Hasil Laporan</span>
-                <Badge variant="secondary">
-                  {reportData.length} record ditemukan
-                </Badge>
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Tanggal Pengajuan</TableHead>
-                      <TableHead>Tanggal Absen</TableHead>
-                      <TableHead>Pengaju</TableHead>
-                      <TableHead>Kelas</TableHead>
-                      <TableHead>Mata Pelajaran</TableHead>
-                      <TableHead>Status Asli</TableHead>
-                      <TableHead>Status Diajukan</TableHead>
-                      <TableHead>Status Banding</TableHead>
-                      <TableHead>Jenis</TableHead>
-                      <TableHead>Jumlah Siswa</TableHead>
-                      <TableHead>Aksi</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {reportData.map((record) => (
-                      <TableRow key={record.id_banding}>
-                        <TableCell>{record.tanggal_pengajuan}</TableCell>
-                        <TableCell>{record.tanggal_absen}</TableCell>
-                        <TableCell className="font-medium">{record.nama_pengaju}</TableCell>
-                        <TableCell>{record.nama_kelas}</TableCell>
-                        <TableCell>{record.nama_mapel || '-'}</TableCell>
-                        <TableCell>
-                          <Badge variant="outline">
-                            {record.status_asli}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant="outline">
-                            {record.status_diajukan}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant={
-                            record.status_banding === 'pending' ? 'secondary' : 
-                            record.status_banding === 'disetujui' ? 'default' : 
-                            'destructive'
-                          }>
-                            {record.status_banding}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant="outline">
-                            {record.jenis_banding}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>{record.jumlah_siswa_banding}</TableCell>
-                        <TableCell>
-                          <Button variant="outline" size="sm">
-                            <Eye className="w-4 h-4 mr-2" />
-                            Detail
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-            </CardContent>
-          </Card>
+          <ExcelPreview
+            title="Laporan Banding Absen"
+            data={reportData.map((record) => ({
+              tanggal_pengajuan: record.tanggal_pengajuan,
+              tanggal_absen: record.tanggal_absen,
+              pengaju: record.nama_pengaju,
+              kelas: record.nama_kelas,
+              mata_pelajaran: record.nama_mapel || '-',
+              status_asli: record.status_asli,
+              status_diajukan: record.status_diajukan,
+              status_banding: record.status_banding,
+              jenis_banding: record.jenis_banding,
+              jumlah_siswa: record.jumlah_siswa_banding,
+              alasan: record.alasan_banding || '-',
+              catatan_guru: record.catatan_guru || '-',
+              tanggal_keputusan: record.tanggal_keputusan || '-'
+            }))}
+            columns={[
+              { key: 'tanggal_pengajuan', label: 'Tanggal Pengajuan', width: 120, align: 'center', format: 'date' },
+              { key: 'tanggal_absen', label: 'Tanggal Absen', width: 120, align: 'center', format: 'date' },
+              { key: 'pengaju', label: 'Pengaju', width: 150, align: 'left' },
+              { key: 'kelas', label: 'Kelas', width: 100, align: 'center' },
+              { key: 'mata_pelajaran', label: 'Mata Pelajaran', width: 150, align: 'left' },
+              { key: 'status_asli', label: 'Status Asli', width: 100, align: 'center' },
+              { key: 'status_diajukan', label: 'Status Diajukan', width: 120, align: 'center' },
+              { key: 'status_banding', label: 'Status Banding', width: 120, align: 'center' },
+              { key: 'jenis_banding', label: 'Jenis', width: 100, align: 'center' },
+              { key: 'jumlah_siswa', label: 'Jumlah Siswa', width: 100, align: 'center', format: 'number' },
+              { key: 'alasan', label: 'Alasan', width: 200, align: 'left' },
+              { key: 'catatan_guru', label: 'Catatan Guru', width: 200, align: 'left' },
+              { key: 'tanggal_keputusan', label: 'Tanggal Keputusan', width: 120, align: 'center', format: 'date' }
+            ]}
+            onExport={downloadExcel}
+            onExportSMKN13={() => downloadSMKN13Format('banding-absen')}
+          />
         )}
       </div>
     );
 };
 
 // Live Teacher Attendance View
+interface LiveTeacherRow {
+  id?: number;
+  nama: string;
+  nip: string;
+  nama_mapel: string;
+  nama_kelas: string;
+  jam_mulai: string;
+  jam_selesai: string;
+  status: string;
+  waktu_absen: string | null;
+  keterangan: string | null;
+  keterangan_waktu?: string;
+  periode_absen?: string;
+}
+
 const LiveTeacherAttendanceView = ({ onBack, onLogout }: { onBack: () => void; onLogout: () => void }) => {
-    const [attendanceData, setAttendanceData] = useState([]);
+    const [attendanceData, setAttendanceData] = useState<LiveTeacherRow[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
+    const [currentTime, setCurrentTime] = useState(new Date());
+    const [currentPage, setCurrentPage] = useState(1);
+    const itemsPerPage = 15;
+
+    // Update waktu setiap detik
+    useEffect(() => {
+      const timer = setInterval(() => setCurrentTime(new Date()), 1000);
+      return () => clearInterval(timer);
+    }, []);
+
+    // Reset to first page when data changes
+    useEffect(() => {
+      setCurrentPage(1);
+    }, [attendanceData]);
+
+    // Calculate pagination
+    const totalPages = Math.ceil(attendanceData.length / itemsPerPage);
+    const startIndex = (currentPage - 1) * itemsPerPage;
+    const endIndex = startIndex + itemsPerPage;
+    const currentData = attendanceData.slice(startIndex, endIndex);
 
     useEffect(() => {
       const fetchTeacherData = async () => {
@@ -3520,6 +3825,200 @@ const LiveTeacherAttendanceView = ({ onBack, onLogout }: { onBack: () => void; o
       return () => clearInterval(interval);
     }, [onLogout]);
 
+    // Komponen statistik kehadiran guru
+    const TeacherAttendanceStats = ({ data }: { data: LiveTeacherRow[] }) => {
+      const total = data.length;
+      const hadir = data.filter(item => item.status === 'Hadir').length;
+      const tidakHadir = data.filter(item => item.status === 'Tidak Hadir').length;
+      const sakit = data.filter(item => item.status === 'Sakit').length;
+      const izin = data.filter(item => item.status === 'Izin').length;
+      const dispen = data.filter(item => item.status === 'Dispen').length;
+      const belumAbsen = data.filter(item => item.status === 'Belum Absen').length;
+      
+      const presentase = total > 0 ? Math.round((hadir / total) * 100) : 0;
+      
+      return (
+        <div className="grid grid-cols-2 md:grid-cols-7 gap-4 mb-6">
+          <Card className="border-green-200 bg-green-50">
+            <CardContent className="p-4 text-center">
+              <p className="text-2xl font-bold text-green-600">{hadir}</p>
+              <p className="text-sm text-green-600">Hadir</p>
+              <p className="text-xs text-green-500">{total > 0 ? Math.round((hadir/total)*100) : 0}%</p>
+            </CardContent>
+          </Card>
+          <Card className="border-red-200 bg-red-50">
+            <CardContent className="p-4 text-center">
+              <p className="text-2xl font-bold text-red-600">{tidakHadir}</p>
+              <p className="text-sm text-red-600">Tidak Hadir</p>
+              <p className="text-xs text-red-500">{total > 0 ? Math.round((tidakHadir/total)*100) : 0}%</p>
+            </CardContent>
+          </Card>
+          <Card className="border-blue-200 bg-blue-50">
+            <CardContent className="p-4 text-center">
+              <p className="text-2xl font-bold text-blue-600">{sakit}</p>
+              <p className="text-sm text-blue-600">Sakit</p>
+              <p className="text-xs text-blue-500">{total > 0 ? Math.round((sakit/total)*100) : 0}%</p>
+            </CardContent>
+          </Card>
+          <Card className="border-yellow-200 bg-yellow-50">
+            <CardContent className="p-4 text-center">
+              <p className="text-2xl font-bold text-yellow-600">{izin}</p>
+              <p className="text-sm text-yellow-600">Izin</p>
+              <p className="text-xs text-yellow-500">{total > 0 ? Math.round((izin/total)*100) : 0}%</p>
+            </CardContent>
+          </Card>
+          <Card className="border-purple-200 bg-purple-50">
+            <CardContent className="p-4 text-center">
+              <p className="text-2xl font-bold text-purple-600">{dispen}</p>
+              <p className="text-sm text-purple-600">Dispen</p>
+              <p className="text-xs text-purple-500">{total > 0 ? Math.round((dispen/total)*100) : 0}%</p>
+            </CardContent>
+          </Card>
+          <Card className="border-gray-200 bg-gray-50">
+            <CardContent className="p-4 text-center">
+              <p className="text-2xl font-bold text-gray-600">{belumAbsen}</p>
+              <p className="text-sm text-gray-600">Belum Absen</p>
+              <p className="text-xs text-gray-500">{total > 0 ? Math.round((belumAbsen/total)*100) : 0}%</p>
+            </CardContent>
+          </Card>
+          <Card className="border-indigo-200 bg-indigo-50">
+            <CardContent className="p-4 text-center">
+              <p className="text-2xl font-bold text-indigo-600">{total}</p>
+              <p className="text-sm text-indigo-600">Total</p>
+              <p className="text-xs text-indigo-500">{presentase}% Hadir</p>
+            </CardContent>
+          </Card>
+        </div>
+      );
+    };
+
+    // Komponen progress bar kehadiran guru
+    const TeacherAttendanceProgress = ({ data }: { data: LiveTeacherRow[] }) => {
+      const total = data.length;
+      const hadir = data.filter(item => item.status === 'Hadir').length;
+      
+      const presentase = total > 0 ? Math.round((hadir / total) * 100) : 0;
+      
+      return (
+        <Card className="border-indigo-200 bg-indigo-50 mb-6">
+          <CardContent className="p-6">
+            <div className="text-center mb-4">
+              <p className="text-3xl font-bold text-indigo-600">{presentase}%</p>
+              <p className="text-sm text-indigo-600">Tingkat Kehadiran Guru Hari Ini</p>
+            </div>
+            <div className="space-y-2">
+              <div className="flex justify-between text-sm">
+                <span>Hadir: {hadir} dari {total} guru</span>
+                <span className="text-indigo-600 font-medium">{presentase}%</span>
+              </div>
+              <div className="w-full bg-gray-200 rounded-full h-3">
+                <div 
+                  className="bg-indigo-600 h-3 rounded-full transition-all duration-500 ease-out" 
+                  style={{width: `${presentase}%`}}
+                ></div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      );
+    };
+
+    // Komponen pagination untuk guru
+    const TeacherPagination = () => {
+      if (totalPages <= 1) return null;
+
+      const getPageNumbers = () => {
+        const pages = [];
+        const maxVisiblePages = 5;
+        
+        if (totalPages <= maxVisiblePages) {
+          for (let i = 1; i <= totalPages; i++) {
+            pages.push(i);
+          }
+        } else {
+          if (currentPage <= 3) {
+            for (let i = 1; i <= 4; i++) {
+              pages.push(i);
+            }
+            pages.push('...');
+            pages.push(totalPages);
+          } else if (currentPage >= totalPages - 2) {
+            pages.push(1);
+            pages.push('...');
+            for (let i = totalPages - 3; i <= totalPages; i++) {
+              pages.push(i);
+            }
+          } else {
+            pages.push(1);
+            pages.push('...');
+            for (let i = currentPage - 1; i <= currentPage + 1; i++) {
+              pages.push(i);
+            }
+            pages.push('...');
+            pages.push(totalPages);
+          }
+        }
+        
+        return pages;
+      };
+
+      return (
+        <div className="flex items-center justify-between mt-4">
+          <div className="text-sm text-gray-600">
+            Menampilkan {startIndex + 1} - {Math.min(endIndex, attendanceData.length)} dari {attendanceData.length} data
+          </div>
+          <div className="flex items-center space-x-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setCurrentPage(1)}
+              disabled={currentPage === 1}
+            >
+              First
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setCurrentPage(currentPage - 1)}
+              disabled={currentPage === 1}
+            >
+              Previous
+            </Button>
+            
+            {getPageNumbers().map((page, index) => (
+              <Button
+                key={index}
+                variant={page === currentPage ? "default" : "outline"}
+                size="sm"
+                onClick={() => typeof page === 'number' && setCurrentPage(page)}
+                disabled={page === '...'}
+                className={page === '...' ? 'cursor-default' : ''}
+              >
+                {page}
+              </Button>
+            ))}
+            
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setCurrentPage(currentPage + 1)}
+              disabled={currentPage === totalPages}
+            >
+              Next
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setCurrentPage(totalPages)}
+              disabled={currentPage === totalPages}
+            >
+              Last
+            </Button>
+          </div>
+        </div>
+      );
+    };
+
     const handleExport = () => {
       try {
         if (!attendanceData || attendanceData.length === 0) {
@@ -3542,6 +4041,8 @@ const LiveTeacherAttendanceView = ({ onBack, onLogout }: { onBack: () => void; o
           'Jadwal': `${teacher.jam_mulai || ''} - ${teacher.jam_selesai || ''}`,
           'Status': teacher.status || '',
           'Waktu Absen': teacher.waktu_absen || '',
+          'Ket. Waktu': teacher.keterangan_waktu || '',
+          'Periode': teacher.periode_absen || '',
           'Keterangan': teacher.keterangan || ''
         }));
 
@@ -3601,6 +4102,38 @@ const LiveTeacherAttendanceView = ({ onBack, onLogout }: { onBack: () => void; o
           Kembali ke Menu Laporan
         </Button>
 
+        {/* Info Hari dan Waktu */}
+        <Card className="border-indigo-200 bg-indigo-50">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-4">
+                <Clock className="w-5 h-5 text-indigo-600" />
+                <div>
+                  <p className="font-semibold text-indigo-800">
+                    {currentTime.toLocaleDateString('id-ID', { 
+                      weekday: 'long', 
+                      year: 'numeric', 
+                      month: 'long', 
+                      day: 'numeric' 
+                    })}
+                  </p>
+                  <p className="text-sm text-indigo-600">
+                    Jam: {currentTime.toLocaleTimeString('id-ID', { 
+                      hour: '2-digit', 
+                      minute: '2-digit', 
+                      second: '2-digit' 
+                    })}
+                  </p>
+                </div>
+              </div>
+              <div className="text-right">
+                <p className="text-sm text-indigo-600">Data Real-time</p>
+                <p className="text-xs text-indigo-500">Update setiap 30 detik</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
         {error && (
           <Card className="border-red-200 bg-red-50">
             <CardContent className="p-4">
@@ -3612,6 +4145,12 @@ const LiveTeacherAttendanceView = ({ onBack, onLogout }: { onBack: () => void; o
           </Card>
         )}
 
+        {/* Statistik Kehadiran Guru */}
+        <TeacherAttendanceStats data={attendanceData} />
+
+        {/* Progress Bar Kehadiran Guru */}
+        <TeacherAttendanceProgress data={attendanceData} />
+
         <Card>
           <CardHeader>
             <div className="flex justify-between items-center">
@@ -3621,7 +4160,7 @@ const LiveTeacherAttendanceView = ({ onBack, onLogout }: { onBack: () => void; o
                   Pemantauan Guru Langsung
                 </CardTitle>
                 <CardDescription>
-                  Daftar validasi kehadiran guru hari ini. Data diperbarui setiap 30 detik.
+                  Daftar validasi kehadiran guru secara realtime untuk hari ini. Data diperbarui setiap 30 detik.
                 </CardDescription>
               </div>
               <Button onClick={handleExport} size="sm" disabled={!attendanceData?.length}>
@@ -3632,52 +4171,86 @@ const LiveTeacherAttendanceView = ({ onBack, onLogout }: { onBack: () => void; o
           </CardHeader>
           <CardContent>
             {attendanceData && attendanceData.length > 0 ? (
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="w-12">No</TableHead>
-                      <TableHead>Nama Guru</TableHead>
-                      <TableHead>NIP</TableHead>
-                      <TableHead>Mata Pelajaran</TableHead>
-                      <TableHead>Kelas</TableHead>
-                      <TableHead>Jadwal</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>Waktu Absen</TableHead>
-                      <TableHead>Keterangan</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {attendanceData.map((teacher, index) => (
-                      <TableRow key={teacher.id || index}>
-                        <TableCell>{index + 1}</TableCell>
-                        <TableCell className="font-medium">{teacher.nama}</TableCell>
-                        <TableCell>{teacher.nip}</TableCell>
-                        <TableCell>{teacher.nama_mapel}</TableCell>
-                        <TableCell>{teacher.nama_kelas}</TableCell>
-                        <TableCell>{teacher.jam_mulai} - {teacher.jam_selesai}</TableCell>
-                        <TableCell>
-                          <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                            teacher.status === 'Hadir' 
-                              ? 'bg-green-100 text-green-800' 
-                              : teacher.status === 'Sakit' || teacher.status === 'Izin'
-                              ? 'bg-yellow-100 text-yellow-800'
-                              : teacher.status === 'Dispen'
-                              ? 'bg-purple-100 text-purple-800'
-                              : teacher.status === 'Belum Absen'
-                              ? 'bg-gray-100 text-gray-800'
-                              : 'bg-red-100 text-red-800'
-                          }`}>
-                            {teacher.status}
-                          </span>
-                        </TableCell>
-                        <TableCell>{teacher.waktu_absen || '-'}</TableCell>
-                        <TableCell>{teacher.keterangan || '-'}</TableCell>
+              <>
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="w-12">No</TableHead>
+                        <TableHead>Nama Guru</TableHead>
+                        <TableHead>NIP</TableHead>
+                        <TableHead>Mata Pelajaran</TableHead>
+                        <TableHead>Kelas</TableHead>
+                        <TableHead>Jadwal</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead>Waktu Absen</TableHead>
+                        <TableHead>Ket. Waktu</TableHead>
+                        <TableHead>Periode</TableHead>
+                        <TableHead>Keterangan</TableHead>
                       </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
+                    </TableHeader>
+                    <TableBody>
+                      {currentData.map((teacher, index) => (
+                        <TableRow key={teacher.id || index}>
+                          <TableCell>{startIndex + index + 1}</TableCell>
+                          <TableCell className="font-medium">{teacher.nama}</TableCell>
+                          <TableCell>{teacher.nip}</TableCell>
+                          <TableCell>{teacher.nama_mapel}</TableCell>
+                          <TableCell>{teacher.nama_kelas}</TableCell>
+                          <TableCell>{teacher.jam_mulai} - {teacher.jam_selesai}</TableCell>
+                          <TableCell>
+                            <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                              teacher.status === 'Hadir' 
+                                ? 'bg-green-100 text-green-800' 
+                                : teacher.status === 'Sakit' || teacher.status === 'Izin'
+                                ? 'bg-yellow-100 text-yellow-800'
+                                : teacher.status === 'Dispen'
+                                ? 'bg-purple-100 text-purple-800'
+                                : teacher.status === 'Belum Absen'
+                                ? 'bg-gray-100 text-gray-800'
+                                : 'bg-red-100 text-red-800'
+                            }`}>
+                              {teacher.status}
+                            </span>
+                          </TableCell>
+                          <TableCell>
+                            {teacher.waktu_absen ? (
+                              <span className="font-mono text-sm bg-gray-100 px-2 py-1 rounded">
+                                {teacher.waktu_absen}
+                              </span>
+                            ) : (
+                              <span className="text-gray-400">-</span>
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                              teacher.keterangan_waktu === 'Tepat Waktu' ? 'bg-green-100 text-green-800' :
+                              teacher.keterangan_waktu === 'Terlambat Ringan' ? 'bg-yellow-100 text-yellow-800' :
+                              teacher.keterangan_waktu === 'Terlambat' ? 'bg-orange-100 text-orange-800' :
+                              teacher.keterangan_waktu === 'Terlambat Berat' ? 'bg-red-100 text-red-800' :
+                              'bg-gray-100 text-gray-600'
+                            }`}>
+                              {teacher.keterangan_waktu || '-'}
+                            </span>
+                          </TableCell>
+                          <TableCell>
+                            <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                              teacher.periode_absen === 'Pagi' ? 'bg-blue-100 text-blue-800' :
+                              teacher.periode_absen === 'Siang' ? 'bg-yellow-100 text-yellow-800' :
+                              teacher.periode_absen === 'Sore' ? 'bg-orange-100 text-orange-800' :
+                              'bg-gray-100 text-gray-600'
+                            }`}>
+                              {teacher.periode_absen || '-'}
+                            </span>
+                          </TableCell>
+                          <TableCell>{teacher.keterangan || '-'}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+                <TeacherPagination />
+              </>
             ) : (
               <div className="text-center py-12 text-gray-500">
                 <GraduationCap className="w-12 h-12 mx-auto mb-4 opacity-50" />
@@ -3901,65 +4474,107 @@ const AnalyticsDashboardView = ({ onBack, onLogout }: { onBack: () => void; onLo
             </CardContent>
           </Card>
 
-          {/* Notifications */}
+          {/* Quick Actions & System Overview */}
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center">
-                <Bell className="w-5 h-5 mr-2" />
-                Notifikasi
+                <Settings className="w-5 h-5 mr-2" />
+                Aksi Cepat & Overview Sistem
               </CardTitle>
-              <CardDescription>Permintaan & informasi penting</CardDescription>
+              <CardDescription>Kelola data & pantau aktivitas</CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="space-y-3 max-h-[300px] overflow-y-auto">
-                {notifications && notifications.length > 0 ? (
-                  notifications.map(notif => (
-                    <div key={notif.id} className="text-sm p-3 bg-gray-50 rounded-lg border">
-                      <div className="flex justify-between items-start">
-                        <div>
-                          <p className="font-medium text-gray-900">{notif.message}</p>
-                                                      <p className="text-xs text-gray-500 mt-1">
-                              {formatDateTime24(notif.timestamp, true)}
-                            </p>
-                        </div>
-                        <span className={`text-xs font-semibold px-2 py-1 rounded-full ${
-                          notif.status === 'pending' ? 'bg-yellow-200 text-yellow-800' : 
-                          notif.status === 'disetujui' ? 'bg-green-200 text-green-800' : 
-                          'bg-red-200 text-red-800'
-                        }`}>
-                          {notif.status}
-                        </span>
-                      </div>
-                      {notif.type === 'permission_request' && notif.status === 'pending' && (
-                        <div className="mt-2 flex gap-2 justify-end">
-                          <Button 
-                            size="sm" 
-                            variant="outline" 
-                            className="h-7" 
-                            onClick={() => handlePermissionRequest(notif.id, 'disetujui')}
-                            disabled={processingNotif === notif.id}
-                          >
-                            Setujui
-                          </Button>
-                          <Button 
-                            size="sm" 
-                            variant="destructive" 
-                            className="h-7" 
-                            onClick={() => handlePermissionRequest(notif.id, 'ditolak')}
-                            disabled={processingNotif === notif.id}
-                          >
-                            Tolak
-                          </Button>
-                        </div>
-                      )}
-                    </div>
-                  ))
-                ) : (
-                  <div className="text-center py-8 text-gray-500">
-                    <Bell className="w-12 h-12 mx-auto mb-4 opacity-50" />
-                    <p>Tidak ada notifikasi baru</p>
+              <div className="space-y-4">
+                {/* System Overview */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="text-center p-3 bg-green-50 rounded-lg border border-green-200">
+                    <div className="w-3 h-3 bg-green-500 rounded-full mx-auto mb-2"></div>
+                    <p className="text-xs font-medium text-green-800">Sistem Aktif</p>
+                    <p className="text-xs text-green-600">Semua layanan berjalan</p>
                   </div>
-                )}
+                  <div className="text-center p-3 bg-blue-50 rounded-lg border border-blue-200">
+                    <div className="w-3 h-3 bg-blue-500 rounded-full mx-auto mb-2"></div>
+                    <p className="text-xs font-medium text-blue-800">Database</p>
+                    <p className="text-xs text-blue-600">Terhubung & stabil</p>
+                  </div>
+                </div>
+
+                {/* Quick Actions */}
+                <div className="space-y-2">
+                  <Button 
+                    size="sm" 
+                    variant="outline" 
+                    className="w-full justify-start h-9"
+                    onClick={async () => {
+                      try {
+                        // Tampilkan loading
+                        toast({ 
+                          title: "Membuat Backup...", 
+                          description: "Sedang memproses database, mohon tunggu..." 
+                        });
+                        
+                        const response = await fetch('/api/admin/backup', {
+                          credentials: 'include'
+                        });
+                        
+                        if (response.ok) {
+                          // Langsung download file SQL
+                          const blob = await response.blob();
+                          const url = window.URL.createObjectURL(blob);
+                          const a = document.createElement('a');
+                          a.href = url;
+                          a.download = `backup_absenta_${new Date().toISOString().split('T')[0]}.sql`;
+                          document.body.appendChild(a);
+                          a.click();
+                          window.URL.revokeObjectURL(url);
+                          document.body.removeChild(a);
+                          
+                          toast({ 
+                            title: "Backup Berhasil!", 
+                            description: "File SQL database berhasil didownload" 
+                          });
+                        } else {
+                          throw new Error('Gagal membuat backup');
+                        }
+                      } catch (error) {
+                        console.error('Backup error:', error);
+                        toast({ 
+                          title: "Error", 
+                          description: "Gagal membuat backup database", 
+                          variant: "destructive" 
+                        });
+                      }
+                    }}
+                  >
+                    <FileText className="w-4 h-4 mr-2" />
+                    Backup Database
+                  </Button>
+                  <Button 
+                    size="sm" 
+                    variant="outline" 
+                    className="w-full justify-start h-9"
+                    onClick={() => window.open('/api/admin/logs', '_blank')}
+                  >
+                    <ClipboardList className="w-4 h-4 mr-2" />
+                    Lihat Log Sistem
+                  </Button>
+                </div>
+
+                {/* System Info */}
+                <div className="pt-2 border-t">
+                  <div className="flex justify-between items-center text-xs text-gray-600">
+                    <span>Tanggal Hari Ini</span>
+                    <span className="font-mono">{new Date().toLocaleDateString('id-ID')}</span>
+                  </div>
+                  <div className="flex justify-between items-center text-xs text-gray-600">
+                    <span>Waktu Server</span>
+                    <span className="font-mono">{new Date().toLocaleTimeString('id-ID')}</span>
+                  </div>
+                  <div className="flex justify-between items-center text-xs text-gray-600">
+                    <span>Total Siswa</span>
+                    <span className="font-mono">{analyticsData?.totalStudents || 0}</span>
+                  </div>
+                </div>
               </div>
             </CardContent>
           </Card>
@@ -4243,6 +4858,16 @@ const RiwayatIzinReportView = ({ onBack, onLogout }: { onBack: () => void; onLog
   }, [onLogout]);
 
   const fetchReportData = async () => {
+    if (!dateRange || !dateRange.startDate || !dateRange.endDate) {
+      setError('Mohon pilih tanggal mulai dan tanggal selesai');
+      toast({
+        title: "Error",
+        description: "Mohon pilih tanggal mulai dan tanggal selesai",
+        variant: "destructive"
+      });
+      return;
+    }
+
     setLoading(true);
     setError(null);
     
@@ -4251,17 +4876,17 @@ const RiwayatIzinReportView = ({ onBack, onLogout }: { onBack: () => void; onLog
       
       const params = new URLSearchParams();
       
-      if (dateRange.startDate) {
+      if (dateRange && dateRange.startDate) {
         params.append('startDate', dateRange.startDate);
       }
       
-      if (dateRange.endDate) {
+      if (dateRange && dateRange.endDate) {
         params.append('endDate', dateRange.endDate);
       }
       
       if (selectedKelas && selectedKelas !== "all") {
-          params.append('kelas_id', selectedKelas);
-        }
+        params.append('kelas_id', selectedKelas);
+      }
       
       if (selectedJenisIzin && selectedJenisIzin !== 'all-jenis') {
         params.append('jenis_izin', selectedJenisIzin);
@@ -4314,20 +4939,30 @@ const RiwayatIzinReportView = ({ onBack, onLogout }: { onBack: () => void; onLog
   };
 
   const downloadCSV = async () => {
+    if (!dateRange || !dateRange.startDate || !dateRange.endDate) {
+      setError('Mohon pilih tanggal mulai dan tanggal selesai');
+      toast({
+        title: "Error",
+        description: "Mohon pilih tanggal mulai dan tanggal selesai",
+        variant: "destructive"
+      });
+      return;
+    }
+
     try {
       const params = new URLSearchParams();
       
-      if (dateRange.startDate) {
+      if (dateRange && dateRange.startDate) {
         params.append('startDate', dateRange.startDate);
       }
       
-      if (dateRange.endDate) {
+      if (dateRange && dateRange.endDate) {
         params.append('endDate', dateRange.endDate);
       }
       
       if (selectedKelas && selectedKelas !== "all") {
-          params.append('kelas_id', selectedKelas);
-        }
+        params.append('kelas_id', selectedKelas);
+      }
       
       if (selectedJenisIzin && selectedJenisIzin !== 'all-jenis') {
         params.append('jenis_izin', selectedJenisIzin);
@@ -4381,6 +5016,73 @@ const RiwayatIzinReportView = ({ onBack, onLogout }: { onBack: () => void; onLog
         description: 'Gagal download CSV: ' + error.message,
         variant: "destructive"
       });
+    }
+  };
+
+  const downloadSMKN13Format = async (exportType) => {
+    if (reportData.length === 0) {
+      setError('Tidak ada data untuk diunduh');
+      return;
+    }
+
+    if (!dateRange || !dateRange.startDate || !dateRange.endDate) {
+      setError('Mohon pilih tanggal mulai dan tanggal selesai');
+      toast({
+        title: "Error",
+        description: "Mohon pilih tanggal mulai dan tanggal selesai",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    try {
+      const params = new URLSearchParams();
+      
+      if (dateRange && dateRange.startDate) {
+        params.append('startDate', dateRange.startDate);
+      }
+      
+      if (dateRange && dateRange.endDate) {
+        params.append('endDate', dateRange.endDate);
+      }
+      
+      if (selectedKelas && selectedKelas !== "all") {
+        params.append('kelas_id', selectedKelas);
+      }
+      
+      if (selectedJenisIzin && selectedJenisIzin !== 'all-jenis') {
+        params.append('jenis_izin', selectedJenisIzin);
+      }
+      
+      if (selectedStatus && selectedStatus !== 'all-status') {
+        params.append('status', selectedStatus);
+      }
+
+      const url = `http://localhost:3001/api/export/${exportType}?${params.toString()}`;
+      const response = await fetch(url, { 
+        credentials: 'include',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token') || ''}`
+        }
+      });
+      
+      if (!response.ok) {
+        throw new Error('Gagal mengunduh file format SMKN 13');
+      }
+      
+      const blob = await response.blob();
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = `${exportType}-${dateRange.startDate || 'all'}-${dateRange.endDate || 'all'}.xlsx`;
+      link.click();
+      
+      toast({
+        title: "Berhasil!",
+        description: "File format SMKN 13 berhasil diunduh"
+      });
+    } catch (err) {
+      console.error('Error downloading SMKN 13 format:', err);
+      setError('Gagal mengunduh file format SMKN 13');
     }
   };
 
@@ -4480,7 +5182,7 @@ const RiwayatIzinReportView = ({ onBack, onLogout }: { onBack: () => void; onLog
                 <SelectContent>
                   <SelectItem value="all">Semua Kelas</SelectItem>
                   {classes.map((kelas) => (
-                    <SelectItem key={kelas.id_kelas} value={kelas.id_kelas.toString()}>
+                    <SelectItem key={kelas.id_kelas || kelas.id} value={(kelas.id_kelas || kelas.id)?.toString() || ''}>
                       {kelas.nama_kelas}
                     </SelectItem>
                   ))}
@@ -4554,73 +5256,39 @@ const RiwayatIzinReportView = ({ onBack, onLogout }: { onBack: () => void; onLog
       )}
 
       {reportData.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Hasil Laporan ({reportData.length} pengajuan izin)</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Tanggal</TableHead>
-                    <TableHead>Siswa</TableHead>
-                    <TableHead>Kelas</TableHead>
-                    <TableHead>Jenis Izin</TableHead>
-                    <TableHead>Alasan</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Guru/Mapel</TableHead>
-                    <TableHead>Keterangan</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {reportData.map((item, index) => (
-                    <TableRow key={index} className="hover:bg-gray-50">
-                      <TableCell>
-                        <div className="text-sm">
-                          <div className="font-medium">{item.tanggal_pengajuan}</div>
-                          <div className="text-gray-500">Izin: {item.tanggal_izin}</div>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <div className="text-sm">
-                          <div className="font-medium">{item.nama_siswa}</div>
-                          <div className="text-gray-500">{item.nis}</div>
-                        </div>
-                      </TableCell>
-                      <TableCell className="text-sm">{item.nama_kelas}</TableCell>
-                      <TableCell>
-                        {getJenisIzinBadge(item.jenis_izin)}
-                      </TableCell>
-                      <TableCell className="text-sm max-w-xs">
-                        <div className="truncate" title={item.alasan}>
-                          {item.alasan}
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        {getStatusBadge(item.status)}
-                      </TableCell>
-                      <TableCell>
-                        <div className="text-sm">
-                          <div className="font-medium">{item.nama_guru}</div>
-                          <div className="text-gray-500">{item.nama_mapel}</div>
-                        </div>
-                      </TableCell>
-                      <TableCell className="text-sm max-w-xs">
-                        <div className="truncate" title={item.keterangan_guru}>
-                          {item.keterangan_guru}
-                        </div>
-                        {item.tanggal_respon !== '-' && (
-                          <div className="text-xs text-gray-500 mt-1">{item.tanggal_respon}</div>
-                        )}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          </CardContent>
-        </Card>
+        <ExcelPreview
+          title="Riwayat Pengajuan Izin"
+          data={reportData.map((item, index) => ({
+            tanggal_pengajuan: item.tanggal_pengajuan,
+            tanggal_izin: item.tanggal_izin,
+            nama_siswa: item.nama_siswa,
+            nis: item.nis,
+            kelas: item.nama_kelas,
+            jenis_izin: item.jenis_izin,
+            alasan: item.alasan,
+            status: item.status,
+            nama_guru: item.nama_guru,
+            mata_pelajaran: item.nama_mapel,
+            keterangan_guru: item.keterangan_guru || '-',
+            tanggal_respon: item.tanggal_respon || '-'
+          }))}
+          columns={[
+            { key: 'tanggal_pengajuan', label: 'Tanggal Pengajuan', width: 120, align: 'center', format: 'date' },
+            { key: 'tanggal_izin', label: 'Tanggal Izin', width: 120, align: 'center', format: 'date' },
+            { key: 'nama_siswa', label: 'Nama Siswa', width: 150, align: 'left' },
+            { key: 'nis', label: 'NIS', width: 100, align: 'left' },
+            { key: 'kelas', label: 'Kelas', width: 100, align: 'center' },
+            { key: 'jenis_izin', label: 'Jenis Izin', width: 120, align: 'center' },
+            { key: 'alasan', label: 'Alasan', width: 200, align: 'left' },
+            { key: 'status', label: 'Status', width: 100, align: 'center' },
+            { key: 'nama_guru', label: 'Guru', width: 150, align: 'left' },
+            { key: 'mata_pelajaran', label: 'Mata Pelajaran', width: 150, align: 'left' },
+            { key: 'keterangan_guru', label: 'Keterangan Guru', width: 200, align: 'left' },
+            { key: 'tanggal_respon', label: 'Tanggal Respon', width: 120, align: 'center', format: 'date' }
+          ]}
+          onExport={downloadCSV}
+          onExportSMKN13={() => downloadSMKN13Format('pengajuan-izin')}
+        />
       )}
 
       {!loading && reportData.length === 0 && !error && (
@@ -4756,6 +5424,50 @@ const StudentAttendanceSummaryView = ({ onBack, onLogout }: { onBack: () => void
     }
   };
 
+  const downloadSMKN13Format = async (exportType) => {
+    if (reportData.length === 0) {
+      setError('Tidak ada data untuk diunduh');
+      return;
+    }
+
+    try {
+      const params = new URLSearchParams({
+        startDate: dateRange.startDate,
+        endDate: dateRange.endDate
+      });
+      
+      if (selectedKelas && selectedKelas !== 'all') {
+        params.append('kelas_id', selectedKelas);
+      }
+
+      const url = `http://localhost:3001/api/export/${exportType}?${params.toString()}`;
+      const response = await fetch(url, { 
+        credentials: 'include',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token') || ''}`
+        }
+      });
+      
+      if (!response.ok) {
+        throw new Error('Gagal mengunduh file format SMKN 13');
+      }
+      
+      const blob = await response.blob();
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = `${exportType}-${dateRange.startDate}-${dateRange.endDate}.xlsx`;
+      link.click();
+      
+      toast({
+        title: "Berhasil!",
+        description: "File format SMKN 13 berhasil diunduh"
+      });
+    } catch (err) {
+      console.error('Error downloading SMKN 13 format:', err);
+      setError('Gagal mengunduh file format SMKN 13');
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -4820,7 +5532,7 @@ const StudentAttendanceSummaryView = ({ onBack, onLogout }: { onBack: () => void
               <SelectContent>
                 <SelectItem value="all">Semua Kelas</SelectItem>
                 {classes.map((kelas) => (
-                  <SelectItem key={kelas.id} value={kelas.id.toString()}>
+                  <SelectItem key={kelas.id} value={kelas.id?.toString() || ''}>
                     {kelas.nama_kelas}
                   </SelectItem>
                 ))}
@@ -4860,52 +5572,35 @@ const StudentAttendanceSummaryView = ({ onBack, onLogout }: { onBack: () => void
       )}
 
       {reportData.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center justify-between">
-              <span>Hasil Laporan</span>
-              <Badge variant="secondary">
-                {reportData.length} record ditemukan
-              </Badge>
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>No</TableHead>
-                    <TableHead>Nama</TableHead>
-                    <TableHead>NIS</TableHead>
-                    <TableHead>Kelas</TableHead>
-                    <TableHead className="text-center">H</TableHead>
-                    <TableHead className="text-center">I</TableHead>
-                    <TableHead className="text-center">S</TableHead>
-                    <TableHead className="text-center">A</TableHead>
-                    <TableHead className="text-center">D</TableHead>
-                    <TableHead className="text-center">Presentase</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {reportData.map((record, index) => (
-                    <TableRow key={index}>
-                      <TableCell>{index + 1}</TableCell>
-                      <TableCell className="font-medium">{record.nama}</TableCell>
-                      <TableCell>{record.nis || '-'}</TableCell>
-                      <TableCell>{record.nama_kelas || '-'}</TableCell>
-                      <TableCell className="text-center bg-emerald-50 text-emerald-700 font-semibold">{record.H || 0}</TableCell>
-                      <TableCell className="text-center bg-blue-50 text-blue-700 font-semibold">{record.I || 0}</TableCell>
-                      <TableCell className="text-center bg-red-50 text-red-700 font-semibold">{record.S || 0}</TableCell>
-                      <TableCell className="text-center bg-yellow-50 text-yellow-700 font-semibold">{record.A || 0}</TableCell>
-                      <TableCell className="text-center bg-purple-50 text-purple-700 font-semibold">{record.D || 0}</TableCell>
-                      <TableCell className="text-center">{Number(record.presentase || 0).toFixed(2)}%</TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          </CardContent>
-        </Card>
+        <ExcelPreview
+          title="Ringkasan Kehadiran Siswa"
+          data={reportData.map((record, index) => ({
+            no: index + 1,
+            nama: record.nama,
+            nis: record.nis || '-',
+            kelas: record.nama_kelas || '-',
+            hadir: record.H || 0,
+            izin: record.I || 0,
+            sakit: record.S || 0,
+            alpa: record.A || 0,
+            dispen: record.D || 0,
+            presentase: Number(record.presentase || 0).toFixed(2) + '%'
+          }))}
+          columns={[
+            { key: 'no', label: 'No', width: 60, align: 'center', format: 'number' },
+            { key: 'nama', label: 'Nama Siswa', width: 200, align: 'left' },
+            { key: 'nis', label: 'NIS', width: 120, align: 'left' },
+            { key: 'kelas', label: 'Kelas', width: 100, align: 'center' },
+            { key: 'hadir', label: 'H', width: 80, align: 'center', format: 'number' },
+            { key: 'izin', label: 'I', width: 80, align: 'center', format: 'number' },
+            { key: 'sakit', label: 'S', width: 80, align: 'center', format: 'number' },
+            { key: 'alpa', label: 'A', width: 80, align: 'center', format: 'number' },
+            { key: 'dispen', label: 'D', width: 80, align: 'center', format: 'number' },
+            { key: 'presentase', label: 'Presentase', width: 100, align: 'center', format: 'percentage' }
+          ]}
+          onExport={downloadExcel}
+          onExportSMKN13={() => downloadSMKN13Format('student-summary')}
+        />
       )}
     </div>
   );
@@ -4998,6 +5693,46 @@ const TeacherAttendanceSummaryView = ({ onBack, onLogout }: { onBack: () => void
     } catch (err) {
       console.error('Error downloading excel:', err);
       setError('Gagal mengunduh file Excel');
+    }
+  };
+
+  const downloadSMKN13Format = async (exportType) => {
+    if (reportData.length === 0) {
+      setError('Tidak ada data untuk diunduh');
+      return;
+    }
+
+    try {
+      const params = new URLSearchParams({
+        startDate: dateRange.startDate,
+        endDate: dateRange.endDate
+      });
+
+      const url = `http://localhost:3001/api/export/${exportType}?${params.toString()}`;
+      const response = await fetch(url, { 
+        credentials: 'include',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token') || ''}`
+        }
+      });
+      
+      if (!response.ok) {
+        throw new Error('Gagal mengunduh file format SMKN 13');
+      }
+      
+      const blob = await response.blob();
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = `${exportType}-${dateRange.startDate}-${dateRange.endDate}.xlsx`;
+      link.click();
+      
+      toast({
+        title: "Berhasil!",
+        description: "File format SMKN 13 berhasil diunduh"
+      });
+    } catch (err) {
+      console.error('Error downloading SMKN 13 format:', err);
+      setError('Gagal mengunduh file format SMKN 13');
     }
   };
 
@@ -5099,44 +5834,42 @@ const TeacherAttendanceSummaryView = ({ onBack, onLogout }: { onBack: () => void
         </Alert>
       )}
 
+      {/* Report Header with Kop */}
       {reportData.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Hasil Laporan ({reportData.length} record)</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>No</TableHead>
-                    <TableHead>Nama</TableHead>
-                    <TableHead>NIP</TableHead>
-                    <TableHead className="text-center">H</TableHead>
-                    <TableHead className="text-center">I</TableHead>
-                    <TableHead className="text-center">S</TableHead>
-                    <TableHead className="text-center">A</TableHead>
-                    <TableHead className="text-center">Presentase</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {reportData.map((item, index) => (
-                    <TableRow key={index}>
-                      <TableCell>{index + 1}</TableCell>
-                      <TableCell className="font-medium">{item.nama}</TableCell>
-                      <TableCell>{item.nip || '-'}</TableCell>
-                      <TableCell className="text-center bg-emerald-50 text-emerald-700 font-semibold">{item.H || 0}</TableCell>
-                      <TableCell className="text-center bg-blue-50 text-blue-700 font-semibold">{item.I || 0}</TableCell>
-                      <TableCell className="text-center bg-red-50 text-red-700 font-semibold">{item.S || 0}</TableCell>
-                      <TableCell className="text-center bg-yellow-50 text-yellow-700 font-semibold">{item.A || 0}</TableCell>
-                      <TableCell className="text-center">{Number(item.presentase || 0).toFixed(2)}%</TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          </CardContent>
-        </Card>
+        <ReportHeader
+          title="RINGKASAN KEHADIRAN GURU"
+          subtitle="Laporan Kehadiran Guru Berdasarkan Status H/I/S/A"
+          reportPeriod={`${new Date(dateRange.startDate).toLocaleDateString('id-ID')} - ${new Date(dateRange.endDate).toLocaleDateString('id-ID')}`}
+        />
+      )}
+
+      {reportData.length > 0 && (
+        <ExcelPreview
+          title="Ringkasan Kehadiran Guru"
+          data={reportData.map((item, index) => ({
+            no: index + 1,
+            nama: item.nama,
+            nip: item.nip || '-',
+            hadir: item.H || 0,
+            izin: item.I || 0,
+            sakit: item.S || 0,
+            alpa: item.A || 0,
+            presentase: Number(item.presentase || 0).toFixed(2) + '%'
+          }))}
+          columns={[
+            { key: 'no', label: 'No', width: 60, align: 'center', format: 'number' },
+            { key: 'nama', label: 'Nama Guru', width: 200, align: 'left' },
+            { key: 'nip', label: 'NIP', width: 150, align: 'left' },
+            { key: 'hadir', label: 'H', width: 80, align: 'center', format: 'number' },
+            { key: 'izin', label: 'I', width: 80, align: 'center', format: 'number' },
+            { key: 'sakit', label: 'S', width: 80, align: 'center', format: 'number' },
+            { key: 'alpa', label: 'A', width: 80, align: 'center', format: 'number' },
+            { key: 'presentase', label: 'Presentase', width: 100, align: 'center', format: 'percentage' }
+          ]}
+          onExport={downloadExcel}
+          onExportSMKN13={() => downloadSMKN13Format('teacher-summary')}
+          showLetterhead={false}
+        />
       )}
 
       {!loading && reportData.length === 0 && !error && (
@@ -5184,6 +5917,18 @@ const ReportsView = ({ onBack, onLogout }: { onBack: () => void; onLogout: () =>
     return <AnalyticsDashboardView onBack={() => setReportView(null)} onLogout={onLogout} />;
   }
 
+  if (reportView === 'presensi-siswa') {
+    return <PresensiSiswaView onBack={() => setReportView(null)} onLogout={onLogout} />;
+  }
+
+  if (reportView === 'rekap-ketidakhadiran') {
+    return <RekapKetidakhadiranView onBack={() => setReportView(null)} onLogout={onLogout} />;
+  }
+
+  if (reportView === 'rekap-ketidakhadiran-guru') {
+    return <RekapKetidakhadiranGuruView onBack={() => setReportView(null)} onLogout={onLogout} />;
+  }
+
   const reportItems = [
     {
       id: 'teacher-attendance-summary',
@@ -5211,6 +5956,27 @@ const ReportsView = ({ onBack, onLogout }: { onBack: () => void; onLogout: () =>
       title: 'Riwayat Pengajuan Izin', 
       description: 'Laporan history pengajuan izin siswa',
       icon: ClipboardList,
+      gradient: 'from-orange-500 to-orange-700'
+    },
+    {
+      id: 'presensi-siswa',
+      title: 'Presensi Siswa', 
+      description: 'Format presensi siswa SMKN 13',
+      icon: FileText,
+      gradient: 'from-slate-500 to-slate-700'
+    },
+    {
+      id: 'rekap-ketidakhadiran',
+      title: 'Rekap Ketidakhadiran', 
+      description: 'Rekap ketidakhadiran tahunan/bulanan',
+      icon: BarChart3,
+      gradient: 'from-emerald-500 to-emerald-700'
+    },
+    {
+      id: 'rekap-ketidakhadiran-guru',
+      title: 'Rekap Ketidakhadiran Guru', 
+      description: 'Format rekap ketidakhadiran guru SMKN 13',
+      icon: Users,
       gradient: 'from-orange-500 to-orange-700'
     },
     {
@@ -5319,6 +6085,14 @@ export const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
         return <ManageClassesView onBack={handleBack} onLogout={onLogout} />;
       case 'add-schedule':
         return <ManageSchedulesView onBack={handleBack} onLogout={onLogout} />;
+      case 'backup-management':
+        return <ErrorBoundary><BackupManagementView /></ErrorBoundary>;
+      case 'load-balancer':
+        return <ErrorBoundary><LoadBalancerView /></ErrorBoundary>;
+      case 'monitoring':
+        return <ErrorBoundary><MonitoringDashboard /></ErrorBoundary>;
+      case 'disaster-recovery':
+        return <ErrorBoundary><SimpleRestoreView onBack={handleBack} onLogout={onLogout} /></ErrorBoundary>;
       case 'reports':
         return <ErrorBoundary><ReportsView onBack={handleBack} onLogout={onLogout} /></ErrorBoundary>;
       default:

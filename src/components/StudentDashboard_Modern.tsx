@@ -10,7 +10,8 @@ import { toast } from '@/hooks/use-toast';
 import { FontSizeControl } from '@/components/ui/font-size-control';
 import { 
   LogOut, Clock, User, BookOpen, CheckCircle2, XCircle, Calendar, Save,
-  GraduationCap, Settings, Menu, X, Home, Users, FileText, Send, AlertCircle, MessageCircle, Eye, Plus
+  GraduationCap, Settings, Menu, X, Home, Users, FileText, Send, AlertCircle, MessageCircle, Eye, Plus, Edit,
+  ChevronLeft, ChevronRight, RefreshCw, Trash2
 } from 'lucide-react';
 
 interface StudentDashboardProps {
@@ -98,6 +99,9 @@ interface JadwalHariIni {
   nip: string;
   nama_kelas: string;
   status_kehadiran: string;
+  keterangan?: string;
+  waktu_catat?: string;
+  tanggal_target?: string;
 }
 
 interface KehadiranData {
@@ -131,6 +135,95 @@ interface RiwayatData {
   }>;
 }
 
+// Komponen Pagination
+interface PaginationProps {
+  currentPage: number;
+  totalPages: number;
+  onPageChange: (page: number) => void;
+}
+
+const Pagination = ({ currentPage, totalPages, onPageChange }: PaginationProps) => {
+  const getVisiblePages = () => {
+    const delta = 2;
+    const range = [];
+    const rangeWithDots = [];
+
+    for (let i = Math.max(2, currentPage - delta); i <= Math.min(totalPages - 1, currentPage + delta); i++) {
+      range.push(i);
+    }
+
+    if (currentPage - delta > 2) {
+      rangeWithDots.push(1, '...');
+    } else {
+      rangeWithDots.push(1);
+    }
+
+    rangeWithDots.push(...range);
+
+    if (currentPage + delta < totalPages - 1) {
+      rangeWithDots.push('...', totalPages);
+    } else if (totalPages > 1) {
+      rangeWithDots.push(totalPages);
+    }
+
+    return rangeWithDots;
+  };
+
+  // Always show pagination info, even for single page
+  if (totalPages <= 1) {
+    return (
+      <div className="flex items-center justify-center mt-6">
+        <div className="text-sm text-gray-600">
+          Menampilkan semua data (1 halaman)
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col sm:flex-row items-center justify-center gap-3 mt-6">
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={() => onPageChange(currentPage - 1)}
+        disabled={currentPage === 1}
+        className="flex items-center gap-2 px-4 py-2 h-10 w-full sm:w-auto"
+      >
+        <ChevronLeft className="w-4 h-4" />
+        <span className="hidden sm:inline">Sebelumnya</span>
+        <span className="sm:hidden">Prev</span>
+      </Button>
+      
+      <div className="flex items-center gap-1 flex-wrap justify-center">
+        {getVisiblePages().map((page, index) => (
+          <Button
+            key={index}
+            variant={page === currentPage ? "default" : "outline"}
+            size="sm"
+            onClick={() => typeof page === 'number' && onPageChange(page)}
+            disabled={page === '...'}
+            className="w-10 h-10 p-0 text-sm font-medium"
+          >
+            {page}
+          </Button>
+        ))}
+      </div>
+      
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={() => onPageChange(currentPage + 1)}
+        disabled={currentPage === totalPages}
+        className="flex items-center gap-2 px-4 py-2 h-10 w-full sm:w-auto"
+      >
+        <span className="hidden sm:inline">Selanjutnya</span>
+        <span className="sm:hidden">Next</span>
+        <ChevronRight className="w-4 h-4" />
+      </Button>
+    </div>
+  );
+};
+
 export const StudentDashboard = ({ userData, onLogout }: StudentDashboardProps) => {
   console.log('StudentDashboard: Component mounting/rendering with user:', userData);
   
@@ -161,6 +254,12 @@ export const StudentDashboard = ({ userData, onLogout }: StudentDashboardProps) 
   const [error, setError] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   
+  // State untuk edit absen dengan rentang tanggal
+  const [selectedDate, setSelectedDate] = useState<string>(new Date().toISOString().split('T')[0]);
+  const [isEditMode, setIsEditMode] = useState(false);
+  const [maxDate, setMaxDate] = useState<string>(new Date().toISOString().split('T')[0]);
+  const [minDate, setMinDate] = useState<string>(new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]);
+  
   // State untuk form pengajuan izin kelas
   const [formIzin, setFormIzin] = useState({
     jadwal_id: '',
@@ -175,6 +274,13 @@ export const StudentDashboard = ({ userData, onLogout }: StudentDashboardProps) 
   const [showFormIzin, setShowFormIzin] = useState(false);
   const [showFormBanding, setShowFormBanding] = useState(false);
   const [daftarSiswa, setDaftarSiswa] = useState<Array<{id: number; nama: string}>>([]);
+  
+  // State untuk pagination
+  const [pengajuanIzinPage, setPengajuanIzinPage] = useState(1);
+  const [bandingAbsenPage, setBandingAbsenPage] = useState(1);
+  const [riwayatPage, setRiwayatPage] = useState(1);
+  const [itemsPerPage] = useState(5);
+  const [riwayatItemsPerPage] = useState(7);
   
   // State untuk form banding absen kelas
   const [formBanding, setFormBanding] = useState({
@@ -293,7 +399,7 @@ export const StudentDashboard = ({ userData, onLogout }: StudentDashboardProps) 
           if (jadwal.status_kehadiran && jadwal.status_kehadiran !== 'belum_diambil') {
             initialKehadiran[jadwal.id_jadwal] = {
               status: jadwal.status_kehadiran,
-              keterangan: ''
+              keterangan: jadwal.keterangan || ''
             };
           } else {
             initialKehadiran[jadwal.id_jadwal] = {
@@ -323,12 +429,78 @@ export const StudentDashboard = ({ userData, onLogout }: StudentDashboardProps) 
     }
   }, [siswaId]);
 
+  // Load jadwal berdasarkan tanggal yang dipilih
+  const loadJadwalByDate = useCallback(async (tanggal: string) => {
+    if (!siswaId) return;
+
+    setLoading(true);
+    try {
+      const response = await fetch(`http://localhost:3001/api/siswa/${siswaId}/jadwal-rentang?tanggal=${tanggal}`, {
+        credentials: 'include'
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        console.log('StudentDashboard: Loaded jadwal by date:', result);
+        
+        if (result.success && result.data) {
+          setJadwalHariIni(result.data);
+          
+          // Initialize kehadiran data
+          const initialKehadiran: KehadiranData = {};
+          result.data.forEach((jadwal: JadwalHariIni) => {
+            if (jadwal.status_kehadiran && jadwal.status_kehadiran !== 'belum_diambil') {
+              initialKehadiran[jadwal.id_jadwal] = {
+                status: jadwal.status_kehadiran,
+                keterangan: jadwal.keterangan || ''
+              };
+            } else {
+              initialKehadiran[jadwal.id_jadwal] = {
+                status: 'hadir',
+                keterangan: ''
+              };
+            }
+          });
+          setKehadiranData(initialKehadiran);
+        }
+      } else {
+        const errorData = await response.json();
+        toast({
+          title: "Error memuat jadwal",
+          description: errorData.error || 'Failed to load schedule',
+          variant: "destructive"
+        });
+      }
+    } catch (error) {
+      console.error('Error loading jadwal by date:', error);
+      toast({
+        title: "Error",
+        description: "Network error while loading schedule",
+        variant: "destructive"
+      });
+    } finally {
+      setLoading(false);
+    }
+  }, [siswaId]);
+
   // Load daftar siswa kelas
   const loadDaftarSiswa = useCallback(async () => {
     if (!siswaId) return;
 
     try {
+      // Get and clean token from localStorage
+      const rawToken = localStorage.getItem('token');
+      const cleanToken = rawToken ? rawToken.trim() : '';
+      
+      if (!cleanToken) {
+        console.error('❌ Token tidak ditemukan');
+        return;
+      }
+      
       const response = await fetch(`http://localhost:3001/api/siswa/${siswaId}/daftar-siswa`, {
+        headers: {
+          'Authorization': `Bearer ${cleanToken}`
+        },
         credentials: 'include'
       });
 
@@ -372,7 +544,19 @@ export const StudentDashboard = ({ userData, onLogout }: StudentDashboardProps) 
     if (!siswaId) return;
 
     try {
+      // Get and clean token from localStorage
+      const rawToken = localStorage.getItem('token');
+      const cleanToken = rawToken ? rawToken.trim() : '';
+      
+      if (!cleanToken) {
+        console.error('❌ Token tidak ditemukan');
+        return;
+      }
+      
       const response = await fetch(`http://localhost:3001/api/siswa/${siswaId}/pengajuan-izin`, {
+        headers: {
+          'Authorization': `Bearer ${cleanToken}`
+        },
         credentials: 'include'
       });
 
@@ -394,17 +578,41 @@ export const StudentDashboard = ({ userData, onLogout }: StudentDashboardProps) 
     if (!siswaId || formIzin.siswa_izin.length === 0) return;
 
     try {
+      const requestData = {
+        jadwal_id: parseInt(formIzin.jadwal_id),
+        tanggal_izin: formIzin.tanggal_izin,
+        siswa_izin: formIzin.siswa_izin
+      };
+      
+      console.log('📝 Submitting pengajuan izin data:', requestData);
+      console.log('📝 Siswa ID:', siswaId);
+      console.log('📝 Form izin:', formIzin);
+      
+      // Get and clean token from localStorage
+      const rawToken = localStorage.getItem('token');
+      const cleanToken = rawToken ? rawToken.trim() : '';
+      
+      if (!cleanToken) {
+        toast({
+          title: "Error",
+          description: "Token tidak ditemukan. Silakan login ulang.",
+          variant: "destructive"
+        });
+        return;
+      }
+      
+      console.log('🔑 Raw token:', rawToken);
+      console.log('🔑 Clean token:', cleanToken);
+      console.log('🔑 Token length:', cleanToken.length);
+      
       const response = await fetch(`http://localhost:3001/api/siswa/${siswaId}/pengajuan-izin-kelas`, {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${cleanToken}`
         },
         credentials: 'include',
-        body: JSON.stringify({
-          jadwal_id: parseInt(formIzin.jadwal_id),
-          tanggal_izin: formIzin.tanggal_izin,
-          siswa_izin: formIzin.siswa_izin
-        })
+        body: JSON.stringify(requestData)
       });
 
       if (response.ok) {
@@ -423,6 +631,7 @@ export const StudentDashboard = ({ userData, onLogout }: StudentDashboardProps) 
         loadPengajuanIzin();
       } else {
         const errorData = await response.json();
+        console.error('❌ Error submitting pengajuan izin:', errorData);
         toast({
           title: "Error",
           description: errorData.error || "Gagal mengirim pengajuan izin",
@@ -463,12 +672,22 @@ export const StudentDashboard = ({ userData, onLogout }: StudentDashboardProps) 
     if (!siswaId) return;
     
     try {
+      // Get and clean token from localStorage
+      const rawToken = localStorage.getItem('token');
+      const cleanToken = rawToken ? rawToken.trim() : '';
+      
+      if (!cleanToken) {
+        console.error('❌ Token tidak ditemukan');
+        return;
+      }
+      
       const response = await fetch(`http://localhost:3001/api/siswa/${siswaId}/banding-absen`, {
         method: 'GET',
-        credentials: 'include',
         headers: {
-          'Content-Type': 'application/json'
-        }
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${cleanToken}`
+        },
+        credentials: 'include'
       });
 
       if (response.ok) {
@@ -484,8 +703,16 @@ export const StudentDashboard = ({ userData, onLogout }: StudentDashboardProps) 
     if (siswaId && activeTab === 'banding-absen') {
       loadBandingAbsen();
       loadDaftarSiswa();
+      loadRiwayatData();
     }
-  }, [siswaId, activeTab, loadBandingAbsen, loadDaftarSiswa]);
+  }, [siswaId, activeTab, loadBandingAbsen, loadDaftarSiswa, loadRiwayatData]);
+
+  // Load jadwal when selected date changes in edit mode
+  useEffect(() => {
+    if (isEditMode && siswaId && selectedDate) {
+      loadJadwalByDate(selectedDate);
+    }
+  }, [isEditMode, selectedDate, loadJadwalByDate, siswaId]);
 
   // Submit kehadiran guru
   const submitKehadiran = async () => {
@@ -493,28 +720,55 @@ export const StudentDashboard = ({ userData, onLogout }: StudentDashboardProps) 
 
     setLoading(true);
     try {
-      const response = await fetch('http://localhost:3001/api/siswa/submit-kehadiran-guru', {
+      const requestData = {
+        siswa_id: siswaId,
+        kehadiran_data: kehadiranData,
+        tanggal_absen: selectedDate
+      };
+      
+      console.log('📝 Submitting kehadiran data:', requestData);
+      console.log('📝 Kehadiran data keys:', Object.keys(kehadiranData));
+      console.log('📝 Selected date:', selectedDate);
+      
+      // Get and clean token from localStorage
+      const rawToken = localStorage.getItem('token');
+      const cleanToken = rawToken ? rawToken.trim() : '';
+      
+      if (!cleanToken) {
+        toast({
+          title: "Error",
+          description: "Token tidak ditemukan. Silakan login ulang.",
+          variant: "destructive"
+        });
+        return;
+      }
+
+      const response = await fetch('/api/siswa/submit-kehadiran-guru', {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${cleanToken}`
         },
         credentials: 'include',
-        body: JSON.stringify({
-          siswa_id: siswaId,
-          kehadiran_data: kehadiranData
-        })
+        body: JSON.stringify(requestData)
       });
 
       if (response.ok) {
+        const result = await response.json();
         toast({
           title: "Berhasil!",
-          description: "Data kehadiran guru berhasil disimpan"
+          description: result.message || "Data kehadiran guru berhasil disimpan"
         });
         
         // Reload jadwal to get updated status
-        loadJadwalHariIni();
+        if (isEditMode) {
+          loadJadwalByDate(selectedDate);
+        } else {
+          loadJadwalHariIni();
+        }
       } else {
         const errorData = await response.json();
+        console.error('❌ Error submitting kehadiran:', errorData);
         toast({
           title: "Error",
           description: errorData.error || 'Failed to submit attendance',
@@ -553,6 +807,25 @@ export const StudentDashboard = ({ userData, onLogout }: StudentDashboardProps) 
     }));
   };
 
+  // Toggle edit mode
+  const toggleEditMode = () => {
+    setIsEditMode(!isEditMode);
+    if (!isEditMode) {
+      // Switching to edit mode, load today's schedule
+      setSelectedDate(new Date().toISOString().split('T')[0]);
+      loadJadwalHariIni();
+    } else {
+      // Switching back to normal mode, load today's schedule
+      loadJadwalHariIni();
+    }
+  };
+
+  // Handle date change
+  const handleDateChange = (newDate: string) => {
+    setSelectedDate(newDate);
+    loadJadwalByDate(newDate);
+  };
+
   const getStatusBadgeColor = (status: string) => {
     switch (status.toLowerCase()) {
       case 'hadir': return 'bg-green-100 text-green-800';
@@ -581,35 +854,232 @@ export const StudentDashboard = ({ userData, onLogout }: StudentDashboardProps) 
 
     if (jadwalHariIni.length === 0) {
       return (
-        <Card>
-          <CardContent className="p-12 text-center">
-            <Calendar className="w-16 h-16 mx-auto text-gray-400 mb-4" />
-            <h3 className="text-xl font-semibold text-gray-900 mb-2">Tidak Ada Jadwal Hari Ini</h3>
-            <p className="text-gray-600">Selamat beristirahat! Tidak ada mata pelajaran yang terjadwal untuk hari ini.</p>
-          </CardContent>
-        </Card>
+        <div className="space-y-6">
+          <Card>
+            <CardHeader>
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                <CardTitle className="flex items-center gap-2">
+                  <Clock className="w-5 h-5" />
+                  {isEditMode ? 'Edit Absen Guru' : 'Jadwal Hari Ini'} - {kelasInfo}
+                </CardTitle>
+                
+                <div className="flex flex-col sm:flex-row gap-3">
+                  {isEditMode && (
+                    <div className="flex items-center gap-2">
+                      <Label htmlFor="date-picker" className="text-sm font-medium">
+                        Pilih Tanggal:
+                      </Label>
+                      <input
+                        id="date-picker"
+                        type="date"
+                        value={selectedDate}
+                        min={minDate}
+                        max={maxDate}
+                        onChange={(e) => handleDateChange(e.target.value)}
+                        className="px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      />
+                    </div>
+                  )}
+                  
+                  <Button
+                    onClick={toggleEditMode}
+                    variant={isEditMode ? "destructive" : "default"}
+                    size="sm"
+                    className="flex items-center gap-2"
+                  >
+                    {isEditMode ? (
+                      <>
+                        <XCircle className="w-4 h-4" />
+                        Keluar Edit Mode
+                      </>
+                    ) : (
+                      <>
+                        <Edit className="w-4 h-4" />
+                        Edit Absen (7 Hari)
+                      </>
+                    )}
+                  </Button>
+                </div>
+              </div>
+              
+              {isEditMode && (
+                <div className="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                  <div className="flex items-start gap-2">
+                    <div className="w-5 h-5 text-blue-600 mt-0.5">
+                      <svg fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+                      </svg>
+                    </div>
+                    <div className="text-sm text-blue-800">
+                      <p className="font-medium">Mode Edit Absen Aktif</p>
+                      <p>Anda dapat mengubah absen guru untuk tanggal yang dipilih (maksimal 7 hari yang lalu).</p>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </CardHeader>
+          </Card>
+
+          <Card>
+            <CardContent className="p-12 text-center">
+              <Calendar className="w-16 h-16 mx-auto text-gray-400 mb-4" />
+              <h3 className="text-xl font-semibold text-gray-900 mb-2">Tidak Ada Jadwal Hari Ini</h3>
+              <p className="text-gray-600 mb-4">Selamat beristirahat! Tidak ada mata pelajaran yang terjadwal untuk hari ini.</p>
+              {!isEditMode && (
+                <p className="text-sm text-gray-500 mb-4">
+                  Gunakan tombol "Edit Absen (7 Hari)" di atas untuk melihat jadwal hari lain.
+                </p>
+              )}
+              <div className="flex flex-col sm:flex-row gap-3 justify-center">
+                <Button 
+                  variant="outline" 
+                  onClick={() => window.location.reload()}
+                  className="flex items-center gap-2"
+                >
+                  <RefreshCw className="w-4 h-4" />
+                  Refresh Jadwal
+                </Button>
+                <Button 
+                  variant="destructive" 
+                  onClick={async () => {
+                    if (confirm('Apakah Anda yakin ingin menghapus jadwal kosong? Tindakan ini akan menghapus semua jadwal yang tidak memiliki mata pelajaran.')) {
+                      try {
+                        setLoading(true);
+                        const response = await fetch('/api/siswa/clear-empty-schedules', {
+                          method: 'DELETE',
+                          headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${localStorage.getItem('token') || ''}`
+                          },
+                          credentials: 'include'
+                        });
+                        
+                        if (response.ok) {
+                          toast({
+                            title: "Berhasil!",
+                            description: "Jadwal kosong berhasil dihapus"
+                          });
+                          window.location.reload();
+                        } else {
+                          throw new Error('Gagal menghapus jadwal kosong');
+                        }
+                      } catch (error) {
+                        console.error('Error clearing empty schedules:', error);
+                        toast({
+                          title: "Error",
+                          description: "Gagal menghapus jadwal kosong",
+                          variant: "destructive"
+                        });
+                      } finally {
+                        setLoading(false);
+                      }
+                    }
+                  }}
+                  disabled={loading}
+                  className="flex items-center gap-2"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  Hapus Jadwal Kosong
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
       );
     }
 
     return (
       <div className="space-y-6">
-        <Card>
+        {/* Edit Mode Toggle and Date Picker */}
+        <Card className="mx-4 lg:mx-0">
           <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Clock className="w-5 h-5" />
-              Jadwal Hari Ini - {kelasInfo}
+            <div className="flex flex-col gap-4">
+              <div className="flex items-center gap-2">
+                <Clock className="w-5 h-5 text-blue-600" />
+                <CardTitle className="text-lg lg:text-xl">
+                  {isEditMode ? 'Edit Absen Guru' : 'Jadwal Hari Ini'} - {kelasInfo}
+                </CardTitle>
+              </div>
+              
+              <div className="flex flex-col lg:flex-row gap-3">
+                {isEditMode && (
+                  <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+                    <Label htmlFor="date-picker" className="text-sm font-medium text-gray-700">
+                      Pilih Tanggal:
+                    </Label>
+                    <input
+                      id="date-picker"
+                      type="date"
+                      value={selectedDate}
+                      min={minDate}
+                      max={maxDate}
+                      onChange={(e) => handleDateChange(e.target.value)}
+                      className="px-4 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    />
+                  </div>
+                )}
+                
+                <Button
+                  onClick={toggleEditMode}
+                  variant={isEditMode ? "destructive" : "default"}
+                  size="sm"
+                  className="flex items-center gap-2 px-4 py-2 w-full sm:w-auto"
+                >
+                  {isEditMode ? (
+                    <>
+                      <XCircle className="w-4 h-4" />
+                      Keluar Edit Mode
+                    </>
+                  ) : (
+                    <>
+                      <Edit className="w-4 h-4" />
+                      Edit Absen (7 Hari)
+                    </>
+                  )}
+                </Button>
+              </div>
+            </div>
+            
+            {isEditMode && (
+              <div className="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                <div className="flex items-start gap-2">
+                  <div className="w-5 h-5 text-blue-600 mt-0.5">
+                    <svg fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+                    </svg>
+                  </div>
+                  <div className="text-sm text-blue-800">
+                    <p className="font-medium">Mode Edit Absen Aktif</p>
+                    <p>Anda dapat mengubah absen guru untuk tanggal yang dipilih (maksimal 7 hari yang lalu).</p>
+                  </div>
+                </div>
+              </div>
+            )}
+          </CardHeader>
+        </Card>
+
+        <Card className="mx-4 lg:mx-0">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-lg lg:text-xl">
+              <Calendar className="w-5 h-5 text-blue-600" />
+              {isEditMode ? `Jadwal ${new Date(selectedDate).toLocaleDateString('id-ID', { 
+                weekday: 'long', 
+                year: 'numeric', 
+                month: 'long', 
+                day: 'numeric' 
+              })}` : 'Jadwal Hari Ini'}
             </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
               {jadwalHariIni.map((jadwal, index) => (
-                <div key={jadwal.id_jadwal} className="border rounded-lg p-4">
-                  <div className="flex justify-between items-start mb-4">
-                    <div>
-                      <div className="flex items-center gap-2 mb-2">
-                        <Badge variant="outline">Jam ke-{jadwal.jam_ke}</Badge>
-                        <Badge variant="outline">{jadwal.jam_mulai} - {jadwal.jam_selesai}</Badge>
-                        <Badge className={getStatusBadgeColor(kehadiranData[jadwal.id_jadwal]?.status || jadwal.status_kehadiran || 'belum_diambil')}>
+                <div key={jadwal.id_jadwal} className="border rounded-lg p-4 bg-white shadow-sm">
+                  <div className="flex flex-col lg:flex-row lg:justify-between lg:items-start gap-4 mb-4">
+                    <div className="flex-1">
+                      <div className="flex flex-wrap items-center gap-2 mb-3">
+                        <Badge variant="outline" className="text-xs">Jam ke-{jadwal.jam_ke}</Badge>
+                        <Badge variant="outline" className="text-xs">{jadwal.jam_mulai} - {jadwal.jam_selesai}</Badge>
+                        <Badge className={`text-xs ${getStatusBadgeColor(kehadiranData[jadwal.id_jadwal]?.status || jadwal.status_kehadiran || 'belum_diambil')}`}>
                           {(() => {
                             const status = kehadiranData[jadwal.id_jadwal]?.status || jadwal.status_kehadiran || 'belum_diambil';
                             switch (status.toLowerCase()) {
@@ -622,9 +1092,14 @@ export const StudentDashboard = ({ userData, onLogout }: StudentDashboardProps) 
                             }
                           })()}
                         </Badge>
+                        {jadwal.waktu_catat && (
+                          <Badge variant="secondary" className="text-xs">
+                            ✓ Dicatat: {new Date(jadwal.waktu_catat).toLocaleString('id-ID')}
+                          </Badge>
+                        )}
                       </div>
-                      <h4 className="font-semibold text-lg text-gray-900">{jadwal.nama_mapel}</h4>
-                      <p className="text-gray-600">{jadwal.nama_guru}</p>
+                      <h4 className="font-semibold text-lg text-gray-900 mb-1">{jadwal.nama_mapel}</h4>
+                      <p className="text-gray-600 mb-1">{jadwal.nama_guru}</p>
                       <p className="text-sm text-gray-500">NIP: {jadwal.nip}</p>
                     </div>
                   </div>
@@ -637,33 +1112,33 @@ export const StudentDashboard = ({ userData, onLogout }: StudentDashboardProps) 
                       <RadioGroup 
                         value={kehadiranData[jadwal.id_jadwal]?.status || 'hadir'} 
                         onValueChange={(value) => updateKehadiranStatus(jadwal.id_jadwal, value)}
-                        disabled={jadwal.status_kehadiran && jadwal.status_kehadiran !== 'belum_diambil'}
+                        disabled={false}
                       >
-                        <div className="flex flex-wrap gap-6">
-                          <div className="flex items-center space-x-2">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                          <div className="flex items-center space-x-3 p-3 border rounded-lg hover:bg-gray-50">
                             <RadioGroupItem value="hadir" id={`hadir-${jadwal.id_jadwal}`} />
-                            <Label htmlFor={`hadir-${jadwal.id_jadwal}`} className="flex items-center gap-2">
+                            <Label htmlFor={`hadir-${jadwal.id_jadwal}`} className="flex items-center gap-2 cursor-pointer">
                               <CheckCircle2 className="w-4 h-4 text-green-600" />
                               Hadir
                             </Label>
                           </div>
-                          <div className="flex items-center space-x-2">
+                          <div className="flex items-center space-x-3 p-3 border rounded-lg hover:bg-gray-50">
                             <RadioGroupItem value="tidak_hadir" id={`tidak_hadir-${jadwal.id_jadwal}`} />
-                            <Label htmlFor={`tidak_hadir-${jadwal.id_jadwal}`} className="flex items-center gap-2">
+                            <Label htmlFor={`tidak_hadir-${jadwal.id_jadwal}`} className="flex items-center gap-2 cursor-pointer">
                               <XCircle className="w-4 h-4 text-red-600" />
                               Tidak Hadir
                             </Label>
                           </div>
-                          <div className="flex items-center space-x-2">
+                          <div className="flex items-center space-x-3 p-3 border rounded-lg hover:bg-gray-50">
                             <RadioGroupItem value="izin" id={`izin-${jadwal.id_jadwal}`} />
-                            <Label htmlFor={`izin-${jadwal.id_jadwal}`} className="flex items-center gap-2">
+                            <Label htmlFor={`izin-${jadwal.id_jadwal}`} className="flex items-center gap-2 cursor-pointer">
                               <User className="w-4 h-4 text-yellow-600" />
                               Izin
                             </Label>
                           </div>
-                          <div className="flex items-center space-x-2">
+                          <div className="flex items-center space-x-3 p-3 border rounded-lg hover:bg-gray-50">
                             <RadioGroupItem value="sakit" id={`sakit-${jadwal.id_jadwal}`} />
-                            <Label htmlFor={`sakit-${jadwal.id_jadwal}`} className="flex items-center gap-2">
+                            <Label htmlFor={`sakit-${jadwal.id_jadwal}`} className="flex items-center gap-2 cursor-pointer">
                               <BookOpen className="w-4 h-4 text-blue-600" />
                               Sakit
                             </Label>
@@ -682,8 +1157,8 @@ export const StudentDashboard = ({ userData, onLogout }: StudentDashboardProps) 
                           placeholder="Masukkan keterangan jika diperlukan..."
                           value={kehadiranData[jadwal.id_jadwal]?.keterangan || ''}
                           onChange={(e) => updateKehadiranKeterangan(jadwal.id_jadwal, e.target.value)}
-                          disabled={jadwal.status_kehadiran && jadwal.status_kehadiran !== 'belum_diambil'}
-                          className="mt-1"
+                          disabled={false}
+                          className="mt-2 min-h-[80px] resize-none"
                         />
                       </div>
                     )}
@@ -693,20 +1168,41 @@ export const StudentDashboard = ({ userData, onLogout }: StudentDashboardProps) 
             </div>
 
             <div className="mt-6 pt-6 border-t">
+              {isEditMode && (
+                <div className="mb-4 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+                  <div className="flex items-start gap-3">
+                    <div className="w-5 h-5 text-yellow-600 mt-0.5 flex-shrink-0">
+                      <svg fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                      </svg>
+                    </div>
+                    <div className="text-sm text-yellow-800">
+                      <p className="font-medium mb-1">Perhatian!</p>
+                      <p>Anda sedang mengedit absen untuk tanggal {new Date(selectedDate).toLocaleDateString('id-ID', { 
+                        weekday: 'long', 
+                        year: 'numeric', 
+                        month: 'long', 
+                        day: 'numeric' 
+                      })}. Perubahan akan disimpan dan menggantikan data sebelumnya.</p>
+                    </div>
+                  </div>
+                </div>
+              )}
+              
               <Button 
                 onClick={submitKehadiran} 
                 disabled={loading} 
-                className="w-full bg-blue-600 hover:bg-blue-700"
+                className={`w-full h-12 text-base font-medium ${isEditMode ? 'bg-orange-600 hover:bg-orange-700' : 'bg-blue-600 hover:bg-blue-700'}`}
               >
                 {loading ? (
                   <div className="flex items-center gap-2">
-                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                    <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
                     Menyimpan...
                   </div>
                 ) : (
                   <div className="flex items-center gap-2">
-                    <Save className="w-4 h-4" />
-                    Simpan Data Kehadiran
+                    <Save className="w-5 h-5" />
+                    {isEditMode ? 'Simpan Perubahan Absen' : 'Simpan Data Kehadiran'}
                   </div>
                 )}
               </Button>
@@ -733,14 +1229,28 @@ export const StudentDashboard = ({ userData, onLogout }: StudentDashboardProps) 
     return (
       <div className="space-y-6">
         <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
-          <div className="flex items-center gap-2">
-            <Users className="w-5 h-5 text-blue-600" />
-            <p className="text-blue-800 font-medium">Riwayat Kehadiran Kelas</p>
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="flex items-center gap-2">
+                <Users className="w-5 h-5 text-blue-600" />
+                <p className="text-blue-800 font-medium">Riwayat Kehadiran Kelas</p>
+              </div>
+              <p className="text-blue-700 text-sm mt-1">Sebagai perwakilan kelas, Anda dapat melihat ringkasan kehadiran seluruh siswa</p>
+            </div>
+            <div className="text-right">
+              <div className="text-sm text-blue-600 font-medium">
+                {riwayatData.length} hari riwayat
+              </div>
+              <div className="text-xs text-blue-500">
+                Halaman {riwayatPage} dari {Math.ceil(riwayatData.length / riwayatItemsPerPage)}
+              </div>
+            </div>
           </div>
-          <p className="text-blue-700 text-sm mt-1">Sebagai perwakilan kelas, Anda dapat melihat ringkasan kehadiran seluruh siswa</p>
         </div>
 
-        {riwayatData.map((hari, index) => (
+        {riwayatData
+          .slice((riwayatPage - 1) * riwayatItemsPerPage, riwayatPage * riwayatItemsPerPage)
+          .map((hari, index) => (
           <Card key={index}>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
@@ -754,42 +1264,43 @@ export const StudentDashboard = ({ userData, onLogout }: StudentDashboardProps) 
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Jam Ke</TableHead>
-                    <TableHead>Waktu</TableHead>
-                    <TableHead>Mata Pelajaran</TableHead>
-                    <TableHead>Guru</TableHead>
-                    <TableHead>Total Hadir</TableHead>
-                    <TableHead>Tidak Hadir</TableHead>
-                    <TableHead>Detail</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {hari.jadwal.map((jadwal, jadwalIndex) => (
-                    <TableRow key={jadwalIndex}>
-                      <TableCell>
-                        <Badge variant="outline">Jam ke-{jadwal.jam_ke}</Badge>
-                      </TableCell>
-                      <TableCell>
-                        <span className="text-sm">{jadwal.jam_mulai} - {jadwal.jam_selesai}</span>
-                      </TableCell>
-                      <TableCell>
-                        <span className="font-medium">{jadwal.nama_mapel}</span>
-                      </TableCell>
-                      <TableCell>
-                        <span>{jadwal.nama_guru}</span>
-                      </TableCell>
-                      <TableCell>
+              {/* Mobile Card View */}
+              <div className="lg:hidden space-y-4">
+                {hari.jadwal.map((jadwal, jadwalIndex) => (
+                  <div key={jadwalIndex} className="border rounded-lg p-4 bg-white shadow-sm">
+                    <div className="flex items-start justify-between mb-3">
+                      <div className="flex items-center gap-2">
+                        <Badge variant="outline" className="text-xs">Jam ke-{jadwal.jam_ke}</Badge>
+                        <span className="text-sm text-gray-600">{jadwal.jam_mulai} - {jadwal.jam_selesai}</span>
+                      </div>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          console.log('Detail jadwal:', jadwal);
+                          setDetailRiwayat(jadwal);
+                        }}
+                        className="flex items-center gap-1"
+                      >
+                        <Eye className="w-4 h-4" />
+                        <span className="text-xs">Detail</span>
+                      </Button>
+                    </div>
+
+                    <div className="space-y-2">
+                      <h4 className="font-semibold text-gray-900">{jadwal.nama_mapel}</h4>
+                      <p className="text-sm text-gray-600">Guru: {jadwal.nama_guru}</p>
+
+                      <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2">
-                          <Badge className="bg-green-100 text-green-800">
-                            {jadwal.total_hadir}/{jadwal.total_siswa}
+                          <Badge className="bg-green-100 text-green-800 text-xs">
+                            Hadir: {jadwal.total_hadir}/{jadwal.total_siswa}
                           </Badge>
                         </div>
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex gap-1">
+                      </div>
+
+                      {(jadwal.total_izin > 0 || jadwal.total_sakit > 0 || jadwal.total_alpa > 0) && (
+                        <div className="flex flex-wrap gap-1 mt-2">
                           {jadwal.total_izin > 0 && (
                             <Badge className="bg-yellow-100 text-yellow-800 text-xs">
                               Izin: {jadwal.total_izin}
@@ -806,114 +1317,187 @@ export const StudentDashboard = ({ userData, onLogout }: StudentDashboardProps) 
                             </Badge>
                           )}
                         </div>
-                      </TableCell>
-                      <TableCell>
-                        <Button 
-                          variant="outline" 
-                          size="sm"
-                          onClick={() => {
-                            console.log('Detail jadwal:', jadwal);
-                            console.log('Jadwal keys:', Object.keys(jadwal));
-                            console.log('Jadwal.siswa_tidak_hadir:', jadwal.siswa_tidak_hadir);
-                            if (jadwal.siswa_tidak_hadir && jadwal.siswa_tidak_hadir.length > 0) {
-                              console.log('Contoh siswa pertama:', jadwal.siswa_tidak_hadir[0]);
-                              console.log('Siswa pertama keys:', Object.keys(jadwal.siswa_tidak_hadir[0]));
-                            }
-                            setDetailRiwayat(jadwal);
-                          }}
-                        >
-                          <Eye className="w-4 h-4 mr-1" />
-                          Detail
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Desktop Table View */}
+              <div className="hidden lg:block">
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Jam Ke</TableHead>
+                        <TableHead>Waktu</TableHead>
+                        <TableHead>Mata Pelajaran</TableHead>
+                        <TableHead>Guru</TableHead>
+                        <TableHead>Total Hadir</TableHead>
+                        <TableHead>Tidak Hadir</TableHead>
+                        <TableHead>Detail</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {hari.jadwal.map((jadwal, jadwalIndex) => (
+                        <TableRow key={jadwalIndex}>
+                          <TableCell>
+                            <Badge variant="outline">Jam ke-{jadwal.jam_ke}</Badge>
+                          </TableCell>
+                          <TableCell>
+                            <span className="text-sm">{jadwal.jam_mulai} - {jadwal.jam_selesai}</span>
+                          </TableCell>
+                          <TableCell>
+                            <span className="font-medium">{jadwal.nama_mapel}</span>
+                          </TableCell>
+                          <TableCell>
+                            <span>{jadwal.nama_guru}</span>
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex items-center gap-2">
+                              <Badge className="bg-green-100 text-green-800">
+                                {jadwal.total_hadir}/{jadwal.total_siswa}
+                              </Badge>
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex gap-1">
+                              {jadwal.total_izin > 0 && (
+                                <Badge className="bg-yellow-100 text-yellow-800 text-xs">
+                                  Izin: {jadwal.total_izin}
+                                </Badge>
+                              )}
+                              {jadwal.total_sakit > 0 && (
+                                <Badge className="bg-blue-100 text-blue-800 text-xs">
+                                  Sakit: {jadwal.total_sakit}
+                                </Badge>
+                              )}
+                              {jadwal.total_alpa > 0 && (
+                                <Badge className="bg-red-100 text-red-800 text-xs">
+                                  Alpa: {jadwal.total_alpa}
+                                </Badge>
+                              )}
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => {
+                                console.log('Detail jadwal:', jadwal);
+                                setDetailRiwayat(jadwal);
+                              }}
+                            >
+                              <Eye className="w-4 h-4 mr-1" />
+                              Detail
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              </div>
             </CardContent>
           </Card>
         ))}
 
+        {/* Pagination untuk Riwayat */}
+        <Pagination
+          currentPage={riwayatPage}
+          totalPages={Math.ceil(riwayatData.length / riwayatItemsPerPage)}
+          onPageChange={setRiwayatPage}
+        />
+
         {/* Modal Detail Riwayat */}
         {detailRiwayat && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-            <div className="bg-white rounded-lg p-6 max-w-2xl w-full mx-4 max-h-[80vh] overflow-y-auto">
-              {console.log('Modal detailRiwayat:', detailRiwayat)}
-              <div className="flex justify-between items-center mb-4">
-                <h3 className="text-lg font-semibold">Detail Kehadiran - Jam ke-{detailRiwayat.jam_ke}</h3>
-                <Button 
-                  variant="ghost" 
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-lg w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
+              <div className="flex justify-between items-center p-4 border-b border-gray-200 flex-shrink-0">
+                <h3 className="text-lg font-semibold text-gray-900">Detail Kehadiran - Jam ke-{detailRiwayat.jam_ke}</h3>
+                <Button
+                  variant="ghost"
                   size="sm"
                   onClick={() => setDetailRiwayat(null)}
+                  className="p-2 hover:bg-gray-100"
                 >
-                  <X className="w-4 h-4" />
+                  <X className="w-5 h-5" />
                 </Button>
               </div>
-              
-              <div className="mb-4">
-                <p className="text-sm text-gray-600">
-                  {detailRiwayat.nama_mapel} ({detailRiwayat.jam_mulai} - {detailRiwayat.jam_selesai})
-                </p>
-                <p className="text-sm text-gray-600">Guru: {detailRiwayat.nama_guru}</p>
+
+              <div className="p-4 border-b border-gray-100 bg-gray-50 flex-shrink-0">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h4 className="font-semibold text-gray-900">{detailRiwayat.nama_mapel}</h4>
+                    <p className="text-sm text-gray-600">{detailRiwayat.jam_mulai} - {detailRiwayat.jam_selesai}</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-sm text-gray-600">Guru: {detailRiwayat.nama_guru}</p>
+                    <div className="flex items-center gap-2 mt-1">
+                      <Badge className="bg-green-100 text-green-800">
+                        Hadir: {detailRiwayat.total_hadir}/{detailRiwayat.total_siswa}
+                      </Badge>
+                    </div>
+                  </div>
+                </div>
               </div>
 
-              {detailRiwayat.siswa_tidak_hadir && Array.isArray(detailRiwayat.siswa_tidak_hadir) && detailRiwayat.siswa_tidak_hadir.length > 0 ? (
-                <div className="space-y-3">
-                  <h4 className="font-medium">Siswa Tidak Hadir:</h4>
-                  {console.log('Siswa tidak hadir:', detailRiwayat.siswa_tidak_hadir)}
-                  {detailRiwayat.siswa_tidak_hadir.map((siswa, idx) => {
-                    console.log('Siswa individual:', siswa);
-                    console.log('Siswa keys:', Object.keys(siswa));
-                    console.log('Siswa.nama_siswa:', siswa.nama_siswa);
-                    console.log('Siswa.nis:', siswa.nis);
-                    console.log('Siswa.status:', siswa.status);
-                    
-                    // Coba berbagai kemungkinan field untuk nama dan NIS
-                    const namaSiswa = siswa.nama_siswa || siswa.nama || siswa.nama_lengkap || siswa.nama_siswa_lengkap || 'Nama tidak tersedia';
-                    const nisSiswa = siswa.nis || siswa.nis_siswa || siswa.nomor_induk || siswa.nomor_induk_siswa || siswa.nis_lengkap || 'NIS tidak tersedia';
-                    const statusSiswa = siswa.status || siswa.status_kehadiran || 'Status tidak tersedia';
-                    
-                    return (
-                      <div key={idx} className="border rounded-lg p-3">
-                        <div className="flex justify-between items-start">
-                          <div>
-                            <p className="font-medium">
-                              {namaSiswa}
-                            </p>
-                            <p className="text-sm text-gray-600">
-                              NIS: {nisSiswa}
-                            </p>
+              <div className="flex-1 overflow-y-auto p-4">
+                {detailRiwayat.siswa_tidak_hadir && Array.isArray(detailRiwayat.siswa_tidak_hadir) && detailRiwayat.siswa_tidak_hadir.length > 0 ? (
+                  <div className="space-y-3">
+                    <h4 className="font-medium text-gray-900 mb-3">Siswa Tidak Hadir ({detailRiwayat.siswa_tidak_hadir.length} siswa):</h4>
+                    {detailRiwayat.siswa_tidak_hadir.map((siswa, idx) => {
+                      // Coba berbagai kemungkinan field untuk nama dan NIS
+                      const namaSiswa = siswa.nama_siswa || 'Nama tidak tersedia';
+                      const nisSiswa = siswa.nis || 'NIS tidak tersedia';
+                      const statusSiswa = siswa.status || 'Status tidak tersedia';
+
+                      return (
+                        <div key={idx} className="border rounded-lg p-4 bg-white shadow-sm">
+                          <div className="flex items-start justify-between mb-3">
+                            <div className="flex-1">
+                              <div className="flex items-center gap-2 mb-1">
+                                <h5 className="font-medium text-gray-900">{namaSiswa}</h5>
+                                <Badge
+                                  variant={
+                                    statusSiswa === 'izin' ? 'secondary' :
+                                    statusSiswa === 'sakit' ? 'outline' : 'destructive'
+                                  }
+                                  className="capitalize text-xs"
+                                >
+                                  {statusSiswa}
+                                </Badge>
+                              </div>
+                              <p className="text-sm text-gray-600">NIS: {nisSiswa}</p>
+                            </div>
                           </div>
-                          <Badge 
-                            variant={
-                              statusSiswa === 'izin' ? 'secondary' :
-                              statusSiswa === 'sakit' ? 'outline' : 'destructive'
-                            }
-                            className="capitalize"
-                          >
-                            {statusSiswa}
-                          </Badge>
+
+                          <div className="space-y-2">
+                            {siswa.keterangan && (
+                              <div>
+                                <span className="text-sm font-medium text-gray-700">Keterangan:</span>
+                                <p className="text-sm text-gray-600 mt-1">{siswa.keterangan}</p>
+                              </div>
+                            )}
+                            {siswa.nama_pencatat && (
+                              <div>
+                                <span className="text-sm font-medium text-gray-700">Dicatat oleh:</span>
+                                <p className="text-sm text-gray-600 mt-1">{siswa.nama_pencatat}</p>
+                              </div>
+                            )}
+                          </div>
                         </div>
-                        {siswa.keterangan && (
-                          <p className="text-sm text-gray-600 mt-2">
-                            <strong>Keterangan:</strong> {siswa.keterangan}
-                          </p>
-                        )}
-                        {siswa.nama_pencatat && (
-                          <p className="text-xs text-gray-500 mt-1">
-                            Dicatat oleh: {siswa.nama_pencatat}
-                          </p>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              ) : (
-                <div className="text-center py-8">
-                  <CheckCircle2 className="w-12 h-12 mx-auto text-green-500 mb-2" />
-                  <p className="text-green-600 font-medium">Semua siswa hadir</p>
-                </div>
-              )}
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="text-center py-12">
+                    <CheckCircle2 className="w-16 h-16 mx-auto text-green-500 mb-4" />
+                    <h4 className="text-lg font-semibold text-green-600 mb-2">Semua Siswa Hadir</h4>
+                    <p className="text-gray-600">Tidak ada siswa yang tidak hadir pada jam pelajaran ini.</p>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         )}
@@ -926,33 +1510,33 @@ export const StudentDashboard = ({ userData, onLogout }: StudentDashboardProps) 
     return (
       <div className="space-y-6">
         {/* Header */}
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
           <div>
-            <h2 className="text-2xl font-bold text-gray-900">Pengajuan Izin Kelas</h2>
-            <p className="text-gray-600">Ajukan izin ketidakhadiran untuk siswa-siswa dalam kelas</p>
+            <h2 className="text-xl lg:text-2xl font-bold text-gray-900">Pengajuan Izin Kelas</h2>
+            <p className="text-gray-600 text-sm lg:text-base">Ajukan izin ketidakhadiran untuk siswa-siswa dalam kelas</p>
           </div>
           <Button 
             onClick={() => setShowFormIzin(true)}
-            className="bg-blue-600 hover:bg-blue-700"
+            className="bg-blue-600 hover:bg-blue-700 flex items-center gap-2 px-4 py-2 h-10 w-full sm:w-auto"
           >
-            <Send className="w-4 h-4 mr-2" />
+            <Send className="w-4 h-4" />
             Ajukan Izin Kelas
           </Button>
         </div>
 
         {/* Form Pengajuan Izin Kelas */}
         {showFormIzin && (
-          <Card>
+          <Card className="mx-4 lg:mx-0">
             <CardHeader>
-              <CardTitle>Form Pengajuan Izin Kelas</CardTitle>
+              <CardTitle className="text-lg">Form Pengajuan Izin Kelas</CardTitle>
             </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <CardContent className="space-y-6">
+              <div className="space-y-4">
                 <div>
-                  <Label htmlFor="jadwal">Jadwal Pelajaran</Label>
-                  <select 
+                  <Label htmlFor="jadwal" className="text-sm font-medium text-gray-700">Jadwal Pelajaran</Label>
+                  <select
                     id="jadwal"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md"
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg mt-1 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     value={formIzin.jadwal_id}
                     onChange={(e) => setFormIzin({...formIzin, jadwal_id: e.target.value})}
                   >
@@ -964,13 +1548,13 @@ export const StudentDashboard = ({ userData, onLogout }: StudentDashboardProps) 
                     ))}
                   </select>
                 </div>
-                
+
                 <div>
-                  <Label htmlFor="tanggal_izin">Tanggal Izin</Label>
+                  <Label htmlFor="tanggal_izin" className="text-sm font-medium text-gray-700">Tanggal Izin</Label>
                   <input
                     id="tanggal_izin"
                     type="date"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md"
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg mt-1 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     value={formIzin.tanggal_izin}
                     onChange={(e) => setFormIzin({...formIzin, tanggal_izin: e.target.value})}
                   />
@@ -978,9 +1562,9 @@ export const StudentDashboard = ({ userData, onLogout }: StudentDashboardProps) 
               </div>
 
               {/* Pilihan Siswa */}
-              <div className="border-t pt-4">
-                <div className="flex items-center justify-between mb-3">
-                  <Label className="text-lg font-semibold">Siswa yang Izin</Label>
+              <div className="border-t pt-6">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
+                  <Label className="text-lg font-semibold text-gray-900">Siswa yang Izin</Label>
                   <Button
                     type="button"
                     onClick={() => {
@@ -996,15 +1580,16 @@ export const StudentDashboard = ({ userData, onLogout }: StudentDashboardProps) 
                     }}
                     variant="outline"
                     size="sm"
+                    className="flex items-center gap-2 px-4 py-2"
                   >
-                    <Plus className="w-4 h-4 mr-2" />
+                    <Plus className="w-4 h-4" />
                     Tambah Siswa
                   </Button>
                 </div>
 
-                <div className="space-y-3">
+                <div className="space-y-4">
                   {formIzin.siswa_izin.map((siswa, index) => (
-                    <div key={index} className="p-4 border rounded-lg bg-gray-50 space-y-3">
+                    <div key={index} className="p-4 border rounded-lg bg-gray-50 space-y-4">
                       <div className="flex items-center justify-between">
                         <span className="font-medium text-gray-700">Siswa {index + 1}</span>
                         <Button
@@ -1015,17 +1600,17 @@ export const StudentDashboard = ({ userData, onLogout }: StudentDashboardProps) 
                           }}
                           variant="outline"
                           size="sm"
-                          className="text-red-600 hover:text-red-700"
+                          className="text-red-600 hover:text-red-700 p-2"
                         >
                           <X className="w-4 h-4" />
                         </Button>
                       </div>
 
-                      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                      <div className="space-y-4">
                         <div>
-                          <Label>Nama Siswa</Label>
+                          <Label className="text-sm font-medium text-gray-700">Nama Siswa</Label>
                           <select
-                            className="w-full px-3 py-2 border border-gray-300 rounded-md"
+                            className="w-full px-4 py-3 border border-gray-300 rounded-lg mt-1 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                             value={siswa.nama}
                             onChange={(e) => {
                               const newSiswaIzin = [...formIzin.siswa_izin];
@@ -1043,9 +1628,9 @@ export const StudentDashboard = ({ userData, onLogout }: StudentDashboardProps) 
                         </div>
 
                         <div>
-                          <Label>Jenis Izin</Label>
+                          <Label className="text-sm font-medium text-gray-700">Jenis Izin</Label>
                           <select
-                            className="w-full px-3 py-2 border border-gray-300 rounded-md"
+                            className="w-full px-4 py-3 border border-gray-300 rounded-lg mt-1 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                             value={siswa.jenis_izin}
                             onChange={(e) => {
                               const newSiswaIzin = [...formIzin.siswa_izin];
@@ -1061,10 +1646,10 @@ export const StudentDashboard = ({ userData, onLogout }: StudentDashboardProps) 
                         </div>
 
                         <div>
-                          <Label>Alasan</Label>
+                          <Label className="text-sm font-medium text-gray-700">Alasan</Label>
                           <input
                             type="text"
-                            className="w-full px-3 py-2 border border-gray-300 rounded-md"
+                            className="w-full px-4 py-3 border border-gray-300 rounded-lg mt-1 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                             placeholder="Alasan izin..."
                             value={siswa.alasan}
                             onChange={(e) => {
@@ -1079,26 +1664,26 @@ export const StudentDashboard = ({ userData, onLogout }: StudentDashboardProps) 
                   ))}
 
                   {formIzin.siswa_izin.length === 0 && (
-                    <div className="text-center py-8 text-gray-500">
-                      Belum ada siswa yang dipilih untuk izin.
-                      <br />
-                      Klik "Tambah Siswa" untuk menambahkan siswa.
+                    <div className="text-center py-8 text-gray-500 bg-gray-50 rounded-lg">
+                      <Users className="w-12 h-12 mx-auto text-gray-400 mb-2" />
+                      <p className="font-medium">Belum ada siswa yang dipilih untuk izin</p>
+                      <p className="text-sm">Klik "Tambah Siswa" untuk menambahkan siswa</p>
                     </div>
                   )}
                 </div>
               </div>
 
-              <div className="flex gap-2 pt-4">
-                <Button 
+              <div className="flex flex-col sm:flex-row gap-3 pt-6 border-t">
+                <Button
                   onClick={submitPengajuanIzin}
                   disabled={!formIzin.jadwal_id || !formIzin.tanggal_izin || formIzin.siswa_izin.length === 0 || formIzin.siswa_izin.some(s => !s.nama || !s.alasan)}
-                  className="bg-green-600 hover:bg-green-700"
+                  className="bg-green-600 hover:bg-green-700 flex items-center gap-2 px-6 py-3"
                 >
-                  <Send className="w-4 h-4 mr-2" />
+                  <Send className="w-5 h-5" />
                   Kirim Pengajuan ({formIzin.siswa_izin.length} siswa)
                 </Button>
-                <Button 
-                  variant="outline" 
+                <Button
+                  variant="outline"
                   onClick={() => {
                     setShowFormIzin(false);
                     setFormIzin({
@@ -1107,6 +1692,7 @@ export const StudentDashboard = ({ userData, onLogout }: StudentDashboardProps) 
                       siswa_izin: []
                     });
                   }}
+                  className="px-6 py-3"
                 >
                   Batal
                 </Button>
@@ -1118,9 +1704,19 @@ export const StudentDashboard = ({ userData, onLogout }: StudentDashboardProps) 
         {/* Daftar Pengajuan Izin */}
         <Card>
           <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <FileText className="w-5 h-5" />
-              Riwayat Pengajuan Izin Kelas
+            <CardTitle className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <FileText className="w-5 h-5" />
+                Riwayat Pengajuan Izin Kelas
+              </div>
+              <div className="text-right">
+                <div className="text-sm text-gray-600 font-medium">
+                  {pengajuanIzin.length} pengajuan
+                </div>
+                <div className="text-xs text-gray-500">
+                  Halaman {pengajuanIzinPage} dari {Math.ceil(pengajuanIzin.length / itemsPerPage)}
+                </div>
+              </div>
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -1131,105 +1727,193 @@ export const StudentDashboard = ({ userData, onLogout }: StudentDashboardProps) 
                 <p className="text-gray-600">Kelas belum memiliki riwayat pengajuan izin</p>
               </div>
             ) : (
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Tanggal Pengajuan</TableHead>
-                      <TableHead>Tanggal Izin</TableHead>
-                      <TableHead>Jadwal</TableHead>
-                      <TableHead>Siswa Izin</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>Keterangan</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {pengajuanIzin.map((izin) => (
-                      <TableRow key={izin.id_pengajuan}>
-                        <TableCell>
-                          {new Date(izin.tanggal_pengajuan).toLocaleDateString('id-ID')}
-                        </TableCell>
-                        <TableCell>
-                          {new Date(izin.tanggal_izin).toLocaleDateString('id-ID')}
-                        </TableCell>
-                        <TableCell>
-                          <div className="space-y-1">
-                            <span className="font-medium">{izin.nama_mapel}</span>
-                            <div className="text-sm text-gray-600">
-                              {izin.nama_guru} • {izin.jam_mulai}-{izin.jam_selesai}
-                            </div>
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          {izin.siswa_izin && izin.siswa_izin.length > 0 ? (
-                            <div className="space-y-1">
-                              <div className="font-medium text-sm">
-                                {izin.total_siswa_izin || izin.siswa_izin.length} siswa
-                              </div>
-                              <div className="text-xs text-gray-600 max-w-xs">
-                                {izin.siswa_izin.slice(0, 3).map((s, idx) => (
-                                  <div key={idx}>
-                                    {s.nama} ({s.jenis_izin})
-                                  </div>
-                                ))}
-                                {izin.siswa_izin.length > 3 && (
-                                  <div className="text-blue-600">
-                                    +{izin.siswa_izin.length - 3} lainnya
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-                          ) : (
-                            <Badge variant="outline" className={
-                              izin.jenis_izin === 'sakit' ? 'bg-red-50 text-red-700' :
-                              izin.jenis_izin === 'izin' ? 'bg-blue-50 text-blue-700' :
-                              izin.jenis_izin === 'dispen' ? 'bg-purple-50 text-purple-700' :
-                              'bg-gray-50 text-gray-700'
+              <>
+                {/* Mobile Card View */}
+                <div className="lg:hidden space-y-4">
+                  {pengajuanIzin
+                    .slice((pengajuanIzinPage - 1) * itemsPerPage, pengajuanIzinPage * itemsPerPage)
+                    .map((izin) => (
+                    <div key={izin.id_pengajuan} className="border rounded-lg p-4 bg-white shadow-sm">
+                      <div className="flex items-start justify-between mb-3">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2 mb-1">
+                            <Badge className={
+                              izin.status === 'disetujui' ? 'bg-green-100 text-green-800' :
+                              izin.status === 'ditolak' ? 'bg-red-100 text-red-800' :
+                              'bg-yellow-100 text-yellow-800'
                             }>
-                              {izin.jenis_izin.charAt(0).toUpperCase() + izin.jenis_izin.slice(1)}
+                              {izin.status === 'disetujui' ? 'Disetujui' :
+                               izin.status === 'ditolak' ? 'Ditolak' : 'Menunggu'}
                             </Badge>
-                          )}
-                        </TableCell>
-                        <TableCell>
-                          <Badge className={
-                            izin.status === 'disetujui' ? 'bg-green-100 text-green-800' :
-                            izin.status === 'ditolak' ? 'bg-red-100 text-red-800' :
-                            'bg-yellow-100 text-yellow-800'
-                          }>
-                            {izin.status === 'disetujui' ? 'Disetujui' :
-                             izin.status === 'ditolak' ? 'Ditolak' : 'Menunggu'}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>
-                          <div className="space-y-1 max-w-sm">
-                            {izin.siswa_izin && izin.siswa_izin.length > 0 ? (
-                              <div className="text-sm space-y-1">
-                                {izin.siswa_izin.slice(0, 2).map((s, idx) => (
-                                  <div key={idx} className="text-xs bg-gray-50 p-1 rounded">
-                                    <strong>{s.nama}:</strong> {s.alasan}
+                          </div>
+                          <h4 className="font-semibold text-gray-900">{izin.nama_mapel}</h4>
+                          <p className="text-sm text-gray-600">{izin.nama_guru}</p>
+                        </div>
+                      </div>
+
+                      <div className="space-y-2 text-sm">
+                        <div className="flex justify-between">
+                          <span className="text-gray-500">Tanggal Pengajuan:</span>
+                          <span>{new Date(izin.tanggal_pengajuan).toLocaleDateString('id-ID')}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-gray-500">Tanggal Izin:</span>
+                          <span>{new Date(izin.tanggal_izin).toLocaleDateString('id-ID')}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-gray-500">Waktu:</span>
+                          <span>{izin.jam_mulai}-{izin.jam_selesai}</span>
+                        </div>
+
+                        {izin.siswa_izin && izin.siswa_izin.length > 0 ? (
+                          <div>
+                            <span className="text-gray-500">Siswa ({izin.total_siswa_izin || izin.siswa_izin.length}):</span>
+                            <div className="mt-1 space-y-1">
+                              {izin.siswa_izin.slice(0, 2).map((s, idx) => (
+                                <div key={idx} className="text-xs bg-gray-50 p-2 rounded">
+                                  <div className="font-medium">{s.nama}</div>
+                                  <div className="text-gray-600">{s.jenis_izin} - {s.alasan}</div>
+                                </div>
+                              ))}
+                              {izin.siswa_izin.length > 2 && (
+                                <div className="text-xs text-blue-600 text-center">
+                                  +{izin.siswa_izin.length - 2} siswa lainnya
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        ) : (
+                          <div>
+                            <span className="text-gray-500">Alasan:</span>
+                            <div className="mt-1 text-xs bg-gray-50 p-2 rounded">{izin.alasan}</div>
+                          </div>
+                        )}
+
+                        {izin.keterangan_guru && (
+                          <div>
+                            <span className="text-gray-500">Respon Guru:</span>
+                            <div className="mt-1 text-xs bg-blue-50 p-2 rounded text-blue-800">
+                              {izin.keterangan_guru}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Desktop Table View */}
+                <div className="hidden lg:block">
+                  <div className="overflow-x-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Tanggal Pengajuan</TableHead>
+                          <TableHead>Tanggal Izin</TableHead>
+                          <TableHead>Jadwal</TableHead>
+                          <TableHead>Siswa Izin</TableHead>
+                          <TableHead>Status</TableHead>
+                          <TableHead>Keterangan</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {pengajuanIzin
+                          .slice((pengajuanIzinPage - 1) * itemsPerPage, pengajuanIzinPage * itemsPerPage)
+                          .map((izin) => (
+                          <TableRow key={izin.id_pengajuan}>
+                            <TableCell>
+                              {new Date(izin.tanggal_pengajuan).toLocaleDateString('id-ID')}
+                            </TableCell>
+                            <TableCell>
+                              {new Date(izin.tanggal_izin).toLocaleDateString('id-ID')}
+                            </TableCell>
+                            <TableCell>
+                              <div className="space-y-1">
+                                <span className="font-medium">{izin.nama_mapel}</span>
+                                <div className="text-sm text-gray-600">
+                                  {izin.nama_guru} • {izin.jam_mulai}-{izin.jam_selesai}
+                                </div>
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              {izin.siswa_izin && izin.siswa_izin.length > 0 ? (
+                                <div className="space-y-1">
+                                  <div className="font-medium text-sm">
+                                    {izin.total_siswa_izin || izin.siswa_izin.length} siswa
                                   </div>
-                                ))}
-                                {izin.siswa_izin.length > 2 && (
-                                  <div className="text-xs text-blue-600">
-                                    +{izin.siswa_izin.length - 2} alasan lainnya
+                                  <div className="text-xs text-gray-600 max-w-xs">
+                                    {izin.siswa_izin.slice(0, 3).map((s, idx) => (
+                                      <div key={idx}>
+                                        {s.nama} ({s.jenis_izin})
+                                      </div>
+                                    ))}
+                                    {izin.siswa_izin.length > 3 && (
+                                      <div className="text-blue-600">
+                                        +{izin.siswa_izin.length - 3} lainnya
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              ) : (
+                                <Badge variant="outline" className={
+                                  izin.jenis_izin === 'sakit' ? 'bg-red-50 text-red-700' :
+                                  izin.jenis_izin === 'izin' ? 'bg-blue-50 text-blue-700' :
+                                  izin.jenis_izin === 'dispen' ? 'bg-purple-50 text-purple-700' :
+                                  'bg-gray-50 text-gray-700'
+                                }>
+                                  {izin.jenis_izin.charAt(0).toUpperCase() + izin.jenis_izin.slice(1)}
+                                </Badge>
+                              )}
+                            </TableCell>
+                            <TableCell>
+                              <Badge className={
+                                izin.status === 'disetujui' ? 'bg-green-100 text-green-800' :
+                                izin.status === 'ditolak' ? 'bg-red-100 text-red-800' :
+                                'bg-yellow-100 text-yellow-800'
+                              }>
+                                {izin.status === 'disetujui' ? 'Disetujui' :
+                                 izin.status === 'ditolak' ? 'Ditolak' : 'Menunggu'}
+                              </Badge>
+                            </TableCell>
+                            <TableCell>
+                              <div className="space-y-1 max-w-sm">
+                                {izin.siswa_izin && izin.siswa_izin.length > 0 ? (
+                                  <div className="text-sm space-y-1">
+                                    {izin.siswa_izin.slice(0, 2).map((s, idx) => (
+                                      <div key={idx} className="text-xs bg-gray-50 p-1 rounded">
+                                        <strong>{s.nama}:</strong> {s.alasan}
+                                      </div>
+                                    ))}
+                                    {izin.siswa_izin.length > 2 && (
+                                      <div className="text-xs text-blue-600">
+                                        +{izin.siswa_izin.length - 2} alasan lainnya
+                                      </div>
+                                    )}
+                                  </div>
+                                ) : (
+                                  <div className="text-sm">{izin.alasan}</div>
+                                )}
+                                {izin.keterangan_guru && (
+                                  <div className="text-xs text-gray-600 bg-gray-50 p-2 rounded">
+                                    <strong>Respon Guru:</strong> {izin.keterangan_guru}
                                   </div>
                                 )}
                               </div>
-                            ) : (
-                              <div className="text-sm">{izin.alasan}</div>
-                            )}
-                            {izin.keterangan_guru && (
-                              <div className="text-xs text-gray-600 bg-gray-50 p-2 rounded">
-                                <strong>Respon Guru:</strong> {izin.keterangan_guru}
-                              </div>
-                            )}
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+
+                    {/* Pagination untuk Pengajuan Izin */}
+                    <Pagination
+                      currentPage={pengajuanIzinPage}
+                      totalPages={Math.ceil(pengajuanIzin.length / itemsPerPage)}
+                      onPageChange={setPengajuanIzinPage}
+                    />
+                  </div>
+                </div>
+              </>
             )}
           </CardContent>
         </Card>
@@ -1243,53 +1927,55 @@ export const StudentDashboard = ({ userData, onLogout }: StudentDashboardProps) 
     return (
       <div className="space-y-6">
         {/* Header */}
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
           <div>
-            <h2 className="text-2xl font-bold text-gray-900">Pengajuan Banding Absen Kelas</h2>
-            <p className="text-gray-600">Ajukan banding absensi untuk siswa-siswa dalam kelas</p>
+            <h2 className="text-xl lg:text-2xl font-bold text-gray-900">Pengajuan Banding Absen Kelas</h2>
+            <p className="text-gray-600 text-sm lg:text-base">Ajukan banding absensi untuk siswa-siswa dalam kelas</p>
           </div>
           <Button 
             onClick={() => setShowFormBanding(true)}
-            className="bg-orange-600 hover:bg-orange-700"
+            className="bg-orange-600 hover:bg-orange-700 flex items-center gap-2 px-4 py-2 h-10 w-full sm:w-auto"
           >
-            <MessageCircle className="w-4 h-4 mr-2" />
+            <MessageCircle className="w-4 h-4" />
             Ajukan Banding Kelas
           </Button>
         </div>
 
         {/* Form Pengajuan Banding Kelas */}
         {showFormBanding && (
-          <Card>
+          <Card className="mx-4 lg:mx-0">
             <CardHeader>
-              <CardTitle>Form Pengajuan Banding Absen Kelas</CardTitle>
+              <CardTitle className="text-lg">Form Pengajuan Banding Absen Kelas</CardTitle>
             </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <CardContent className="space-y-6">
+              <div className="space-y-4">
                 <div>
-                  <Label htmlFor="jadwal_banding">Jadwal Pelajaran</Label>
-                  <select 
+                  <Label htmlFor="jadwal_banding" className="text-sm font-medium text-gray-700">Jadwal Pelajaran</Label>
+                  <select
                     id="jadwal_banding"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md"
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg mt-1 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent"
                     value={formBanding.jadwal_id}
                     onChange={(e) => setFormBanding({...formBanding, jadwal_id: e.target.value})}
                   >
                     <option value="">Pilih jadwal pelajaran...</option>
-                    {riwayatData.flatMap(hari => 
+                    {riwayatData && riwayatData.length > 0 ? riwayatData.flatMap(hari =>
                       hari.jadwal.map(j => (
                         <option key={`${hari.tanggal}-${j.jam_ke}`} value={j.jadwal_id || `${hari.tanggal}-${j.jam_ke}`}>
                           {hari.tanggal} - {j.nama_mapel} ({j.jam_mulai}-{j.jam_selesai}) - {j.nama_guru}
                         </option>
                       ))
+                    ) : (
+                      <option value="" disabled>Loading jadwal pelajaran...</option>
                     )}
                   </select>
                 </div>
-                
+
                 <div>
-                  <Label htmlFor="tanggal_banding">Tanggal Absen</Label>
+                  <Label htmlFor="tanggal_banding" className="text-sm font-medium text-gray-700">Tanggal Absen</Label>
                   <input
                     id="tanggal_banding"
                     type="date"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md"
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg mt-1 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent"
                     value={formBanding.tanggal_absen}
                     onChange={(e) => setFormBanding({...formBanding, tanggal_absen: e.target.value})}
                   />
@@ -1297,9 +1983,9 @@ export const StudentDashboard = ({ userData, onLogout }: StudentDashboardProps) 
               </div>
 
               {/* Pilihan Siswa untuk Banding */}
-              <div className="border-t pt-4">
-                <div className="flex items-center justify-between mb-3">
-                  <Label className="text-lg font-semibold">Siswa yang Ajukan Banding</Label>
+              <div className="border-t pt-6">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
+                  <Label className="text-lg font-semibold text-gray-900">Siswa yang Ajukan Banding</Label>
                   <Button
                     type="button"
                     onClick={() => {
@@ -1316,15 +2002,16 @@ export const StudentDashboard = ({ userData, onLogout }: StudentDashboardProps) 
                     }}
                     variant="outline"
                     size="sm"
+                    className="flex items-center gap-2 px-4 py-2"
                   >
-                    <Plus className="w-4 h-4 mr-2" />
+                    <Plus className="w-4 h-4" />
                     Tambah Siswa
                   </Button>
                 </div>
 
-                <div className="space-y-3">
+                <div className="space-y-4">
                   {formBanding.siswa_banding.map((siswa, index) => (
-                    <div key={index} className="p-4 border rounded-lg bg-gray-50 space-y-3">
+                    <div key={index} className="p-4 border rounded-lg bg-orange-50 space-y-4">
                       <div className="flex items-center justify-between">
                         <span className="font-medium text-gray-700">Siswa {index + 1}</span>
                         <Button
@@ -1335,18 +2022,18 @@ export const StudentDashboard = ({ userData, onLogout }: StudentDashboardProps) 
                           }}
                           variant="outline"
                           size="sm"
-                          className="text-red-600 hover:text-red-700"
+                          className="text-red-600 hover:text-red-700 p-2"
                         >
                           <X className="w-4 h-4" />
                         </Button>
                       </div>
 
-                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+                      <div className="space-y-4">
                         <div>
-                          <Label>Nama Siswa</Label>
+                          <Label className="text-sm font-medium text-gray-700">Nama Siswa</Label>
                           <input
                             type="text"
-                            className="w-full px-3 py-2 border border-gray-300 rounded-md"
+                            className="w-full px-4 py-3 border border-gray-300 rounded-lg mt-1 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent"
                             placeholder="Masukkan nama siswa..."
                             value={siswa.nama}
                             onChange={(e) => {
@@ -1360,49 +2047,51 @@ export const StudentDashboard = ({ userData, onLogout }: StudentDashboardProps) 
                           </div>
                         </div>
 
-                        <div>
-                          <Label>Status Tercatat</Label>
-                          <select
-                            className="w-full px-3 py-2 border border-gray-300 rounded-md"
-                            value={siswa.status_asli}
-                            onChange={(e) => {
-                              const newSiswaBanding = [...formBanding.siswa_banding];
-                              newSiswaBanding[index] = {...newSiswaBanding[index], status_asli: e.target.value as 'hadir' | 'izin' | 'sakit' | 'alpa' | 'dispen'};
-                              setFormBanding({...formBanding, siswa_banding: newSiswaBanding});
-                            }}
-                          >
-                            <option value="hadir">Hadir</option>
-                            <option value="izin">Izin</option>
-                            <option value="sakit">Sakit</option>
-                            <option value="alpa">Alpa</option>
-                            <option value="dispen">Dispen</option>
-                          </select>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                          <div>
+                            <Label className="text-sm font-medium text-gray-700">Status Tercatat</Label>
+                            <select
+                              className="w-full px-4 py-3 border border-gray-300 rounded-lg mt-1 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                              value={siswa.status_asli}
+                              onChange={(e) => {
+                                const newSiswaBanding = [...formBanding.siswa_banding];
+                                newSiswaBanding[index] = {...newSiswaBanding[index], status_asli: e.target.value as 'hadir' | 'izin' | 'sakit' | 'alpa' | 'dispen'};
+                                setFormBanding({...formBanding, siswa_banding: newSiswaBanding});
+                              }}
+                            >
+                              <option value="hadir">Hadir</option>
+                              <option value="izin">Izin</option>
+                              <option value="sakit">Sakit</option>
+                              <option value="alpa">Alpa</option>
+                              <option value="dispen">Dispen</option>
+                            </select>
+                          </div>
+
+                          <div>
+                            <Label className="text-sm font-medium text-gray-700">Status Diajukan</Label>
+                            <select
+                              className="w-full px-4 py-3 border border-gray-300 rounded-lg mt-1 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                              value={siswa.status_diajukan}
+                              onChange={(e) => {
+                                const newSiswaBanding = [...formBanding.siswa_banding];
+                                newSiswaBanding[index] = {...newSiswaBanding[index], status_diajukan: e.target.value as 'hadir' | 'izin' | 'sakit' | 'alpa' | 'dispen'};
+                                setFormBanding({...formBanding, siswa_banding: newSiswaBanding});
+                              }}
+                            >
+                              <option value="hadir">Hadir</option>
+                              <option value="izin">Izin</option>
+                              <option value="sakit">Sakit</option>
+                              <option value="alpa">Alpa</option>
+                              <option value="dispen">Dispen</option>
+                            </select>
+                          </div>
                         </div>
 
                         <div>
-                          <Label>Status Diajukan</Label>
-                          <select
-                            className="w-full px-3 py-2 border border-gray-300 rounded-md"
-                            value={siswa.status_diajukan}
-                            onChange={(e) => {
-                              const newSiswaBanding = [...formBanding.siswa_banding];
-                              newSiswaBanding[index] = {...newSiswaBanding[index], status_diajukan: e.target.value as 'hadir' | 'izin' | 'sakit' | 'alpa' | 'dispen'};
-                              setFormBanding({...formBanding, siswa_banding: newSiswaBanding});
-                            }}
-                          >
-                            <option value="hadir">Hadir</option>
-                            <option value="izin">Izin</option>
-                            <option value="sakit">Sakit</option>
-                            <option value="alpa">Alpa</option>
-                            <option value="dispen">Dispen</option>
-                          </select>
-                        </div>
-
-                        <div>
-                          <Label>Alasan Banding</Label>
+                          <Label className="text-sm font-medium text-gray-700">Alasan Banding</Label>
                           <input
                             type="text"
-                            className="w-full px-3 py-2 border border-gray-300 rounded-md"
+                            className="w-full px-4 py-3 border border-gray-300 rounded-lg mt-1 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent"
                             placeholder="Alasan banding..."
                             value={siswa.alasan_banding}
                             onChange={(e) => {
@@ -1417,26 +2106,26 @@ export const StudentDashboard = ({ userData, onLogout }: StudentDashboardProps) 
                   ))}
 
                   {formBanding.siswa_banding.length === 0 && (
-                    <div className="text-center py-8 text-gray-500">
-                      Belum ada siswa yang dipilih untuk banding absen.
-                      <br />
-                      Klik "Tambah Siswa" untuk menambahkan siswa.
+                    <div className="text-center py-8 text-gray-500 bg-orange-50 rounded-lg">
+                      <MessageCircle className="w-12 h-12 mx-auto text-gray-400 mb-2" />
+                      <p className="font-medium">Belum ada siswa yang dipilih untuk banding absen</p>
+                      <p className="text-sm">Klik "Tambah Siswa" untuk menambahkan siswa</p>
                     </div>
                   )}
                 </div>
               </div>
 
-              <div className="flex gap-2 pt-4">
-                <Button 
+              <div className="flex flex-col sm:flex-row gap-3 pt-6 border-t">
+                <Button
                   onClick={submitBandingAbsen}
                   disabled={!formBanding.jadwal_id || !formBanding.tanggal_absen || formBanding.siswa_banding.length === 0 || formBanding.siswa_banding.some(s => !s.nama || !s.alasan_banding)}
-                  className="bg-orange-600 hover:bg-orange-700"
+                  className="bg-orange-600 hover:bg-orange-700 flex items-center gap-2 px-6 py-3"
                 >
-                  <MessageCircle className="w-4 h-4 mr-2" />
+                  <MessageCircle className="w-5 h-5" />
                   Kirim Banding ({formBanding.siswa_banding.length} siswa)
                 </Button>
-                <Button 
-                  variant="outline" 
+                <Button
+                  variant="outline"
                   onClick={() => {
                     setShowFormBanding(false);
                     setFormBanding({
@@ -1445,6 +2134,7 @@ export const StudentDashboard = ({ userData, onLogout }: StudentDashboardProps) 
                       siswa_banding: []
                     });
                   }}
+                  className="px-6 py-3"
                 >
                   Batal
                 </Button>
@@ -1456,9 +2146,19 @@ export const StudentDashboard = ({ userData, onLogout }: StudentDashboardProps) 
         {/* Daftar Banding Absen Kelas */}
         <Card>
           <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <MessageCircle className="w-5 h-5" />
-              Riwayat Pengajuan Banding Absen Kelas
+            <CardTitle className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <MessageCircle className="w-5 h-5" />
+                Riwayat Pengajuan Banding Absen Kelas
+              </div>
+              <div className="text-right">
+                <div className="text-sm text-gray-600 font-medium">
+                  {bandingAbsen.length} banding
+                </div>
+                <div className="text-xs text-gray-500">
+                  Halaman {bandingAbsenPage} dari {Math.ceil(bandingAbsen.length / itemsPerPage)}
+                </div>
+              </div>
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -1469,102 +2169,196 @@ export const StudentDashboard = ({ userData, onLogout }: StudentDashboardProps) 
                 <p className="text-gray-600">Kelas belum memiliki riwayat pengajuan banding absen</p>
               </div>
             ) : (
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Tanggal Pengajuan</TableHead>
-                      <TableHead>Tanggal Absen</TableHead>
-                      <TableHead>Jadwal</TableHead>
-                      <TableHead>Siswa Banding</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>Keterangan</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {bandingAbsen.map((banding) => (
-                      <TableRow key={banding.id_banding}>
-                        <TableCell>
-                          {new Date(banding.tanggal_pengajuan).toLocaleDateString('id-ID')}
-                        </TableCell>
-                        <TableCell>
-                          {new Date(banding.tanggal_absen).toLocaleDateString('id-ID')}
-                        </TableCell>
-                        <TableCell>
-                          <div className="space-y-1">
-                            <span className="font-medium">{banding.nama_mapel}</span>
-                            <div className="text-sm text-gray-600">
-                              {banding.nama_guru} • {banding.jam_mulai}-{banding.jam_selesai}
+              <>
+                {/* Mobile Card View */}
+                <div className="lg:hidden space-y-4">
+                  {bandingAbsen
+                    .slice((bandingAbsenPage - 1) * itemsPerPage, bandingAbsenPage * itemsPerPage)
+                    .map((banding) => (
+                    <div key={banding.id_banding} className="border rounded-lg p-4 bg-white shadow-sm">
+                      <div className="flex items-start justify-between mb-3">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2 mb-1">
+                            <Badge className={
+                              banding.status_banding === 'disetujui' ? 'bg-green-100 text-green-800' :
+                              banding.status_banding === 'ditolak' ? 'bg-red-100 text-red-800' :
+                              'bg-yellow-100 text-yellow-800'
+                            }>
+                              {banding.status_banding === 'disetujui' ? 'Disetujui' :
+                               banding.status_banding === 'ditolak' ? 'Ditolak' : 'Menunggu'}
+                            </Badge>
+                          </div>
+                          <h4 className="font-semibold text-gray-900">{banding.nama_mapel}</h4>
+                          <p className="text-sm text-gray-600">{banding.nama_guru}</p>
+                        </div>
+                      </div>
+
+                      <div className="space-y-2 text-sm">
+                        <div className="flex justify-between">
+                          <span className="text-gray-500">Tanggal Pengajuan:</span>
+                          <span>{new Date(banding.tanggal_pengajuan).toLocaleDateString('id-ID')}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-gray-500">Tanggal Absen:</span>
+                          <span>{new Date(banding.tanggal_absen).toLocaleDateString('id-ID')}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-gray-500">Waktu:</span>
+                          <span>{banding.jam_mulai}-{banding.jam_selesai}</span>
+                        </div>
+
+                        {banding.siswa_banding && banding.siswa_banding.length > 0 ? (
+                          <div>
+                            <span className="text-gray-500">Siswa ({banding.total_siswa_banding || banding.siswa_banding.length}):</span>
+                            <div className="mt-1 space-y-1">
+                              {banding.siswa_banding.slice(0, 2).map((s, idx) => (
+                                <div key={idx} className="text-xs bg-orange-50 p-2 rounded">
+                                  <div className="font-medium">{s.nama}</div>
+                                  <div className="text-gray-600">{s.status_asli} → {s.status_diajukan}</div>
+                                  <div className="text-gray-600">{s.alasan_banding}</div>
+                                </div>
+                              ))}
+                              {banding.siswa_banding.length > 2 && (
+                                <div className="text-xs text-orange-600 text-center">
+                                  +{banding.siswa_banding.length - 2} siswa lainnya
+                                </div>
+                              )}
                             </div>
                           </div>
-                        </TableCell>
-                        <TableCell>
-                          {banding.siswa_banding && banding.siswa_banding.length > 0 ? (
-                            <div className="space-y-1">
-                              <div className="font-medium text-sm">
-                                {banding.total_siswa_banding || banding.siswa_banding.length} siswa
-                              </div>
-                              <div className="text-xs text-gray-600 max-w-xs">
-                                {banding.siswa_banding.slice(0, 3).map((s, idx) => (
-                                  <div key={idx}>
-                                    {s.nama} ({s.status_asli} → {s.status_diajukan})
-                                  </div>
-                                ))}
-                                {banding.siswa_banding.length > 3 && (
-                                  <div className="text-orange-600">
-                                    +{banding.siswa_banding.length - 3} lainnya
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-                          ) : (
-                            <div className="text-sm space-y-1">
-                              <Badge variant="outline" className="capitalize">
+                        ) : (
+                          <div>
+                            <span className="text-gray-500">Status:</span>
+                            <div className="mt-1 flex gap-2">
+                              <Badge variant="outline" className="text-xs">
                                 {banding.status_asli} → {banding.status_diajukan}
                               </Badge>
                             </div>
-                          )}
-                        </TableCell>
-                        <TableCell>
-                          <Badge className={
-                            banding.status_banding === 'disetujui' ? 'bg-green-100 text-green-800' :
-                            banding.status_banding === 'ditolak' ? 'bg-red-100 text-red-800' :
-                            'bg-yellow-100 text-yellow-800'
-                          }>
-                            {banding.status_banding === 'disetujui' ? 'Disetujui' :
-                             banding.status_banding === 'ditolak' ? 'Ditolak' : 'Menunggu'}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>
-                          <div className="space-y-1 max-w-sm">
-                            {banding.siswa_banding && banding.siswa_banding.length > 0 ? (
-                              <div className="text-sm space-y-1">
-                                {banding.siswa_banding.slice(0, 2).map((s, idx) => (
-                                  <div key={idx} className="text-xs bg-gray-50 p-1 rounded">
-                                    <strong>{s.nama}:</strong> {s.alasan_banding}
+                            <div className="mt-1 text-xs bg-gray-50 p-2 rounded">{banding.alasan_banding}</div>
+                          </div>
+                        )}
+
+                        {banding.catatan_guru && (
+                          <div>
+                            <span className="text-gray-500">Respon Guru:</span>
+                            <div className="mt-1 text-xs bg-orange-50 p-2 rounded text-orange-800">
+                              {banding.catatan_guru}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Desktop Table View */}
+                <div className="hidden lg:block">
+                  <div className="overflow-x-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Tanggal Pengajuan</TableHead>
+                          <TableHead>Tanggal Absen</TableHead>
+                          <TableHead>Jadwal</TableHead>
+                          <TableHead>Siswa Banding</TableHead>
+                          <TableHead>Status</TableHead>
+                          <TableHead>Keterangan</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {bandingAbsen
+                          .slice((bandingAbsenPage - 1) * itemsPerPage, bandingAbsenPage * itemsPerPage)
+                          .map((banding) => (
+                          <TableRow key={banding.id_banding}>
+                            <TableCell>
+                              {new Date(banding.tanggal_pengajuan).toLocaleDateString('id-ID')}
+                            </TableCell>
+                            <TableCell>
+                              {new Date(banding.tanggal_absen).toLocaleDateString('id-ID')}
+                            </TableCell>
+                            <TableCell>
+                              <div className="space-y-1">
+                                <span className="font-medium">{banding.nama_mapel}</span>
+                                <div className="text-sm text-gray-600">
+                                  {banding.nama_guru} • {banding.jam_mulai}-{banding.jam_selesai}
+                                </div>
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              {banding.siswa_banding && banding.siswa_banding.length > 0 ? (
+                                <div className="space-y-1">
+                                  <div className="font-medium text-sm">
+                                    {banding.total_siswa_banding || banding.siswa_banding.length} siswa
                                   </div>
-                                ))}
-                                {banding.siswa_banding.length > 2 && (
-                                  <div className="text-xs text-orange-600">
-                                    +{banding.siswa_banding.length - 2} alasan lainnya
+                                  <div className="text-xs text-gray-600 max-w-xs">
+                                    {banding.siswa_banding.slice(0, 3).map((s, idx) => (
+                                      <div key={idx}>
+                                        {s.nama} ({s.status_asli} → {s.status_diajukan})
+                                      </div>
+                                    ))}
+                                    {banding.siswa_banding.length > 3 && (
+                                      <div className="text-orange-600">
+                                        +{banding.siswa_banding.length - 3} lainnya
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              ) : (
+                                <div className="text-sm space-y-1">
+                                  <Badge variant="outline" className="capitalize">
+                                    {banding.status_asli} → {banding.status_diajukan}
+                                  </Badge>
+                                </div>
+                              )}
+                            </TableCell>
+                            <TableCell>
+                              <Badge className={
+                                banding.status_banding === 'disetujui' ? 'bg-green-100 text-green-800' :
+                                banding.status_banding === 'ditolak' ? 'bg-red-100 text-red-800' :
+                                'bg-yellow-100 text-yellow-800'
+                              }>
+                                {banding.status_banding === 'disetujui' ? 'Disetujui' :
+                                 banding.status_banding === 'ditolak' ? 'Ditolak' : 'Menunggu'}
+                              </Badge>
+                            </TableCell>
+                            <TableCell>
+                              <div className="space-y-1 max-w-sm">
+                                {banding.siswa_banding && banding.siswa_banding.length > 0 ? (
+                                  <div className="text-sm space-y-1">
+                                    {banding.siswa_banding.slice(0, 2).map((s, idx) => (
+                                      <div key={idx} className="text-xs bg-gray-50 p-1 rounded">
+                                        <strong>{s.nama}:</strong> {s.alasan_banding}
+                                      </div>
+                                    ))}
+                                    {banding.siswa_banding.length > 2 && (
+                                      <div className="text-xs text-orange-600">
+                                        +{banding.siswa_banding.length - 2} alasan lainnya
+                                      </div>
+                                    )}
+                                  </div>
+                                ) : (
+                                  <div className="text-sm">{banding.alasan_banding}</div>
+                                )}
+                                {banding.catatan_guru && (
+                                  <div className="text-xs text-gray-600 bg-gray-50 p-2 rounded">
+                                    <strong>Respon Guru:</strong> {banding.catatan_guru}
                                   </div>
                                 )}
                               </div>
-                            ) : (
-                              <div className="text-sm">{banding.alasan_banding}</div>
-                            )}
-                            {banding.catatan_guru && (
-                              <div className="text-xs text-gray-600 bg-gray-50 p-2 rounded">
-                                <strong>Respon Guru:</strong> {banding.catatan_guru}
-                              </div>
-                            )}
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+
+                    {/* Pagination untuk Banding Absen */}
+                    <Pagination
+                      currentPage={bandingAbsenPage}
+                      totalPages={Math.ceil(bandingAbsen.length / itemsPerPage)}
+                      onPageChange={setBandingAbsenPage}
+                    />
+                  </div>
+                </div>
+              </>
             )}
           </CardContent>
         </Card>
@@ -1578,17 +2372,36 @@ export const StudentDashboard = ({ userData, onLogout }: StudentDashboardProps) 
     if (!siswaId || formBanding.siswa_banding.length === 0) return;
 
     try {
+      // Get and clean token from localStorage
+      const rawToken = localStorage.getItem('token');
+      const cleanToken = rawToken ? rawToken.trim() : '';
+      
+      if (!cleanToken) {
+        toast({
+          title: "Error",
+          description: "Token tidak ditemukan. Silakan login ulang.",
+          variant: "destructive"
+        });
+        return;
+      }
+      
+      const requestData = {
+        jadwal_id: formBanding.jadwal_id ? parseInt(formBanding.jadwal_id) : null,
+        tanggal_absen: formBanding.tanggal_absen,
+        siswa_banding: formBanding.siswa_banding
+      };
+      
+      console.log('📝 Submitting banding absen data:', requestData);
+      console.log('📝 Form state:', formBanding);
+      
       const response = await fetch(`http://localhost:3001/api/siswa/${siswaId}/banding-absen-kelas`, {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${cleanToken}`
         },
         credentials: 'include',
-        body: JSON.stringify({
-          jadwal_id: parseInt(formBanding.jadwal_id),
-          tanggal_absen: formBanding.tanggal_absen,
-          siswa_banding: formBanding.siswa_banding
-        })
+        body: JSON.stringify(requestData)
       });
 
       if (response.ok) {
@@ -1607,6 +2420,7 @@ export const StudentDashboard = ({ userData, onLogout }: StudentDashboardProps) 
         loadBandingAbsen();
       } else {
         const errorData = await response.json();
+        console.error('❌ Error submitting banding absen:', errorData);
         toast({
           title: "Error",
           description: errorData.error || "Gagal mengirim pengajuan banding absen",
@@ -1687,22 +2501,30 @@ export const StudentDashboard = ({ userData, onLogout }: StudentDashboardProps) 
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50">
+      {/* Mobile Overlay */}
+      {sidebarOpen && (
+        <div
+          className="fixed inset-0 bg-black bg-opacity-50 z-30 lg:hidden"
+          onClick={() => setSidebarOpen(false)}
+        />
+      )}
+
       {/* Sidebar */}
       <div className={`fixed left-0 top-0 h-full bg-white shadow-xl transition-all duration-300 z-40 ${
-        sidebarOpen ? 'w-64' : 'w-16'
+        sidebarOpen ? 'w-72' : 'w-16'
       } lg:w-64 lg:translate-x-0 ${sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}`}>
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-gray-200">
           <div className={`flex items-center space-x-3 ${sidebarOpen ? '' : 'justify-center lg:justify-start'}`}>
-            <div className="p-2 rounded-lg">
-              <img src="/logo.png" alt="ABSENTA Logo" className="h-12 w-12" />
+            <div className="p-2 rounded-lg bg-blue-50">
+              <img src="/logo.png" alt="ABSENTA Logo" className="h-8 w-8 lg:h-12 lg:w-12" />
             </div>
             {sidebarOpen && (
-              <span className="font-bold text-xl bg-gradient-to-r from-blue-600 to-blue-700 bg-clip-text text-transparent block lg:hidden">
+              <span className="font-bold text-lg lg:text-xl bg-gradient-to-r from-blue-600 to-blue-700 bg-clip-text text-transparent block lg:hidden">
                 ABSENTA
               </span>
             )}
-            <span className="font-bold text-xl bg-gradient-to-r from-blue-600 to-blue-700 bg-clip-text text-transparent hidden lg:block">
+            <span className="font-bold text-lg lg:text-xl bg-gradient-to-r from-blue-600 to-blue-700 bg-clip-text text-transparent hidden lg:block">
               ABSENTA
             </span>
           </div>
@@ -1710,81 +2532,87 @@ export const StudentDashboard = ({ userData, onLogout }: StudentDashboardProps) 
             variant="ghost"
             size="sm"
             onClick={() => setSidebarOpen(!sidebarOpen)}
-            className="lg:hidden p-1"
+            className="lg:hidden p-1 hover:bg-gray-100"
           >
             <X className="h-4 w-4" />
           </Button>
         </div>
 
         {/* Navigation */}
-        <nav className="p-4 space-y-2">
+        <nav className="p-3 lg:p-4 space-y-1">
           <Button
             variant={activeTab === 'kehadiran' ? "default" : "ghost"}
-            className={`w-full justify-start ${sidebarOpen ? '' : 'px-2 lg:px-3'}`}
+            className={`w-full justify-start h-12 text-sm lg:text-base ${sidebarOpen ? '' : 'px-2 lg:px-3'}`}
             onClick={() => {setActiveTab('kehadiran'); setSidebarOpen(false);}}
           >
-            <Clock className="h-4 w-4" />
-            {sidebarOpen && <span className="ml-2 block lg:hidden">Menu Kehadiran</span>}
-            <span className="ml-2 hidden lg:block">Menu Kehadiran</span>
+            <Clock className="h-5 w-5" />
+            {sidebarOpen && <span className="ml-3 block lg:hidden">Menu Kehadiran</span>}
+            <span className="ml-3 hidden lg:block">Menu Kehadiran</span>
           </Button>
           <Button
             variant={activeTab === 'riwayat' ? "default" : "ghost"}
-            className={`w-full justify-start ${sidebarOpen ? '' : 'px-2 lg:px-3'}`}
+            className={`w-full justify-start h-12 text-sm lg:text-base ${sidebarOpen ? '' : 'px-2 lg:px-3'}`}
             onClick={() => {setActiveTab('riwayat'); setSidebarOpen(false);}}
           >
-            <Calendar className="h-4 w-4" />
-            {sidebarOpen && <span className="ml-2 block lg:hidden">Riwayat</span>}
-            <span className="ml-2 hidden lg:block">Riwayat</span>
+            <Calendar className="h-5 w-5" />
+            {sidebarOpen && <span className="ml-3 block lg:hidden">Riwayat</span>}
+            <span className="ml-3 hidden lg:block">Riwayat</span>
           </Button>
           <Button
             variant={activeTab === 'pengajuan-izin' ? "default" : "ghost"}
-            className={`w-full justify-start ${sidebarOpen ? '' : 'px-2 lg:px-3'}`}
+            className={`w-full justify-start h-12 text-sm lg:text-base ${sidebarOpen ? '' : 'px-2 lg:px-3'}`}
             onClick={() => {setActiveTab('pengajuan-izin'); setSidebarOpen(false);}}
           >
-            <FileText className="h-4 w-4" />
-            {sidebarOpen && <span className="ml-2 block lg:hidden">Pengajuan Izin</span>}
-            <span className="ml-2 hidden lg:block">Pengajuan Izin</span>
+            <FileText className="h-5 w-5" />
+            {sidebarOpen && <span className="ml-3 block lg:hidden">Pengajuan Izin</span>}
+            <span className="ml-3 hidden lg:block">Pengajuan Izin</span>
           </Button>
           <Button
             variant={activeTab === 'banding-absen' ? "default" : "ghost"}
-            className={`w-full justify-start ${sidebarOpen ? '' : 'px-2 lg:px-3'}`}
+            className={`w-full justify-start h-12 text-sm lg:text-base ${sidebarOpen ? '' : 'px-2 lg:px-3'}`}
             onClick={() => {setActiveTab('banding-absen'); setSidebarOpen(false);}}
           >
-            <MessageCircle className="h-4 w-4" />
-            {sidebarOpen && <span className="ml-2 block lg:hidden">Banding Absen</span>}
-            <span className="ml-2 hidden lg:block">Banding Absen</span>
+            <MessageCircle className="h-5 w-5" />
+            {sidebarOpen && <span className="ml-3 block lg:hidden">Banding Absen</span>}
+            <span className="ml-3 hidden lg:block">Banding Absen</span>
           </Button>
         </nav>
 
         {/* User Info */}
-        <div className="absolute bottom-0 left-0 right-0 p-4 border-t border-gray-200">
+        <div className="absolute bottom-0 left-0 right-0 p-3 lg:p-4 border-t border-gray-200">
           {/* Font Size Control - Above Profile */}
           {(sidebarOpen || window.innerWidth >= 1024) && (
-            <div className="mb-4">
+            <div className="mb-3 lg:mb-4">
               <FontSizeControl variant="compact" />
             </div>
           )}
-          
+
           <div className={`flex items-center space-x-3 mb-3 ${sidebarOpen ? '' : 'justify-center lg:justify-start'}`}>
-            <div className="bg-emerald-100 p-2 rounded-full">
-              <Settings className="h-4 w-4 text-emerald-600" />
+            <div className="bg-emerald-100 p-2 rounded-full flex-shrink-0">
+              <User className="h-4 w-4 text-emerald-600" />
             </div>
             {sidebarOpen && (
-              <div className="flex-1 block lg:hidden">
-                <p className="text-sm font-medium text-gray-900">{userData.nama}</p>
-                <p className="text-xs text-gray-500">Siswa Perwakilan</p>
+              <div className="flex-1 min-w-0 block lg:hidden">
+                <p className="text-sm font-medium text-gray-900 truncate">{userData.nama}</p>
+                <p className="text-xs text-gray-500 truncate">Siswa Perwakilan</p>
+                {kelasInfo && (
+                  <p className="text-xs text-blue-600 truncate">Kelas {kelasInfo}</p>
+                )}
               </div>
             )}
-            <div className="flex-1 hidden lg:block">
-              <p className="text-sm font-medium text-gray-900">{userData.nama}</p>
-              <p className="text-xs text-gray-500">Siswa Perwakilan</p>
+            <div className="flex-1 min-w-0 hidden lg:block">
+              <p className="text-sm font-medium text-gray-900 truncate">{userData.nama}</p>
+              <p className="text-xs text-gray-500 truncate">Siswa Perwakilan</p>
+              {kelasInfo && (
+                <p className="text-xs text-blue-600 truncate">Kelas {kelasInfo}</p>
+              )}
             </div>
           </div>
           <Button
             onClick={onLogout}
             variant="outline"
             size="sm"
-            className={`w-full ${sidebarOpen ? '' : 'px-2 lg:px-3'}`}
+            className={`w-full h-10 text-sm ${sidebarOpen ? '' : 'px-2 lg:px-3'}`}
           >
             <LogOut className="h-4 w-4" />
             {sidebarOpen && <span className="ml-2 block lg:hidden">Keluar</span>}
@@ -1794,39 +2622,44 @@ export const StudentDashboard = ({ userData, onLogout }: StudentDashboardProps) 
       </div>
 
       {/* Main Content */}
-      <div className="lg:ml-64">
-        <div className="p-4 lg:p-6">
+      <div className={`transition-all duration-300 ${sidebarOpen ? 'lg:ml-64' : 'lg:ml-16'} ml-0`}>
+        <div className="p-4 lg:p-6 pt-6 lg:pt-6">
           {/* Mobile Header */}
-          <div className="flex items-center justify-between mb-6 lg:hidden">
+          <div className="flex items-center justify-between mb-4 lg:hidden">
             <Button
               variant="outline"
               size="sm"
               onClick={() => setSidebarOpen(true)}
+              className="flex items-center gap-2 px-3 py-2"
             >
               <Menu className="h-4 w-4" />
+              <span className="text-sm">Menu</span>
             </Button>
-            <h1 className="text-xl font-bold">Dashboard Siswa</h1>
-            <div className="w-10"></div> {/* Spacer for alignment */}
+            <div className="flex items-center gap-2">
+              <h1 className="text-lg font-bold text-gray-900">Dashboard Siswa</h1>
+              <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+            </div>
+            <div className="w-16"></div>
           </div>
 
           {/* Desktop Header */}
-          <div className="hidden lg:flex justify-between items-center mb-8">
+          <div className="hidden lg:flex justify-between items-center mb-6">
             <div>
-              <h1 className="text-4xl font-bold bg-gradient-to-r from-blue-600 to-blue-700 bg-clip-text text-transparent">
+              <h1 className="text-3xl font-bold bg-gradient-to-r from-blue-600 to-blue-700 bg-clip-text text-transparent">
                 Dashboard Siswa
               </h1>
-              <p className="text-gray-600 mt-2">Selamat datang, {userData.nama}!</p>
+              <p className="text-gray-600 mt-1">Selamat datang, {userData.nama}!</p>
               {kelasInfo && (
-                <p className="text-sm text-gray-500">Perwakilan Kelas {kelasInfo}</p>
+                <p className="text-sm text-blue-600 font-medium mt-1">Perwakilan Kelas {kelasInfo}</p>
               )}
             </div>
-            <div className="flex items-center space-x-2">
-              <Badge variant="secondary" className="bg-blue-100 text-blue-700">
-                {new Date().toLocaleDateString('id-ID', { 
-                  weekday: 'long', 
-                  year: 'numeric', 
-                  month: 'long', 
-                  day: 'numeric' 
+            <div className="flex items-center space-x-3">
+              <Badge variant="secondary" className="bg-blue-100 text-blue-700 px-3 py-1">
+                {new Date().toLocaleDateString('id-ID', {
+                  weekday: 'long',
+                  year: 'numeric',
+                  month: 'long',
+                  day: 'numeric'
                 })}
               </Badge>
             </div>

@@ -1,0 +1,9 @@
+{
+  "autoBackupSchedule": "weekly",
+  "maxBackups": 10,
+  "archiveAge": 24,
+  "compression": true,
+  "emailNotifications": false,
+  "lastBackupDate": null,
+  "nextBackupDate": null
+}

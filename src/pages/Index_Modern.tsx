@@ -144,7 +144,7 @@ const Index = () => {
         
         // Store token in localStorage for persistence
         if (result.token) {
-          localStorage.setItem('authToken', result.token);
+          localStorage.setItem('token', result.token);
         }
         
         toast({
@@ -179,6 +179,7 @@ const Index = () => {
       });
       
       // Clear local storage
+      localStorage.removeItem('token');
       localStorage.removeItem('authToken');
       
       // Reset state
@@ -195,6 +196,7 @@ const Index = () => {
     } catch (error) {
       console.error('❌ Logout error:', error);
       // Force logout even if request fails
+      localStorage.removeItem('token');
       localStorage.removeItem('authToken');
       setUserData(null);
       setCurrentState('login');
