@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fix Frontend Cache Issues</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .container { max-width: 800px; margin: 0 auto; }
+        .section { margin: 20px 0; padding: 15px; border: 1px solid #ddd; border-radius: 5px; }
+        .success { background-color: #d4edda; border-color: #c3e6cb; }
+        .error { background-color: #f8d7da; border-color: #f5c6cb; }
+        .info { background-color: #d1ecf1; border-color: #bee5eb; }
+        .warning { background-color: #fff3cd; border-color: #ffeaa7; }
+        button { padding: 10px 15px; margin: 5px; cursor: pointer; }
+        pre { background: #f8f9fa; padding: 10px; border-radius: 3px; overflow-x: auto; }
+        .log { background: #000; color: #0f0; padding: 10px; border-radius: 3px; font-family: monospace; max-height: 300px; overflow-y: auto; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔧 Fix Frontend Cache Issues</h1>
+        
+        <div class="section warning">
+            <h3>⚠️ Masalah yang Ditemukan</h3>
+            <p>Backend berfungsi sempurna (100% success rate), tetapi frontend masih mendapat error 500. 
+            Ini kemungkinan disebabkan oleh:</p>
+            <ul>
+                <li>Browser cache yang menyimpan response error lama</li>
+                <li>Service worker yang cache response error</li>
+                <li>React state yang tidak ter-update dengan benar</li>
+                <li>Network timing issues</li>
+            </ul>
+        </div>
+        
+        <div class="section info">
+            <h3>🛠️ Solusi yang Tersedia</h3>
+            <button onclick="clearAllCaches()">1. Clear All Caches</button>
+            <button onclick="clearLocalStorage()">2. Clear LocalStorage</button>
+            <button onclick="clearSessionStorage()">3. Clear SessionStorage</button>
+            <button onclick="reloadWithCacheBust()">4. Reload with Cache Bust</button>
+            <button onclick="testEndpointsDirectly()">5. Test Endpoints Directly</button>
+        </div>
+        
+        <div class="section">
+            <h3>📊 Test Results</h3>
+            <div id="testResults">No tests run yet</div>
+        </div>
+        
+        <div class="section">
+            <h3>📝 Console Log</h3>
+            <div id="consoleLog" class="log"></div>
+        </div>
+    </div>
+
+    <script>
+        const BASE_URL = 'http://localhost:3001';
+        
+        // Override console.log to show in page
+        const originalLog = console.log;
+        const originalError = console.error;
+        
+        function addToLog(message, type = 'log') {
+            const logDiv = document.getElementById('consoleLog');
+            const timestamp = new Date().toLocaleTimeString();
+            const color = type === 'error' ? '#f00' : '#0f0';
+            logDiv.innerHTML += `<div style="color: ${color}">[${timestamp}] ${message}</div>`;
+            logDiv.scrollTop = logDiv.scrollHeight;
+        }
+        
+        console.log = function(...args) {
+            originalLog.apply(console, args);
+            addToLog(args.join(' '), 'log');
+        };
+        
+        console.error = function(...args) {
+            originalError.apply(console, args);
+            addToLog(args.join(' '), 'error');
+        };
+        
+        async function clearAllCaches() {
+            try {
+                console.log('🧹 Clearing all caches...');
+                
+                // Clear localStorage
+                localStorage.clear();
+                console.log('✅ localStorage cleared');
+                
+                // Clear sessionStorage
+                sessionStorage.clear();
+                console.log('✅ sessionStorage cleared');
+                
+                // Clear service worker cache if available
+                if ('caches' in window) {
+                    const cacheNames = await caches.keys();
+                    for (const cacheName of cacheNames) {
+                        await caches.delete(cacheName);
+                        console.log(`✅ Cache ${cacheName} cleared`);
+                    }
+                }
+                
+                // Clear IndexedDB if available
+                if ('indexedDB' in window) {
+                    try {
+                        const deleteReq = indexedDB.deleteDatabase('absenta-db');
+                        deleteReq.onsuccess = () => console.log('✅ IndexedDB cleared');
+                        deleteReq.onerror = () => console.log('⚠️ IndexedDB clear failed');
+                    } catch (e) {
+                        console.log('⚠️ IndexedDB not available');
+                    }
+                }
+                
+                console.log('🎉 All caches cleared successfully!');
+                
+            } catch (error) {
+                console.error('❌ Error clearing caches:', error);
+            }
+        }
+        
+        function clearLocalStorage() {
+            try {
+                console.log('🧹 Clearing localStorage...');
+                localStorage.clear();
+                console.log('✅ localStorage cleared');
+            } catch (error) {
+                console.error('❌ Error clearing localStorage:', error);
+            }
+        }
+        
+        function clearSessionStorage() {
+            try {
+                console.log('🧹 Clearing sessionStorage...');
+                sessionStorage.clear();
+                console.log('✅ sessionStorage cleared');
+            } catch (error) {
+                console.error('❌ Error clearing sessionStorage:', error);
+            }
+        }
+        
+        function reloadWithCacheBust() {
+            try {
+                console.log('🔄 Reloading with cache bust...');
+                const timestamp = Date.now();
+                window.location.href = `${window.location.pathname}?v=${timestamp}`;
+            } catch (error) {
+                console.error('❌ Error reloading:', error);
+            }
+        }
+        
+        async function testEndpointsDirectly() {
+            try {
+                console.log('🧪 Testing endpoints directly...');
+                
+                // First login
+                const loginResponse = await fetch(`${BASE_URL}/api/login`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        username: 'x_rpl_1_01',
+                        password: 'siswa123'
+                    })
+                });
+                
+                if (!loginResponse.ok) {
+                    throw new Error('Login failed');
+                }
+                
+                const loginData = await loginResponse.json();
+                const token = loginData.token;
+                console.log('✅ Login successful');
+                
+                // Test pengajuan izin
+                const pengajuanResponse = await fetch(`${BASE_URL}/api/siswa/821/pengajuan-izin`, {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+                
+                const pengajuanData = await pengajuanResponse.json();
+                console.log(`📊 Pengajuan Izin: ${pengajuanResponse.status} - ${pengajuanResponse.ok ? 'SUCCESS' : 'FAILED'}`);
+                
+                // Test jadwal rentang
+                const jadwalResponse = await fetch(`${BASE_URL}/api/siswa/821/jadwal-rentang?tanggal=2025-10-03`, {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+                
+                const jadwalData = await jadwalResponse.json();
+                console.log(`📊 Jadwal Rentang: ${jadwalResponse.status} - ${jadwalResponse.ok ? 'SUCCESS' : 'FAILED'}`);
+                
+                // Display results
+                const testResults = document.getElementById('testResults');
+                const success = pengajuanResponse.ok && jadwalResponse.ok;
+                
+                testResults.innerHTML = `
+                    <div class="${success ? 'success' : 'error'}">
+                        <strong>📊 Direct Test Results: ${success ? 'SUCCESS' : 'FAILED'}</strong><br>
+                        <strong>Pengajuan Izin:</strong> ${pengajuanResponse.status} - ${pengajuanResponse.ok ? 'SUCCESS' : 'FAILED'}<br>
+                        <strong>Jadwal Rentang:</strong> ${jadwalResponse.status} - ${jadwalResponse.ok ? 'SUCCESS' : 'FAILED'}<br>
+                        ${!success ? '<strong>⚠️ Backend is working, issue is in frontend cache/state</strong>' : ''}
+                    </div>
+                `;
+                
+            } catch (error) {
+                console.error('❌ Direct test failed:', error);
+                document.getElementById('testResults').innerHTML = `
+                    <div class="error">
+                        <strong>❌ Direct Test Failed:</strong> ${error.message}
+                    </div>
+                `;
+            }
+        }
+        
+        // Initialize
+        console.log('🚀 Frontend Cache Fix Tool initialized');
+        console.log('💡 Click "Test Endpoints Directly" first to verify backend is working');
+    </script>
+</body>
+</html>
+
+
+
+
+

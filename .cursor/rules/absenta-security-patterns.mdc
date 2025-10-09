@@ -1,0 +1,935 @@
+---
+globs: *.js,*.tsx
+description: Security patterns and best practices for Absenta system
+---
+
+# Absenta Security Patterns - Complete Guide
+
+## 🔐 Security Architecture Overview
+
+**Absenta** menggunakan multi-layered security approach dengan fokus pada:
+- **Authentication**: JWT-based stateless authentication
+- **Authorization**: Role-based access control (RBAC)
+- **Data Protection**: Encryption, sanitization, validation
+- **Network Security**: HTTPS, CORS, rate limiting
+- **Application Security**: Input validation, SQL injection prevention
+
+## 🔑 Authentication Security
+
+### JWT Token Security
+```javascript
+const jwtSecurity = {
+  // 1. Token configuration
+  tokenConfig: {
+    algorithm: 'HS256',
+    expiresIn: '24h',
+    issuer: 'absenta-system',
+    audience: 'absenta-users'
+  },
+  
+  // 2. Secret management
+  secretManagement: {
+    secretKey: process.env.JWT_SECRET, // Required, no fallback
+    rotationPeriod: 90, // days
+    backupSecrets: false // For security
+  },
+  
+  // 3. Token validation
+  tokenValidation: {
+    verifySignature: true,
+    verifyExpiration: true,
+    verifyIssuer: true,
+    verifyAudience: true,
+    clockTolerance: 30 // seconds
+  }
+};
+```
+
+### Password Security
+```javascript
+const passwordSecurity = {
+  // 1. Hashing configuration
+  hashing: {
+    algorithm: 'bcrypt',
+    saltRounds: 10,
+    pepper: process.env.PASSWORD_PEPPER || 'absenta-pepper-2025'
+  },
+  
+  // 2. Password policy
+  passwordPolicy: {
+    minLength: 6,
+    maxLength: 255,
+    requireUppercase: false,
+    requireLowercase: false,
+    requireNumbers: false,
+    requireSpecialChars: false,
+    preventCommonPasswords: true,
+    preventUserInfo: true
+  },
+  
+  // 3. Password validation
+  validation: {
+    checkCommonPasswords: true,
+    checkUserInfo: true,
+    maxAge: 365, // days
+    preventReuse: false
+  }
+};
+```
+
+### Authentication Flow Security
+```javascript
+// Secure login implementation
+async function secureLogin(username, password) {
+  try {
+    // 1. Input validation
+    if (!username || !password) {
+      throw new Error('Username and password are required');
+    }
+    
+    // 2. Rate limiting check
+    const rateLimitKey = `login:${req.ip}`;
+    const attempts = await redis.get(rateLimitKey);
+    if (attempts && parseInt(attempts) >= 5) {
+      throw new Error('Too many login attempts');
+    }
+    
+    // 3. User lookup with status check
+    const [users] = await db.execute(
+      `SELECT * FROM pengguna 
+       WHERE nama_pengguna = ? 
+       AND (status IN ("aktif", "active", "1", "1") OR status IS NULL)`,
+      [username]
+    );
+    
+    if (users.length === 0) {
+      // Increment rate limit counter
+      await redis.incr(rateLimitKey);
+      await redis.expire(rateLimitKey, 900); // 15 minutes
+      throw new Error('Invalid credentials');
+    }
+    
+    const user = users[0];
+    
+    // 4. Password verification with pepper
+    const passwordWithPepper = password + PASSWORD_PEPPER;
+    const isValidPassword = await bcrypt.compare(passwordWithPepper, user.kata_sandi);
+    
+    if (!isValidPassword) {
+      // Increment rate limit counter
+      await redis.incr(rateLimitKey);
+      await redis.expire(rateLimitKey, 900);
+      throw new Error('Invalid credentials');
+    }
+    
+    // 5. Generate secure token
+    const token = jwt.sign(
+      {
+        id: user.id,
+        username: user.nama_pengguna,
+        role: user.peran,
+        iat: Math.floor(Date.now() / 1000)
+      },
+      JWT_SECRET,
+      { expiresIn: '24h' }
+    );
+    
+    // 6. Clear rate limit on successful login
+    await redis.del(rateLimitKey);
+    
+    // 7. Log successful login
+    console.log(`✅ Successful login: ${user.nama_pengguna} (${user.peran})`);
+    
+    return {
+      success: true,
+      token,
+      user: {
+        id: user.id,
+        username: user.nama_pengguna,
+        role: user.peran,
+        nama: user.nama
+      }
+    };
+    
+  } catch (error) {
+    console.error('❌ Login error:', error.message);
+    throw error;
+  }
+}
+```
+
+## 🛡️ Authorization Security
+
+### Role-Based Access Control (RBAC)
+```javascript
+const rbacSecurity = {
+  // 1. Role definitions
+  roles: {
+    admin: {
+      level: 3,
+      permissions: [
+        'user.create', 'user.read', 'user.update', 'user.delete',
+        'schedule.create', 'schedule.read', 'schedule.update', 'schedule.delete',
+        'attendance.create', 'attendance.read', 'attendance.update', 'attendance.delete',
+        'report.generate', 'system.configure', 'data.import', 'data.export'
+      ]
+    },
+    guru: {
+      level: 2,
+      permissions: [
+        'schedule.read', 'attendance.create', 'attendance.read',
+        'student.read', 'report.generate.own'
+      ]
+    },
+    siswa: {
+      level: 1,
+      permissions: [
+        'schedule.read', 'attendance.read.own', 'profile.update.own'
+      ]
+    }
+  },
+  
+  // 2. Permission checking
+  checkPermission: (userRole, requiredPermission) => {
+    const role = rbacSecurity.roles[userRole];
+    if (!role) return false;
+    return role.permissions.includes(requiredPermission);
+  }
+};
+```
+
+### Authorization Middleware
+```javascript
+// Secure authentication middleware
+function authenticateToken(req, res, next) {
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1] || req.cookies.token;
+  
+  if (!token) {
+    return res.status(401).json({ 
+      success: false,
+      error: 'Access token required',
+      message: 'Please provide a valid authentication token'
+    });
+  }
+
+  jwt.verify(token, JWT_SECRET, (err, user) => {
+    if (err) {
+      console.log('❌ Token verification failed:', err.message);
+      return res.status(403).json({ 
+        success: false,
+        error: 'Invalid or expired token',
+        message: 'Please login again'
+      });
+    }
+    
+    // Additional security checks
+    if (!user.id || !user.username || !user.role) {
+      return res.status(403).json({ 
+        success: false,
+        error: 'Invalid token payload',
+        message: 'Token contains invalid data'
+      });
+    }
+    
+    console.log(`✅ Token verified for user: ${user.username} (${user.role})`);
+    req.user = user;
+    next();
+  });
+}
+
+// Role-based authorization middleware
+function requireRole(roles) {
+  return (req, res, next) => {
+    if (!req.user) {
+      return res.status(401).json({ 
+        success: false,
+        error: 'Authentication required',
+        message: 'Please login first'
+      });
+    }
+    
+    if (!roles.includes(req.user.role)) {
+      console.log(`❌ Access denied: ${req.user.username} (${req.user.role}) attempted to access ${req.path}`);
+      return res.status(403).json({ 
+        success: false,
+        error: 'Insufficient permissions',
+        message: 'You do not have permission to access this resource'
+      });
+    }
+    
+    next();
+  };
+}
+```
+
+## 🛡️ Data Protection Security
+
+### SQL Injection Prevention
+```javascript
+const sqlInjectionPrevention = {
+  // 1. Always use parameterized queries
+  secureQuery: async (query, params) => {
+    try {
+      // Validate query structure
+      if (!query || typeof query !== 'string') {
+        throw new Error('Invalid query');
+      }
+      
+      // Validate parameters
+      if (!Array.isArray(params)) {
+        throw new Error('Parameters must be an array');
+      }
+      
+      // Execute with parameterized query
+      const [rows] = await db.execute(query, params);
+      return rows;
+    } catch (error) {
+      console.error('❌ SQL query error:', error);
+      throw new Error('Database query failed');
+    }
+  },
+  
+  // 2. Input sanitization
+  sanitizeInput: (input) => {
+    if (typeof input !== 'string') return input;
+    
+    // Remove potentially dangerous characters
+    return input
+      .replace(/[<>]/g, '') // Remove HTML tags
+      .replace(/['"]/g, '') // Remove quotes
+      .replace(/[;]/g, '') // Remove semicolons
+      .trim();
+  },
+  
+  // 3. Query validation
+  validateQuery: (query) => {
+    const dangerousPatterns = [
+      /DROP\s+TABLE/i,
+      /DELETE\s+FROM/i,
+      /UPDATE\s+.*\s+SET/i,
+      /INSERT\s+INTO/i,
+      /ALTER\s+TABLE/i,
+      /CREATE\s+TABLE/i,
+      /UNION\s+SELECT/i,
+      /OR\s+1\s*=\s*1/i
+    ];
+    
+    for (const pattern of dangerousPatterns) {
+      if (pattern.test(query)) {
+        throw new Error('Potentially dangerous query detected');
+      }
+    }
+    
+    return true;
+  }
+};
+```
+
+### XSS Prevention
+```javascript
+const xssPrevention = {
+  // 1. Input sanitization
+  sanitizeHtml: (input) => {
+    if (typeof input !== 'string') return input;
+    
+    // Remove HTML tags
+    return input
+      .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
+      .replace(/<[^>]*>/g, '')
+      .replace(/javascript:/gi, '')
+      .replace(/on\w+\s*=/gi, '');
+  },
+  
+  // 2. Output encoding
+  encodeOutput: (input) => {
+    if (typeof input !== 'string') return input;
+    
+    return input
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#x27;')
+      .replace(/\//g, '&#x2F;');
+  },
+  
+  // 3. Content Security Policy
+  cspHeaders: {
+    'Content-Security-Policy': "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'"
+  }
+};
+```
+
+### Data Encryption
+```javascript
+const dataEncryption = {
+  // 1. Sensitive data encryption
+  encryptSensitiveData: (data) => {
+    const algorithm = 'aes-256-gcm';
+    const key = crypto.scryptSync(process.env.ENCRYPTION_KEY, 'salt', 32);
+    const iv = crypto.randomBytes(16);
+    
+    const cipher = crypto.createCipher(algorithm, key);
+    cipher.setAAD(Buffer.from('absenta-data', 'utf8'));
+    
+    let encrypted = cipher.update(data, 'utf8', 'hex');
+    encrypted += cipher.final('hex');
+    
+    const authTag = cipher.getAuthTag();
+    
+    return {
+      encrypted,
+      iv: iv.toString('hex'),
+      authTag: authTag.toString('hex')
+    };
+  },
+  
+  // 2. Data decryption
+  decryptSensitiveData: (encryptedData) => {
+    const algorithm = 'aes-256-gcm';
+    const key = crypto.scryptSync(process.env.ENCRYPTION_KEY, 'salt', 32);
+    const iv = Buffer.from(encryptedData.iv, 'hex');
+    
+    const decipher = crypto.createDecipher(algorithm, key);
+    decipher.setAAD(Buffer.from('absenta-data', 'utf8'));
+    decipher.setAuthTag(Buffer.from(encryptedData.authTag, 'hex'));
+    
+    let decrypted = decipher.update(encryptedData.encrypted, 'hex', 'utf8');
+    decrypted += decipher.final('utf8');
+    
+    return decrypted;
+  }
+};
+```
+
+## 🌐 Network Security
+
+### HTTPS Configuration
+```javascript
+const httpsSecurity = {
+  // 1. SSL/TLS configuration
+  sslConfig: {
+    key: fs.readFileSync('path/to/private-key.pem'),
+    cert: fs.readFileSync('path/to/certificate.pem'),
+    ciphers: [
+      'ECDHE-RSA-AES128-GCM-SHA256',
+      'ECDHE-RSA-AES256-GCM-SHA384',
+      'ECDHE-RSA-AES128-SHA256',
+      'ECDHE-RSA-AES256-SHA384'
+    ].join(':'),
+    honorCipherOrder: true,
+    secureProtocol: 'TLSv1_2_method'
+  },
+  
+  // 2. Security headers
+  securityHeaders: {
+    'Strict-Transport-Security': 'max-age=31536000; includeSubDomains',
+    'X-Content-Type-Options': 'nosniff',
+    'X-Frame-Options': 'DENY',
+    'X-XSS-Protection': '1; mode=block',
+    'Referrer-Policy': 'strict-origin-when-cross-origin',
+    'Permissions-Policy': 'geolocation=(), microphone=(), camera=()'
+  }
+};
+```
+
+### CORS Security
+```javascript
+const corsSecurity = {
+  // 1. CORS configuration
+  corsOptions: {
+    origin: (origin, callback) => {
+      const allowedOrigins = [
+        'http://localhost:3000',
+        'http://localhost:5173',
+        'https://absenta.school.edu'
+      ];
+      
+      if (!origin || allowedOrigins.includes(origin)) {
+        callback(null, true);
+      } else {
+        callback(new Error('Not allowed by CORS'));
+      }
+    },
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+    exposedHeaders: ['X-Total-Count', 'X-Page-Count'],
+    maxAge: 86400 // 24 hours
+  },
+  
+  // 2. Preflight handling
+  handlePreflight: (req, res, next) => {
+    if (req.method === 'OPTIONS') {
+      res.header('Access-Control-Allow-Origin', req.headers.origin);
+      res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+      res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
+      res.header('Access-Control-Max-Age', '86400');
+      res.sendStatus(200);
+    } else {
+      next();
+    }
+  }
+};
+```
+
+### Rate Limiting Security
+```javascript
+const rateLimitSecurity = {
+  // 1. Global rate limiting
+  globalLimiter: rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    max: 1000, // limit each IP to 1000 requests per windowMs
+    message: {
+      success: false,
+      error: 'Too many requests from this IP',
+      message: 'Please try again later',
+      retryAfter: '15 minutes'
+    },
+    standardHeaders: true,
+    legacyHeaders: false,
+    handler: (req, res) => {
+      console.log(`🚫 Rate limit exceeded for IP: ${req.ip}`);
+      res.status(429).json({
+        success: false,
+        error: 'Rate limit exceeded',
+        message: 'Too many requests, please try again later',
+        retryAfter: '15 minutes'
+      });
+    }
+  }),
+  
+  // 2. Login rate limiting
+  loginLimiter: rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    max: 5, // limit each IP to 5 login attempts per windowMs
+    message: {
+      success: false,
+      error: 'Too many login attempts',
+      message: 'Please try again later',
+      retryAfter: '15 minutes'
+    },
+    skipSuccessfulRequests: true,
+    handler: (req, res) => {
+      console.log(`🚫 Login rate limit exceeded for IP: ${req.ip}`);
+      res.status(429).json({
+        success: false,
+        error: 'Too many login attempts',
+        message: 'Please try again later',
+        retryAfter: '15 minutes'
+      });
+    }
+  })
+};
+```
+
+## 🔍 Input Validation Security
+
+### Request Validation
+```javascript
+const inputValidationSecurity = {
+  // 1. Request body validation
+  validateRequestBody: (req, res, next) => {
+    if (req.method === 'POST' || req.method === 'PUT') {
+      if (!req.body || Object.keys(req.body).length === 0) {
+        return res.status(400).json({
+          success: false,
+          error: 'Request body required',
+          message: 'Please provide request data'
+        });
+      }
+      
+      // Check content type
+      if (req.get('Content-Type') !== 'application/json') {
+        return res.status(400).json({
+          success: false,
+          error: 'Invalid content type',
+          message: 'Content-Type must be application/json'
+        });
+      }
+    }
+    
+    next();
+  },
+  
+  // 2. Parameter validation
+  validateParameters: (schema) => {
+    return (req, res, next) => {
+      const { error } = schema.validate(req.body);
+      if (error) {
+        return res.status(400).json({
+          success: false,
+          error: 'Validation failed',
+          message: error.details[0].message,
+          details: error.details
+        });
+      }
+      next();
+    };
+  },
+  
+  // 3. File upload validation
+  validateFileUpload: (req, res, next) => {
+    if (req.file) {
+      // Check file type
+      const allowedTypes = ['.xlsx', '.xls', '.pdf', '.jpg', '.png'];
+      const fileExt = path.extname(req.file.originalname).toLowerCase();
+      
+      if (!allowedTypes.includes(fileExt)) {
+        return res.status(400).json({
+          success: false,
+          error: 'Invalid file type',
+          message: `Allowed types: ${allowedTypes.join(', ')}`
+        });
+      }
+      
+      // Check file size (10MB max)
+      const maxSize = 10 * 1024 * 1024;
+      if (req.file.size > maxSize) {
+        return res.status(400).json({
+          success: false,
+          error: 'File too large',
+          message: 'Maximum file size is 10MB'
+        });
+      }
+    }
+    
+    next();
+  }
+};
+```
+
+### Data Sanitization
+```javascript
+const dataSanitization = {
+  // 1. HTML sanitization
+  sanitizeHtml: (input) => {
+    if (typeof input !== 'string') return input;
+    
+    return input
+      .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
+      .replace(/<[^>]*>/g, '')
+      .replace(/javascript:/gi, '')
+      .replace(/on\w+\s*=/gi, '')
+      .trim();
+  },
+  
+  // 2. SQL injection prevention
+  sanitizeSql: (input) => {
+    if (typeof input !== 'string') return input;
+    
+    return input
+      .replace(/['"]/g, '')
+      .replace(/[;]/g, '')
+      .replace(/--/g, '')
+      .replace(/\/\*/g, '')
+      .replace(/\*\//g, '')
+      .trim();
+  },
+  
+  // 3. XSS prevention
+  preventXss: (input) => {
+    if (typeof input !== 'string') return input;
+    
+    return input
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#x27;')
+      .replace(/\//g, '&#x2F;');
+  }
+};
+```
+
+## 🔐 Session Security
+
+### Session Management
+```javascript
+const sessionSecurity = {
+  // 1. Session configuration
+  sessionConfig: {
+    secret: process.env.SESSION_SECRET || 'absenta-session-secret',
+    resave: false,
+    saveUninitialized: false,
+    cookie: {
+      secure: process.env.NODE_ENV === 'production',
+      httpOnly: true,
+      maxAge: 24 * 60 * 60 * 1000, // 24 hours
+      sameSite: 'strict'
+    }
+  },
+  
+  // 2. Session validation
+  validateSession: (req, res, next) => {
+    if (req.session && req.session.user) {
+      // Check if session is still valid
+      const sessionAge = Date.now() - req.session.createdAt;
+      const maxAge = 24 * 60 * 60 * 1000; // 24 hours
+      
+      if (sessionAge > maxAge) {
+        req.session.destroy();
+        return res.status(401).json({
+          success: false,
+          error: 'Session expired',
+          message: 'Please login again'
+        });
+      }
+      
+      next();
+    } else {
+      return res.status(401).json({
+        success: false,
+        error: 'Session required',
+        message: 'Please login first'
+      });
+    }
+  }
+};
+```
+
+## 🚨 Security Monitoring
+
+### Security Logging
+```javascript
+const securityLogging = {
+  // 1. Security event logging
+  logSecurityEvent: (event, details) => {
+    const logEntry = {
+      timestamp: new Date().toISOString(),
+      event,
+      details,
+      ip: details.ip || 'unknown',
+      userAgent: details.userAgent || 'unknown',
+      severity: details.severity || 'info'
+    };
+    
+    console.log(`🔒 Security Event: ${event}`, logEntry);
+    
+    // Store in security log file
+    fs.appendFileSync('security.log', JSON.stringify(logEntry) + '\n');
+  },
+  
+  // 2. Failed login attempts
+  logFailedLogin: (username, ip, userAgent) => {
+    securityLogging.logSecurityEvent('FAILED_LOGIN', {
+      username,
+      ip,
+      userAgent,
+      severity: 'warning'
+    });
+  },
+  
+  // 3. Suspicious activity
+  logSuspiciousActivity: (activity, details) => {
+    securityLogging.logSecurityEvent('SUSPICIOUS_ACTIVITY', {
+      activity,
+      ...details,
+      severity: 'high'
+    });
+  }
+};
+```
+
+### Security Alerts
+```javascript
+const securityAlerts = {
+  // 1. Alert configuration
+  alertConfig: {
+    maxFailedLogins: 5,
+    maxSuspiciousActivities: 3,
+    alertCooldown: 300000 // 5 minutes
+  },
+  
+  // 2. Alert triggers
+  checkAlerts: (event, details) => {
+    switch (event) {
+      case 'FAILED_LOGIN':
+        if (details.count >= securityAlerts.alertConfig.maxFailedLogins) {
+          securityAlerts.sendAlert('Multiple failed login attempts', details);
+        }
+        break;
+      
+      case 'SUSPICIOUS_ACTIVITY':
+        if (details.count >= securityAlerts.alertConfig.maxSuspiciousActivities) {
+          securityAlerts.sendAlert('Suspicious activity detected', details);
+        }
+        break;
+    }
+  },
+  
+  // 3. Alert sending
+  sendAlert: (message, details) => {
+    console.log(`🚨 SECURITY ALERT: ${message}`, details);
+    
+    // Send to admin notification system
+    // This could be email, SMS, or webhook
+    if (process.env.ADMIN_EMAIL) {
+      // Send email alert
+      sendEmailAlert(message, details);
+    }
+  }
+};
+```
+
+## 🔧 Security Configuration
+
+### Environment Security
+```javascript
+const environmentSecurity = {
+  // 1. Required environment variables
+  requiredEnvVars: [
+    'JWT_SECRET',
+    'DB_PASSWORD',
+    'NODE_ENV'
+  ],
+  
+  // 2. Environment validation
+  validateEnvironment: () => {
+    const missing = environmentSecurity.requiredEnvVars.filter(
+      varName => !process.env[varName]
+    );
+    
+    if (missing.length > 0) {
+      console.error('❌ Missing required environment variables:', missing);
+      process.exit(1);
+    }
+    
+    // Validate JWT secret strength
+    if (process.env.JWT_SECRET && process.env.JWT_SECRET.length < 32) {
+      console.error('❌ JWT_SECRET must be at least 32 characters long');
+      process.exit(1);
+    }
+  },
+  
+  // 3. Production security checks
+  productionChecks: () => {
+    if (process.env.NODE_ENV === 'production') {
+      // Check for secure configurations
+      if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32) {
+        console.error('❌ Production requires strong JWT_SECRET');
+        process.exit(1);
+      }
+      
+      if (process.env.DB_PASSWORD === 'password') {
+        console.error('❌ Production requires secure database password');
+        process.exit(1);
+      }
+    }
+  }
+};
+```
+
+### Security Headers
+```javascript
+const securityHeaders = {
+  // 1. Security middleware
+  securityMiddleware: (req, res, next) => {
+    // Set security headers
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('X-Frame-Options', 'DENY');
+    res.setHeader('X-XSS-Protection', '1; mode=block');
+    res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+    res.setHeader('Permissions-Policy', 'geolocation=(), microphone=(), camera=()');
+    
+    // HTTPS only in production
+    if (process.env.NODE_ENV === 'production') {
+      res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+    }
+    
+    next();
+  },
+  
+  // 2. Content Security Policy
+  cspMiddleware: (req, res, next) => {
+    const csp = [
+      "default-src 'self'",
+      "script-src 'self' 'unsafe-inline'",
+      "style-src 'self' 'unsafe-inline'",
+      "img-src 'self' data:",
+      "font-src 'self'",
+      "connect-src 'self'",
+      "frame-ancestors 'none'"
+    ].join('; ');
+    
+    res.setHeader('Content-Security-Policy', csp);
+    next();
+  }
+};
+```
+
+## 🛡️ Security Best Practices
+
+### Code Security
+```javascript
+const codeSecurity = {
+  // 1. Secure coding practices
+  practices: [
+    'Always validate input',
+    'Use parameterized queries',
+    'Sanitize output',
+    'Implement proper error handling',
+    'Use HTTPS in production',
+    'Keep dependencies updated',
+    'Implement proper logging',
+    'Use environment variables for secrets'
+  ],
+  
+  // 2. Security testing
+  testing: [
+    'Input validation testing',
+    'SQL injection testing',
+    'XSS testing',
+    'Authentication testing',
+    'Authorization testing',
+    'Rate limiting testing'
+  ],
+  
+  // 3. Security review checklist
+  checklist: [
+    'All inputs validated',
+    'All outputs sanitized',
+    'SQL queries parameterized',
+    'Authentication implemented',
+    'Authorization enforced',
+    'Error handling secure',
+    'Logging implemented',
+    'Secrets protected'
+  ]
+};
+```
+
+### Security Maintenance
+```javascript
+const securityMaintenance = {
+  // 1. Regular security tasks
+  regularTasks: [
+    'Update dependencies',
+    'Review security logs',
+    'Check for vulnerabilities',
+    'Update security policies',
+    'Review user permissions',
+    'Backup security data'
+  ],
+  
+  // 2. Security monitoring
+  monitoring: [
+    'Failed login attempts',
+    'Suspicious activities',
+    'Unusual access patterns',
+    'System vulnerabilities',
+    'Performance anomalies'
+  ],
+  
+  // 3. Incident response
+  incidentResponse: [
+    'Identify the incident',
+    'Contain the threat',
+    'Eradicate the cause',
+    'Recover the system',
+    'Document the incident',
+    'Improve security measures'
+  ]
+};
+```

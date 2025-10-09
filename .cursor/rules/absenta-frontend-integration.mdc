@@ -1,0 +1,1148 @@
+---
+globs: *.tsx,*.ts,*.jsx,*.js
+description: Frontend integration patterns and data formats for Absenta
+---
+
+# Absenta Frontend Integration - Complete Guide
+
+## 🎨 Frontend Architecture Overview (Updated 2025)
+
+**Absenta Frontend** dibangun dengan React + TypeScript + Vite dengan arsitektur modern yang mendukung:
+- **Role-based dashboards** (Admin, Guru, Siswa) dengan fitur lengkap
+- **Real-time data synchronization** dengan WebSocket dan polling
+- **Responsive design** untuk desktop dan mobile dengan PWA support
+- **Component-based architecture** dengan reusable components
+- **State management** dengan React hooks dan context
+- **API integration** dengan standardized patterns dan error handling
+- **Performance optimization** dengan lazy loading dan caching
+- **Accessibility** dengan ARIA labels dan keyboard navigation
+
+## 🏗️ Component Architecture
+
+### Main Dashboard Components
+
+#### 1. **AdminDashboard_Modern.tsx** (8,712 lines)
+```typescript
+// Main admin dashboard dengan 15+ management views
+export const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
+  const [activeView, setActiveView] = useState<string | null>(null);
+  
+  // Management views
+  const renderActiveView = () => {
+    switch (activeView) {
+      case 'add-teacher': return <ManageTeacherAccountsView />;
+      case 'add-student': return <ManageStudentsView />;
+      case 'add-teacher-data': return <ManageTeacherDataView />;
+      case 'add-student-data': return <ManageStudentDataView />;
+      case 'student-promotion': return <StudentPromotionView />;
+      case 'add-subject': return <ManageSubjectsView />;
+      case 'add-class': return <ManageClassesView />;
+      case 'room-management': return <RuangKelasManagementView />;
+      case 'add-schedule': return <ManageSchedulesView />;
+      case 'backup-management': return <BackupManagementView />;
+      case 'load-balancer': return <LoadBalancerView />;
+      case 'monitoring': return <MonitoringDashboard />;
+      case 'disaster-recovery': return <SimpleRestoreView />;
+      case 'letterhead-settings': return <ReportLetterheadSettings />;
+      case 'guru-attendance': return <RealtimeGuruAttendanceView />;
+      case 'reports': return <ReportsView />;
+      default: return null;
+    }
+  };
+};
+```
+
+#### 2. **TeacherDashboard_Modern.tsx** (3,950 lines)
+```typescript
+// Teacher dashboard dengan attendance management
+export const TeacherDashboard = ({ userData, onLogout }: TeacherDashboardProps) => {
+  const [activeView, setActiveView] = useState<'schedule' | 'history' | 'pengajuan-izin' | 'banding-absen' | 'reports'>('schedule');
+  const [activeSchedule, setActiveSchedule] = useState<Schedule | null>(null);
+  
+  // Main views
+  const renderContent = () => {
+    if (activeSchedule) {
+      return <AttendanceView schedule={activeSchedule} user={user} onBack={() => setActiveSchedule(null)} />;
+    }
+    
+    switch (activeView) {
+      case 'schedule': return <ScheduleListView schedules={schedules} onSelectSchedule={setActiveSchedule} />;
+      case 'pengajuan-izin': return <PengajuanIzinView user={user} />;
+      case 'banding-absen': return <BandingAbsenView user={user} />;
+      case 'reports': return <LaporanKehadiranSiswaView user={user} />;
+      default: return <HistoryView user={user} />;
+    }
+  };
+};
+```
+
+#### 3. **StudentDashboard_Modern.tsx** (2,954 lines)
+```typescript
+// Student dashboard dengan permission dan dispute management
+export const StudentDashboard = ({ userData, onLogout }: StudentDashboardProps) => {
+  const [activeView, setActiveView] = useState<'schedule' | 'pengajuan-izin' | 'banding-absen' | 'history'>('schedule');
+  
+  // Main views
+  const renderContent = () => {
+    switch (activeView) {
+      case 'schedule': return <JadwalHariIniView />;
+      case 'pengajuan-izin': return <PengajuanIzinView />;
+      case 'banding-absen': return <BandingAbsenView />;
+      case 'history': return <RiwayatKehadiranView />;
+      default: return <JadwalHariIniView />;
+    }
+  };
+};
+```
+
+### Core UI Components
+
+#### 1. **Shared UI Components**
+```typescript
+// Reusable UI components
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
+import { Switch } from "@/components/ui/switch";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent } from "@/components/ui/alert-dialog";
+```
+
+#### 2. **Custom Components**
+```typescript
+// Custom components untuk Absenta
+import { FontSizeControl } from "@/components/ui/font-size-control";
+import { EditProfile } from "./EditProfile";
+import { ErrorBoundary } from "./ErrorBoundary";
+import { ExcelPreview } from "./ExcelPreview";
+import { SchedulePreviewGrid } from "./SchedulePreviewGrid";
+import { RealtimeGuruAttendance } from "./RealtimeGuruAttendance";
+import { RuangKelasManagement } from "./RuangKelasManagement";
+import { BackupManagementView } from "./BackupManagementView";
+import { LoadBalancerView } from "./LoadBalancerView";
+import { MonitoringDashboard } from "./MonitoringDashboard";
+```
+
+## 🔄 Data Flow Patterns (Updated 2025)
+
+### API Integration Pattern - FIXED
+```typescript
+// Standardized API call pattern dengan error handling yang diperbaiki
+const apiCall = async (endpoint: string, options: RequestInit = {}) => {
+  const token = localStorage.getItem('token');
+  
+  const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+    ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}`,
+      ...options.headers,
+    },
+  });
+  
+  if (!response.ok) {
+    if (response.status === 401) {
+      // Auto logout on unauthorized
+      localStorage.removeItem('token');
+      window.location.href = '/login';
+      throw new Error('Sesi Anda telah berakhir. Silakan login kembali.');
+    }
+    
+    const errorData = await response.json().catch(() => ({ error: `HTTP ${response.status}` }));
+    throw new Error(errorData.error || `Error: ${response.status}`);
+  }
+  
+  return response.json();
+};
+```
+
+### Attendance Management - FIXED
+```typescript
+// FIXED: Attendance submission dengan auto-detect guru_id
+const handleSubmitAttendance = async (attendance: AttendanceData, notes?: {[key: string]: string}) => {
+  try {
+    const response = await apiCall('/api/attendance/submit', {
+      method: 'POST',
+      body: JSON.stringify({
+        scheduleId: selectedSchedule?.id_jadwal,
+        attendance,
+        notes: notes || {},
+        // guruId tidak perlu dikirim - auto-detect dari JWT token
+        tanggal_absen: isEditMode ? selectedDate : undefined
+      })
+    });
+    
+    if (response.message) {
+      toast({ title: "Success", description: response.message });
+      // Refresh data
+      fetchSchedules();
+      fetchAttendanceHistory();
+    }
+  } catch (error) {
+    toast({ 
+      title: "Error", 
+      description: error.message || "Failed to submit attendance" 
+    });
+  }
+};
+
+// NEW: Edit Absen (30 Hari) feature
+const handleEditAttendance = (date: string) => {
+  setSelectedDate(date);
+  setIsEditMode(true);
+  // Fetch existing attendance for that date
+  fetchAttendanceForDate(date);
+};
+```
+
+### Student Dashboard - UPDATED
+```typescript
+// Student dashboard dengan fitur baru
+export const StudentDashboard = ({ userData, onLogout }: StudentDashboardProps) => {
+  const [activeView, setActiveView] = useState<'kehadiran' | 'pengajuan-izin' | 'banding-absen' | 'riwayat'>('kehadiran');
+  const [jadwalHariIni, setJadwalHariIni] = useState<JadwalHariIni[]>([]);
+  const [kehadiranData, setKehadiranData] = useState<KehadiranData>({});
+  const [pengajuanIzin, setPengajuanIzin] = useState<PengajuanIzin[]>([]);
+  const [bandingAbsen, setBandingAbsen] = useState<BandingAbsen[]>([]);
+  
+  // NEW: Pengajuan izin kelas (siswa perwakilan)
+  const handleSubmitPengajuanIzinKelas = async (formData: PengajuanIzinKelasForm) => {
+    try {
+      const response = await apiCall('/api/siswa/pengajuan-izin-kelas', {
+        method: 'POST',
+        body: JSON.stringify(formData)
+      });
+      
+      if (response.success) {
+        toast({ title: "Success", description: response.message });
+        fetchPengajuanIzin();
+      }
+    } catch (error) {
+      toast({ title: "Error", description: error.message });
+    }
+  };
+
+  // NEW: Pengajuan banding absen kelas
+  const handleSubmitBandingAbsenKelas = async (formData: BandingAbsenKelasForm) => {
+    try {
+      const response = await apiCall('/api/siswa/pengajuan-banding-kelas', {
+        method: 'POST',
+        body: JSON.stringify(formData)
+      });
+      
+      if (response.success) {
+        toast({ title: "Success", description: response.message });
+        fetchBandingAbsen();
+      }
+    } catch (error) {
+      toast({ title: "Error", description: error.message });
+    }
+  };
+};
+
+// Usage in components
+const fetchData = async () => {
+  try {
+    setLoading(true);
+    const response = await apiCall('/api/endpoint');
+    if (response.success) {
+      setData(response.data);
+    } else {
+      toast.error(response.message || 'Error fetching data');
+    }
+  } catch (error) {
+    console.error('Error:', error);
+    toast.error('Failed to fetch data');
+  } finally {
+    setLoading(false);
+  }
+};
+```
+
+### State Management Pattern
+```typescript
+// Standardized state management
+const [data, setData] = useState<DataType[]>([]);
+const [loading, setLoading] = useState(false);
+const [error, setError] = useState<string | null>(null);
+const [selectedItem, setSelectedItem] = useState<DataType | null>(null);
+const [isDialogOpen, setIsDialogOpen] = useState(false);
+
+// CRUD operations
+const handleCreate = async (newData: Partial<DataType>) => {
+  try {
+    setLoading(true);
+    const response = await apiCall('/api/endpoint', {
+      method: 'POST',
+      body: JSON.stringify(newData),
+    });
+    
+    if (response.success) {
+      setData(prev => [...prev, response.data]);
+      toast.success('Data created successfully');
+      setIsDialogOpen(false);
+    }
+  } catch (error) {
+    toast.error('Failed to create data');
+  } finally {
+    setLoading(false);
+  }
+};
+
+const handleUpdate = async (id: number, updatedData: Partial<DataType>) => {
+  try {
+    setLoading(true);
+    const response = await apiCall(`/api/endpoint/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(updatedData),
+    });
+    
+    if (response.success) {
+      setData(prev => prev.map(item => 
+        item.id === id ? { ...item, ...updatedData } : item
+      ));
+      toast.success('Data updated successfully');
+    }
+  } catch (error) {
+    toast.error('Failed to update data');
+  } finally {
+    setLoading(false);
+  }
+};
+
+const handleDelete = async (id: number) => {
+  try {
+    setLoading(true);
+    const response = await apiCall(`/api/endpoint/${id}`, {
+      method: 'DELETE',
+    });
+    
+    if (response.success) {
+      setData(prev => prev.filter(item => item.id !== id));
+      toast.success('Data deleted successfully');
+    }
+  } catch (error) {
+    toast.error('Failed to delete data');
+  } finally {
+    setLoading(false);
+  }
+};
+```
+
+## 📱 Responsive Design Patterns
+
+### Mobile-First Approach
+```typescript
+// Responsive design dengan Tailwind CSS
+const ResponsiveComponent = () => {
+  return (
+    <div className="
+      grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4
+      gap-4 md:gap-6 lg:gap-8
+      p-4 md:p-6 lg:p-8
+    ">
+      <Card className="
+        w-full
+        h-auto md:h-64 lg:h-72
+        shadow-sm md:shadow-md lg:shadow-lg
+      ">
+        <CardHeader className="
+          p-4 md:p-6
+          text-sm md:text-base lg:text-lg
+        ">
+          <CardTitle className="
+            text-lg md:text-xl lg:text-2xl
+            font-semibold md:font-bold
+          ">
+            Title
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="
+          p-4 md:p-6
+          text-sm md:text-base
+        ">
+          Content
+        </CardContent>
+      </Card>
+    </div>
+  );
+};
+```
+
+### Mobile Navigation
+```typescript
+// Mobile navigation pattern
+const MobileNavigation = () => {
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  
+  return (
+    <>
+      {/* Mobile menu button */}
+      <Button
+        variant="ghost"
+        size="sm"
+        className="lg:hidden"
+        onClick={() => setSidebarOpen(true)}
+      >
+        <Menu className="h-6 w-6" />
+      </Button>
+      
+      {/* Mobile sidebar */}
+      <Dialog open={sidebarOpen} onOpenChange={setSidebarOpen}>
+        <DialogContent className="w-80 h-full max-w-none">
+          <div className="flex flex-col h-full">
+            <div className="flex items-center justify-between p-4 border-b">
+              <h2 className="text-lg font-semibold">Menu</h2>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setSidebarOpen(false)}
+              >
+                <X className="h-6 w-6" />
+              </Button>
+            </div>
+            
+            <div className="flex-1 overflow-y-auto p-4">
+              {/* Navigation items */}
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+};
+```
+
+## 🔄 Real-time Data Synchronization
+
+### WebSocket Integration
+```typescript
+// WebSocket hook untuk real-time updates
+const useWebSocket = (url: string) => {
+  const [socket, setSocket] = useState<WebSocket | null>(null);
+  const [isConnected, setIsConnected] = useState(false);
+  const [lastMessage, setLastMessage] = useState<any>(null);
+  
+  useEffect(() => {
+    const ws = new WebSocket(url);
+    
+    ws.onopen = () => {
+      setIsConnected(true);
+      console.log('WebSocket connected');
+    };
+    
+    ws.onmessage = (event) => {
+      const data = JSON.parse(event.data);
+      setLastMessage(data);
+    };
+    
+    ws.onclose = () => {
+      setIsConnected(false);
+      console.log('WebSocket disconnected');
+    };
+    
+    ws.onerror = (error) => {
+      console.error('WebSocket error:', error);
+    };
+    
+    setSocket(ws);
+    
+    return () => {
+      ws.close();
+    };
+  }, [url]);
+  
+  const sendMessage = (message: any) => {
+    if (socket && isConnected) {
+      socket.send(JSON.stringify(message));
+    }
+  };
+  
+  return { socket, isConnected, lastMessage, sendMessage };
+};
+
+// Usage in components
+const AttendanceComponent = () => {
+  const { lastMessage, sendMessage } = useWebSocket('ws://localhost:3001');
+  
+  useEffect(() => {
+    if (lastMessage?.type === 'attendance_update') {
+      // Update attendance data
+      setAttendanceData(lastMessage.data);
+    }
+  }, [lastMessage]);
+  
+  const handleAttendanceSubmit = (data: any) => {
+    sendMessage({
+      type: 'attendance_submit',
+      data: data
+    });
+  };
+};
+```
+
+### Polling Pattern
+```typescript
+// Polling pattern untuk data yang tidak real-time
+const usePolling = (callback: () => Promise<void>, interval: number = 30000) => {
+  const [isPolling, setIsPolling] = useState(false);
+  
+  useEffect(() => {
+    if (!isPolling) return;
+    
+    const poll = async () => {
+      try {
+        await callback();
+      } catch (error) {
+        console.error('Polling error:', error);
+      }
+    };
+    
+    poll(); // Initial call
+    const intervalId = setInterval(poll, interval);
+    
+    return () => clearInterval(intervalId);
+  }, [callback, interval, isPolling]);
+  
+  return { isPolling, setIsPolling };
+};
+
+// Usage
+const DataComponent = () => {
+  const [data, setData] = useState([]);
+  
+  const fetchData = async () => {
+    const response = await apiCall('/api/data');
+    if (response.success) {
+      setData(response.data);
+    }
+  };
+  
+  const { isPolling, setIsPolling } = usePolling(fetchData, 30000);
+  
+  return (
+    <div>
+      <Button onClick={() => setIsPolling(!isPolling)}>
+        {isPolling ? 'Stop Polling' : 'Start Polling'}
+      </Button>
+      {/* Render data */}
+    </div>
+  );
+};
+```
+
+## 🎯 Form Handling Patterns
+
+### Form Validation
+```typescript
+// Form validation pattern
+const useFormValidation = (initialData: any, validationRules: any) => {
+  const [data, setData] = useState(initialData);
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [isValid, setIsValid] = useState(false);
+  
+  const validate = (field: string, value: any) => {
+    const rule = validationRules[field];
+    if (!rule) return true;
+    
+    if (rule.required && (!value || value.toString().trim() === '')) {
+      return `${rule.label} is required`;
+    }
+    
+    if (rule.minLength && value.length < rule.minLength) {
+      return `${rule.label} must be at least ${rule.minLength} characters`;
+    }
+    
+    if (rule.maxLength && value.length > rule.maxLength) {
+      return `${rule.label} must be no more than ${rule.maxLength} characters`;
+    }
+    
+    if (rule.pattern && !rule.pattern.test(value)) {
+      return `${rule.label} format is invalid`;
+    }
+    
+    return null;
+  };
+  
+  const handleChange = (field: string, value: any) => {
+    const error = validate(field, value);
+    
+    setData(prev => ({ ...prev, [field]: value }));
+    setErrors(prev => ({ ...prev, [field]: error || '' }));
+    
+    // Check overall validity
+    const allErrors = Object.keys(validationRules).map(key => 
+      validate(key, key === field ? value : data[key])
+    );
+    setIsValid(allErrors.every(error => !error));
+  };
+  
+  return { data, errors, isValid, handleChange };
+};
+
+// Usage
+const FormComponent = () => {
+  const validationRules = {
+    nama: { required: true, minLength: 2, label: 'Nama' },
+    email: { required: true, pattern: /^[^\s@]+@[^\s@]+\.[^\s@]+$/, label: 'Email' },
+    telepon: { required: true, pattern: /^[0-9]{10,13}$/, label: 'Telepon' }
+  };
+  
+  const { data, errors, isValid, handleChange } = useFormValidation({}, validationRules);
+  
+  return (
+    <form>
+      <div>
+        <Label htmlFor="nama">Nama</Label>
+        <Input
+          id="nama"
+          value={data.nama || ''}
+          onChange={(e) => handleChange('nama', e.target.value)}
+        />
+        {errors.nama && <p className="text-red-500 text-sm">{errors.nama}</p>}
+      </div>
+      
+      <Button type="submit" disabled={!isValid}>
+        Submit
+      </Button>
+    </form>
+  );
+};
+```
+
+### File Upload Pattern
+```typescript
+// File upload pattern
+const useFileUpload = () => {
+  const [file, setFile] = useState<File | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [progress, setProgress] = useState(0);
+  
+  const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const selectedFile = event.target.files?.[0];
+    if (selectedFile) {
+      setFile(selectedFile);
+    }
+  };
+  
+  const uploadFile = async (endpoint: string) => {
+    if (!file) return;
+    
+    const formData = new FormData();
+    formData.append('file', file);
+    
+    try {
+      setUploading(true);
+      setProgress(0);
+      
+      const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`,
+        },
+        body: formData,
+      });
+      
+      if (response.ok) {
+        const result = await response.json();
+        toast.success('File uploaded successfully');
+        return result;
+      } else {
+        throw new Error('Upload failed');
+      }
+    } catch (error) {
+      toast.error('Failed to upload file');
+      throw error;
+    } finally {
+      setUploading(false);
+      setProgress(0);
+    }
+  };
+  
+  return { file, uploading, progress, handleFileSelect, uploadFile };
+};
+```
+
+## 📊 Data Visualization Patterns
+
+### Chart Components
+```typescript
+// Chart component pattern
+const AttendanceChart = ({ data }: { data: any[] }) => {
+  const chartData = useMemo(() => {
+    return data.map(item => ({
+      name: item.nama,
+      hadir: item.hadir,
+      izin: item.izin,
+      sakit: item.sakit,
+      alpa: item.alpa
+    }));
+  }, [data]);
+  
+  return (
+    <div className="w-full h-96">
+      <ResponsiveContainer width="100%" height="100%">
+        <BarChart data={chartData}>
+          <CartesianGrid strokeDasharray="3 3" />
+          <XAxis dataKey="name" />
+          <YAxis />
+          <Tooltip />
+          <Legend />
+          <Bar dataKey="hadir" fill="#10b981" />
+          <Bar dataKey="izin" fill="#f59e0b" />
+          <Bar dataKey="sakit" fill="#ef4444" />
+          <Bar dataKey="alpa" fill="#6b7280" />
+        </BarChart>
+      </ResponsiveContainer>
+    </div>
+  );
+};
+```
+
+### Table Components
+```typescript
+// Table component pattern
+const DataTable = ({ 
+  data, 
+  columns, 
+  onEdit, 
+  onDelete, 
+  onView 
+}: {
+  data: any[];
+  columns: Column[];
+  onEdit?: (item: any) => void;
+  onDelete?: (item: any) => void;
+  onView?: (item: any) => void;
+}) => {
+  return (
+    <Table>
+      <TableHeader>
+        <TableRow>
+          {columns.map((column) => (
+            <TableHead key={column.key}>
+              {column.label}
+            </TableHead>
+          ))}
+          <TableHead>Actions</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {data.map((item) => (
+          <TableRow key={item.id}>
+            {columns.map((column) => (
+              <TableCell key={column.key}>
+                {column.render ? column.render(item) : item[column.key]}
+              </TableCell>
+            ))}
+            <TableCell>
+              <div className="flex gap-2">
+                {onView && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => onView(item)}
+                  >
+                    <Eye className="h-4 w-4" />
+                  </Button>
+                )}
+                {onEdit && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => onEdit(item)}
+                  >
+                    <Edit className="h-4 w-4" />
+                  </Button>
+                )}
+                {onDelete && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => onDelete(item)}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                )}
+              </div>
+            </TableCell>
+          </TableRow>
+        ))}
+      </TableBody>
+    </Table>
+  );
+};
+```
+
+## 🔔 Notification Patterns
+
+### Toast Notifications
+```typescript
+// Toast notification pattern
+const useToast = () => {
+  const { toast } = useToast();
+  
+  const showSuccess = (message: string) => {
+    toast({
+      title: "Success",
+      description: message,
+      variant: "default",
+    });
+  };
+  
+  const showError = (message: string) => {
+    toast({
+      title: "Error",
+      description: message,
+      variant: "destructive",
+    });
+  };
+  
+  const showWarning = (message: string) => {
+    toast({
+      title: "Warning",
+      description: message,
+      variant: "destructive",
+    });
+  };
+  
+  const showInfo = (message: string) => {
+    toast({
+      title: "Info",
+      description: message,
+      variant: "default",
+    });
+  };
+  
+  return { showSuccess, showError, showWarning, showInfo };
+};
+```
+
+### Real-time Notifications
+```typescript
+// Real-time notification pattern
+const useNotifications = () => {
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [unreadCount, setUnreadCount] = useState(0);
+  
+  const addNotification = (notification: Notification) => {
+    setNotifications(prev => [notification, ...prev]);
+    setUnreadCount(prev => prev + 1);
+  };
+  
+  const markAsRead = (id: string) => {
+    setNotifications(prev => 
+      prev.map(notif => 
+        notif.id === id ? { ...notif, read: true } : notif
+      )
+    );
+    setUnreadCount(prev => Math.max(0, prev - 1));
+  };
+  
+  const markAllAsRead = () => {
+    setNotifications(prev => 
+      prev.map(notif => ({ ...notif, read: true }))
+    );
+    setUnreadCount(0);
+  };
+  
+  return {
+    notifications,
+    unreadCount,
+    addNotification,
+    markAsRead,
+    markAllAsRead
+  };
+};
+```
+
+## 🎨 Styling Patterns
+
+### Theme System
+```typescript
+// Theme system dengan CSS variables
+const theme = {
+  colors: {
+    primary: 'hsl(var(--primary))',
+    secondary: 'hsl(var(--secondary))',
+    accent: 'hsl(var(--accent))',
+    background: 'hsl(var(--background))',
+    foreground: 'hsl(var(--foreground))',
+    muted: 'hsl(var(--muted))',
+    border: 'hsl(var(--border))',
+    input: 'hsl(var(--input))',
+    ring: 'hsl(var(--ring))',
+  },
+  spacing: {
+    xs: '0.25rem',
+    sm: '0.5rem',
+    md: '1rem',
+    lg: '1.5rem',
+    xl: '2rem',
+    '2xl': '3rem',
+  },
+  borderRadius: {
+    sm: '0.25rem',
+    md: '0.375rem',
+    lg: '0.5rem',
+    xl: '0.75rem',
+  }
+};
+```
+
+### Component Variants
+```typescript
+// Component variants pattern
+const buttonVariants = cva(
+  "inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-50 disabled:pointer-events-none ring-offset-background",
+  {
+    variants: {
+      variant: {
+        default: "bg-primary text-primary-foreground hover:bg-primary/90",
+        destructive: "bg-destructive text-destructive-foreground hover:bg-destructive/90",
+        outline: "border border-input hover:bg-accent hover:text-accent-foreground",
+        secondary: "bg-secondary text-secondary-foreground hover:bg-secondary/80",
+        ghost: "hover:bg-accent hover:text-accent-foreground",
+        link: "underline-offset-4 hover:underline text-primary",
+      },
+      size: {
+        default: "h-10 py-2 px-4",
+        sm: "h-9 px-3 rounded-md",
+        lg: "h-11 px-8 rounded-md",
+        icon: "h-10 w-10",
+      },
+    },
+    defaultVariants: {
+      variant: "default",
+      size: "default",
+    },
+  }
+);
+```
+
+## 🚀 Performance Optimization
+
+### Lazy Loading
+```typescript
+// Lazy loading pattern
+const LazyComponent = lazy(() => import('./HeavyComponent'));
+
+const App = () => {
+  return (
+    <Suspense fallback={<div>Loading...</div>}>
+      <LazyComponent />
+    </Suspense>
+  );
+};
+```
+
+### Memoization
+```typescript
+// Memoization pattern
+const ExpensiveComponent = memo(({ data }: { data: any[] }) => {
+  const processedData = useMemo(() => {
+    return data.map(item => ({
+      ...item,
+      processed: item.value * 2
+    }));
+  }, [data]);
+  
+  return (
+    <div>
+      {processedData.map(item => (
+        <div key={item.id}>{item.processed}</div>
+      ))}
+    </div>
+  );
+});
+```
+
+### Virtual Scrolling
+```typescript
+// Virtual scrolling untuk data besar
+const VirtualizedTable = ({ data }: { data: any[] }) => {
+  const [visibleRange, setVisibleRange] = useState({ start: 0, end: 50 });
+  
+  const visibleData = useMemo(() => {
+    return data.slice(visibleRange.start, visibleRange.end);
+  }, [data, visibleRange]);
+  
+  return (
+    <div className="h-96 overflow-auto">
+      {visibleData.map((item, index) => (
+        <div key={item.id} className="h-12 border-b">
+          {item.name}
+        </div>
+      ))}
+    </div>
+  );
+};
+```
+
+## 🔧 Development Tools
+
+### Error Boundary
+```typescript
+// Error boundary pattern
+class ErrorBoundary extends Component<Props, State> {
+  constructor(props: Props) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+  
+  static getDerivedStateFromError(error: Error): State {
+    return { hasError: true, error };
+  }
+  
+  componentDidCatch(error: Error, errorInfo: ErrorInfo) {
+    console.error('Error caught by boundary:', error, errorInfo);
+  }
+  
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="p-4 border border-red-200 rounded-md bg-red-50">
+          <h2 className="text-lg font-semibold text-red-800">Something went wrong</h2>
+          <p className="text-red-600">Please refresh the page or contact support</p>
+        </div>
+      );
+    }
+    
+    return this.props.children;
+  }
+}
+```
+
+### Debug Tools
+```typescript
+// Debug tools untuk development
+const DebugPanel = () => {
+  const [isOpen, setIsOpen] = useState(false);
+  
+  if (process.env.NODE_ENV !== 'development') return null;
+  
+  return (
+    <div className="fixed bottom-4 right-4 z-50">
+      <Button
+        onClick={() => setIsOpen(!isOpen)}
+        className="bg-gray-800 text-white"
+      >
+        Debug
+      </Button>
+      
+      {isOpen && (
+        <div className="absolute bottom-12 right-0 bg-white border rounded-lg shadow-lg p-4 w-80">
+          <h3 className="font-semibold mb-2">Debug Panel</h3>
+          <div className="space-y-2">
+            <Button size="sm" onClick={() => console.log('Current state:', state)}>
+              Log State
+            </Button>
+            <Button size="sm" onClick={() => localStorage.clear()}>
+              Clear Storage
+            </Button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+```
+
+## 📱 Mobile Optimization
+
+### Touch Gestures
+```typescript
+// Touch gesture handling
+const useTouchGestures = () => {
+  const [touchStart, setTouchStart] = useState<number | null>(null);
+  const [touchEnd, setTouchEnd] = useState<number | null>(null);
+  
+  const minSwipeDistance = 50;
+  
+  const onTouchStart = (e: TouchEvent) => {
+    setTouchEnd(null);
+    setTouchStart(e.targetTouches[0].clientX);
+  };
+  
+  const onTouchMove = (e: TouchEvent) => {
+    setTouchEnd(e.targetTouches[0].clientX);
+  };
+  
+  const onTouchEnd = () => {
+    if (!touchStart || !touchEnd) return;
+    
+    const distance = touchStart - touchEnd;
+    const isLeftSwipe = distance > minSwipeDistance;
+    const isRightSwipe = distance < -minSwipeDistance;
+    
+    if (isLeftSwipe) {
+      // Handle left swipe
+    }
+    if (isRightSwipe) {
+      // Handle right swipe
+    }
+  };
+  
+  return { onTouchStart, onTouchMove, onTouchEnd };
+};
+```
+
+### Responsive Images
+```typescript
+// Responsive image component
+const ResponsiveImage = ({ src, alt, className }: ImageProps) => {
+  return (
+    <img
+      src={src}
+      alt={alt}
+      className={`
+        w-full h-auto
+        max-w-sm sm:max-w-md md:max-w-lg lg:max-w-xl
+        object-cover object-center
+        ${className}
+      `}
+      loading="lazy"
+      onError={(e) => {
+        e.currentTarget.src = '/placeholder-image.png';
+      }}
+    />
+  );
+};
+```
+
+## 🎯 Best Practices
+
+### Code Organization
+1. **Component Structure**: Satu file per component
+2. **Props Interface**: Definisikan interface untuk semua props
+3. **Custom Hooks**: Gunakan custom hooks untuk logic yang reusable
+4. **Error Handling**: Implementasi error boundary dan error states
+5. **Loading States**: Selalu tampilkan loading state untuk async operations
+
+### Performance
+1. **Lazy Loading**: Gunakan lazy loading untuk component yang besar
+2. **Memoization**: Gunakan useMemo dan useCallback untuk optimization
+3. **Virtual Scrolling**: Implementasi virtual scrolling untuk data besar
+4. **Image Optimization**: Gunakan lazy loading dan responsive images
+5. **Bundle Splitting**: Split bundle berdasarkan route
+
+### Accessibility
+1. **ARIA Labels**: Gunakan ARIA labels untuk screen readers
+2. **Keyboard Navigation**: Support keyboard navigation
+3. **Color Contrast**: Pastikan color contrast yang cukup
+4. **Focus Management**: Kelola focus state dengan baik
+5. **Semantic HTML**: Gunakan semantic HTML elements
+
+### Testing
+1. **Unit Tests**: Test individual components
+2. **Integration Tests**: Test component interactions
+3. **E2E Tests**: Test complete user flows
+4. **Visual Regression**: Test visual changes
+5. **Performance Tests**: Test performance metrics

@@ -1,0 +1,75 @@
+{
+  "timeSlots": {
+    "Senin": [
+      { "jam_ke": 1, "jam_mulai": "07:00:00", "jam_selesai": "07:45:00" },
+      { "jam_ke": 2, "jam_mulai": "07:45:00", "jam_selesai": "08:30:00" },
+      { "jam_ke": 3, "jam_mulai": "08:30:00", "jam_selesai": "09:15:00" },
+      { "jam_ke": 4, "jam_mulai": "09:30:00", "jam_selesai": "10:15:00" },
+      { "jam_ke": 5, "jam_mulai": "10:15:00", "jam_selesai": "11:00:00" },
+      { "jam_ke": 6, "jam_mulai": "11:00:00", "jam_selesai": "11:45:00" },
+      { "jam_ke": 7, "jam_mulai": "12:30:00", "jam_selesai": "13:15:00" },
+      { "jam_ke": 8, "jam_mulai": "13:15:00", "jam_selesai": "14:00:00" }
+    ],
+    "Selasa": [
+      { "jam_ke": 1, "jam_mulai": "07:00:00", "jam_selesai": "07:45:00" },
+      { "jam_ke": 2, "jam_mulai": "07:45:00", "jam_selesai": "08:30:00" },
+      { "jam_ke": 3, "jam_mulai": "08:30:00", "jam_selesai": "09:15:00" },
+      { "jam_ke": 4, "jam_mulai": "09:30:00", "jam_selesai": "10:15:00" },
+      { "jam_ke": 5, "jam_mulai": "10:15:00", "jam_selesai": "11:00:00" },
+      { "jam_ke": 6, "jam_mulai": "11:00:00", "jam_selesai": "11:45:00" },
+      { "jam_ke": 7, "jam_mulai": "12:30:00", "jam_selesai": "13:15:00" },
+      { "jam_ke": 8, "jam_mulai": "13:15:00", "jam_selesai": "14:00:00" }
+    ],
+    "Rabu": [
+      { "jam_ke": 1, "jam_mulai": "07:00:00", "jam_selesai": "07:45:00" },
+      { "jam_ke": 2, "jam_mulai": "07:45:00", "jam_selesai": "08:30:00" },
+      { "jam_ke": 3, "jam_mulai": "08:30:00", "jam_selesai": "09:15:00" },
+      { "jam_ke": 4, "jam_mulai": "09:30:00", "jam_selesai": "10:15:00" },
+      { "jam_ke": 5, "jam_mulai": "10:15:00", "jam_selesai": "11:00:00" },
+      { "jam_ke": 6, "jam_mulai": "11:00:00", "jam_selesai": "11:45:00" },
+      { "jam_ke": 7, "jam_mulai": "12:30:00", "jam_selesai": "13:15:00" },
+      { "jam_ke": 8, "jam_mulai": "13:15:00", "jam_selesai": "14:00:00" }
+    ],
+    "Kamis": [
+      { "jam_ke": 1, "jam_mulai": "07:00:00", "jam_selesai": "07:45:00" },
+      { "jam_ke": 2, "jam_mulai": "07:45:00", "jam_selesai": "08:30:00" },
+      { "jam_ke": 3, "jam_mulai": "08:30:00", "jam_selesai": "09:15:00" },
+      { "jam_ke": 4, "jam_mulai": "09:30:00", "jam_selesai": "10:15:00" },
+      { "jam_ke": 5, "jam_mulai": "10:15:00", "jam_selesai": "11:00:00" },
+      { "jam_ke": 6, "jam_mulai": "11:00:00", "jam_selesai": "11:45:00" },
+      { "jam_ke": 7, "jam_mulai": "12:30:00", "jam_selesai": "13:15:00" },
+      { "jam_ke": 8, "jam_mulai": "13:15:00", "jam_selesai": "14:00:00" }
+    ],
+    "Jumat": [
+      { "jam_ke": 1, "jam_mulai": "07:00:00", "jam_selesai": "07:40:00" },
+      { "jam_ke": 2, "jam_mulai": "07:40:00", "jam_selesai": "08:20:00" },
+      { "jam_ke": 3, "jam_mulai": "08:20:00", "jam_selesai": "09:00:00" },
+      { "jam_ke": 4, "jam_mulai": "09:15:00", "jam_selesai": "09:55:00" },
+      { "jam_ke": 5, "jam_mulai": "09:55:00", "jam_selesai": "10:35:00" },
+      { "jam_ke": 6, "jam_mulai": "10:35:00", "jam_selesai": "11:15:00" },
+      { "jam_ke": 7, "jam_mulai": "12:00:00", "jam_selesai": "12:40:00" },
+      { "jam_ke": 8, "jam_mulai": "12:40:00", "jam_selesai": "13:20:00" }
+    ],
+    "Sabtu": [
+      { "jam_ke": 1, "jam_mulai": "07:00:00", "jam_selesai": "07:40:00" },
+      { "jam_ke": 2, "jam_mulai": "07:40:00", "jam_selesai": "08:20:00" },
+      { "jam_ke": 3, "jam_mulai": "08:20:00", "jam_selesai": "09:00:00" },
+      { "jam_ke": 4, "jam_mulai": "09:15:00", "jam_selesai": "09:55:00" },
+      { "jam_ke": 5, "jam_mulai": "09:55:00", "jam_selesai": "10:35:00" }
+    ]
+  },
+  "sheetNames": {
+    "jadwal": "JADWAL",
+    "masterGuru": "MASTER GURU HARIAN",
+    "jamGuru": "JAM GURU"
+  },
+  "headerPatterns": {
+    "hariJam": "^(Senin|Selasa|Rabu|Kamis|Jumat|Sabtu|SEN|SEL|RAB|KAM|JUM|SAB)[-\\s]?(\\d+)$"
+  },
+  "options": {
+    "strictMode": false,
+    "skipInvalidRows": true,
+    "logLevel": "info",
+    "maxFileSize": 5242880
+  }
+}

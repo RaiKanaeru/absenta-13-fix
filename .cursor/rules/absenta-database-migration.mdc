@@ -1,0 +1,47 @@
+---
+description: Database migration patterns and table structure for Absenta
+---
+
+# Absenta Database Migration Guide
+
+## Migration History
+- **Completed**: Migrated `siswa_perwakilan` data to `pengguna` table
+- **Result**: Single table (`pengguna`) now contains all user accounts
+- **Status**: All endpoints updated to use unified table structure
+
+## Table Structure
+
+### `pengguna` Table (Primary User Table)
+```sql
+- id: int(11) PRIMARY KEY
+- nama_pengguna: varchar(50) UNIQUE (username)
+- kata_sandi: varchar(255) (password)
+- peran: enum('admin','guru','siswa') (role)
+- nama: varchar(100) (full name)
+- email: varchar(100) (email)
+- status: enum('aktif','tidak_aktif','ditangguhkan')
+- dibuat_pada: timestamp
+- diperbarui_pada: timestamp
+```
+
+### `mapel` Table (Subjects)
+```sql
+- id_mapel: int(11) PRIMARY KEY
+- kode_mapel: varchar(20) UNIQUE
+- nama_mapel: varchar(100)
+- deskripsi: text
+- status: enum('aktif','tidak_aktif')
+- created_at: timestamp
+```
+
+## Migration Scripts
+- [migrate-siswa-perwakilan.js](mdc:migrate-siswa-perwakilan.js) - Migration script for student data
+- [check-pengguna-structure.js](mdc:check-pengguna-structure.js) - Database structure verification
+
+## Key Migration Rules
+1. Always use `pengguna` table for user accounts
+2. Use `nama_pengguna` instead of `username`
+3. Use `kata_sandi` instead of `password`
+4. Use `peran` instead of `role`
+5. Use `id_mapel` as primary key for subjects table
+6. All JOIN operations should use `pengguna` table

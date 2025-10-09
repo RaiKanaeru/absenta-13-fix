@@ -1,0 +1,771 @@
+---
+globs: *.js,*.tsx
+description: Attendance flow patterns and business logic for Absenta system
+---
+
+# Absenta Attendance Flow - Complete Guide
+
+## 🎯 Attendance System Overview
+
+**Absenta** menggunakan sistem absensi mutual antara guru dan siswa dengan fitur:
+- **Guru Absen Siswa**: Guru mencatat kehadiran siswa di kelas
+- **Siswa Absen Guru**: Siswa mencatat kehadiran guru yang mengajar
+- **Multi-Guru Support**: Satu mata pelajaran bisa diajar oleh beberapa guru
+- **Real-time Sync**: Absensi tersinkronisasi secara real-time
+- **Dispute System**: Sistem banding untuk ketidakhadiran yang dipertanyakan
+
+## 👥 Attendance Flow Architecture
+
+### 1. **Guru → Siswa Attendance Flow**
+```
+Guru masuk kelas
+    ↓
+Guru buka aplikasi Absenta
+    ↓
+Pilih kelas dan mata pelajaran
+    ↓
+Lihat daftar siswa yang hadir
+    ↓
+Catat status kehadiran siswa
+    ↓
+Submit absensi ke sistem
+    ↓
+Siswa menerima notifikasi
+```
+
+### 2. **Siswa → Guru Attendance Flow**
+```
+Siswa masuk kelas
+    ↓
+Siswa buka aplikasi Absenta
+    ↓
+Lihat daftar guru yang mengajar
+    ↓
+Pilih guru yang hadir
+    ↓
+Konfirmasi kehadiran guru
+    ↓
+Submit absensi ke sistem
+    ↓
+Guru menerima notifikasi
+```
+
+## 🗄️ Database Schema for Attendance
+
+### Enhanced Schedule Table (Based on absenta13.sql)
+```sql
+-- Jadwal dengan support multi-guru (struktur sudah ada di absenta13.sql)
+CREATE TABLE `jadwal` (
+  `id_jadwal` int(11) NOT NULL,
+  `kelas_id` int(11) NOT NULL,
+  `mapel_id` int(11) NOT NULL,
+  `guru_id` int(11) NOT NULL,  -- Primary teacher
+  `ruang_id` int(11) DEFAULT NULL,
+  `hari` varchar(10) NOT NULL COMMENT 'Senin, Selasa, dst.',
+  `jam_ke` int(11) NOT NULL,
+  `jam_mulai` time NOT NULL,
+  `jam_selesai` time NOT NULL,
+  `status` enum('aktif','tidak_aktif') NOT NULL DEFAULT 'aktif',
+  `created_at` timestamp NULL DEFAULT current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+```
+
+### Multi-Teacher Assignment Table
+```sql
+-- Tabel untuk assignment guru tambahan ke jadwal
+CREATE TABLE `jadwal_guru_tambahan` (
+  `id` int(11) NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  `jadwal_id` int(11) NOT NULL,
+  `guru_id` int(11) NOT NULL,
+  `role` enum('secondary','assistant','substitute') NOT NULL DEFAULT 'secondary',
+  `status` enum('aktif','tidak_aktif') NOT NULL DEFAULT 'aktif',
+  `created_at` timestamp NULL DEFAULT current_timestamp(),
+  `updated_at` timestamp NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  
+  -- Foreign keys
+  FOREIGN KEY (`jadwal_id`) REFERENCES `jadwal`(`id_jadwal`) ON DELETE CASCADE,
+  FOREIGN KEY (`guru_id`) REFERENCES `guru`(`id_guru`) ON DELETE CASCADE,
+  
+  -- Unique constraint
+  UNIQUE KEY `unique_jadwal_guru` (`jadwal_id`, `guru_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+```
+
+### Enhanced Teacher Attendance Table (Based on absenta13.sql)
+```sql
+-- Absensi guru dengan support multi-guru (struktur sudah ada di absenta13.sql)
+CREATE TABLE `absensi_guru` (
+  `id_absensi` int(11) NOT NULL,
+  `jadwal_id` int(11) NOT NULL,
+  `guru_id` int(11) NOT NULL,
+  `kelas_id` int(11) NOT NULL,
+  `siswa_pencatat_id` int(11) NOT NULL,
+  `tanggal` date NOT NULL,
+  `jam_ke` int(11) NOT NULL,
+  `status` enum('Hadir','Tidak Hadir','Sakit','Izin','Dispen','Terlambat') NOT NULL,
+  `keterangan` text DEFAULT NULL,
+  `waktu_catat` timestamp NOT NULL DEFAULT current_timestamp(),
+  `waktu_scan` timestamp NULL DEFAULT NULL COMMENT 'Waktu scan QR code atau absen manual',
+  `metode_absen` enum('manual','scan','otomatis') DEFAULT 'manual' COMMENT 'Metode absensi guru',
+  `jam_terlambat` int(11) DEFAULT NULL COMMENT 'Menit terlambat dari jam_mulai',
+  `alasan_terlambat` text DEFAULT NULL COMMENT 'Alasan keterlambatan'
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+```
+
+### Enhanced Student Attendance Table (Based on absenta13.sql)
+```sql
+-- Absensi siswa dengan support multi-guru (struktur sudah ada di absenta13.sql)
+CREATE TABLE `absensi_siswa` (
+  `id` int(11) NOT NULL,
+  `siswa_id` int(11) NOT NULL COMMENT 'Relasi ke siswa_perwakilan.id_siswa',
+  `jadwal_id` int(11) DEFAULT NULL COMMENT 'Relasi ke jadwal.id_jadwal (opsional untuk absensi harian)',
+  `tanggal` date NOT NULL,
+  `status` enum('Hadir','Izin','Sakit','Alpa','Dispen') NOT NULL COMMENT 'Status kehadiran siswa pada tanggal tersebut',
+  `keterangan` text DEFAULT NULL,
+  `waktu_absen` datetime NOT NULL DEFAULT current_timestamp(),
+  `guru_id` int(11) DEFAULT NULL COMMENT 'ID guru yang mencatat absensi (opsional)'
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+```
+
+## 🔄 Attendance Business Logic
+
+### Multi-Teacher Schedule Logic
+```javascript
+const multiTeacherLogic = {
+  // 1. Assign multiple teachers to schedule
+  assignTeachersToSchedule: async (jadwalId, teachers) => {
+    try {
+      await db.withTransaction(async (connection) => {
+        // Remove existing assignments
+        await connection.execute(
+          'DELETE FROM jadwal_guru WHERE jadwal_id = ?',
+          [jadwalId]
+        );
+        
+        // Add new assignments
+        for (const teacher of teachers) {
+          await connection.execute(
+            `INSERT INTO jadwal_guru (jadwal_id, guru_id, role, status) 
+             VALUES (?, ?, ?, 'aktif')`,
+            [jadwalId, teacher.guru_id, teacher.role || 'primary']
+          );
+        }
+      });
+      
+      console.log(`✅ Assigned ${teachers.length} teachers to schedule ${jadwalId}`);
+    } catch (error) {
+      console.error('❌ Error assigning teachers:', error);
+      throw error;
+    }
+  },
+  
+  // 2. Get teachers for a schedule
+  getScheduleTeachers: async (jadwalId) => {
+    const [teachers] = await db.execute(`
+      SELECT 
+        jg.*,
+        g.nama as nama_guru,
+        g.nip,
+        g.email,
+        u.nama_pengguna
+      FROM jadwal_guru jg
+      JOIN guru g ON jg.guru_id = g.id_guru
+      JOIN pengguna u ON g.id_pengguna = u.id
+      WHERE jg.jadwal_id = ? AND jg.status = 'aktif'
+      ORDER BY jg.role, g.nama
+    `, [jadwalId]);
+    
+    return teachers;
+  },
+  
+  // 3. Check if teacher is assigned to schedule
+  isTeacherAssigned: async (jadwalId, guruId) => {
+    const [result] = await db.execute(
+      'SELECT id FROM jadwal_guru WHERE jadwal_id = ? AND guru_id = ? AND status = "aktif"',
+      [jadwalId, guruId]
+    );
+    
+    return result.length > 0;
+  }
+};
+```
+
+### Teacher Attendance Recording
+```javascript
+const teacherAttendanceLogic = {
+  // 1. Record teacher attendance by student
+  recordTeacherAttendance: async (attendanceData) => {
+    const {
+      jadwalId,
+      guruId,
+      siswaId,
+      status,
+      keterangan,
+      metodeAbsen = 'manual'
+    } = attendanceData;
+    
+    try {
+      // Validate teacher is assigned to schedule
+      const isAssigned = await multiTeacherLogic.isTeacherAssigned(jadwalId, guruId);
+      if (!isAssigned) {
+        throw new Error('Guru tidak ditugaskan pada jadwal ini');
+      }
+      
+      // Check if attendance already exists
+      const [existing] = await db.execute(
+        'SELECT id FROM absensi_guru WHERE jadwal_id = ? AND guru_id = ? AND tanggal = CURDATE()',
+        [jadwalId, guruId]
+      );
+      
+      if (existing.length > 0) {
+        // Update existing attendance
+        await db.execute(
+          `UPDATE absensi_guru 
+           SET status = ?, keterangan = ?, metode_absen = ?, waktu_catat = NOW()
+           WHERE id = ?`,
+          [status, keterangan, metodeAbsen, existing[0].id]
+        );
+      } else {
+        // Create new attendance record
+        await db.execute(
+          `INSERT INTO absensi_guru 
+           (jadwal_id, guru_id, kelas_id, siswa_pencatat_id, tanggal, jam_ke, status, keterangan, metode_absen)
+           SELECT ?, ?, j.kelas_id, ?, CURDATE(), j.jam_ke, ?, ?, ?
+           FROM jadwal j WHERE j.id_jadwal = ?`,
+          [jadwalId, guruId, siswaId, status, keterangan, metodeAbsen, jadwalId]
+        );
+      }
+      
+      console.log(`✅ Teacher attendance recorded: ${guruId} - ${status}`);
+      
+      // Send notification to teacher
+      await notificationService.sendTeacherAttendanceNotification(guruId, {
+        status,
+        keterangan,
+        siswaId
+      });
+      
+    } catch (error) {
+      console.error('❌ Error recording teacher attendance:', error);
+      throw error;
+    }
+  },
+  
+  // 2. Get teacher attendance for a class
+  getTeacherAttendance: async (jadwalId, tanggal = null) => {
+    const targetDate = tanggal || new Date().toISOString().split('T')[0];
+    
+    const [attendance] = await db.execute(`
+      SELECT 
+        ag.*,
+        g.nama as nama_guru,
+        g.nip,
+        s.nama as nama_siswa_pencatat,
+        j.hari,
+        j.jam_ke,
+        j.jam_mulai,
+        j.jam_selesai
+      FROM absensi_guru ag
+      JOIN guru g ON ag.guru_id = g.id_guru
+      JOIN siswa_perwakilan s ON ag.siswa_pencatat_id = s.id_siswa
+      JOIN jadwal j ON ag.jadwal_id = j.id_jadwal
+      WHERE ag.jadwal_id = ? AND ag.tanggal = ?
+      ORDER BY ag.waktu_catat DESC
+    `, [jadwalId, targetDate]);
+    
+    return attendance;
+  }
+};
+```
+
+### Student Attendance Recording
+```javascript
+const studentAttendanceLogic = {
+  // 1. Record student attendance by teacher
+  recordStudentAttendance: async (attendanceData) => {
+    const {
+      jadwalId,
+      siswaId,
+      guruId,
+      status,
+      keterangan
+    } = attendanceData;
+    
+    try {
+      // Validate teacher is assigned to schedule
+      const isAssigned = await multiTeacherLogic.isTeacherAssigned(jadwalId, guruId);
+      if (!isAssigned) {
+        throw new Error('Guru tidak ditugaskan pada jadwal ini');
+      }
+      
+      // Check if attendance already exists
+      const [existing] = await db.execute(
+        'SELECT id FROM absensi_siswa WHERE jadwal_id = ? AND siswa_id = ? AND tanggal = CURDATE()',
+        [jadwalId, siswaId]
+      );
+      
+      if (existing.length > 0) {
+        // Update existing attendance
+        await db.execute(
+          `UPDATE absensi_siswa 
+           SET status = ?, keterangan = ?, guru_id = ?, waktu_absen = NOW()
+           WHERE id = ?`,
+          [status, keterangan, guruId, existing[0].id]
+        );
+      } else {
+        // Create new attendance record
+        await db.execute(
+          `INSERT INTO absensi_siswa 
+           (siswa_id, jadwal_id, guru_id, tanggal, status, keterangan)
+           VALUES (?, ?, ?, CURDATE(), ?, ?)`,
+          [siswaId, jadwalId, guruId, status, keterangan]
+        );
+      }
+      
+      console.log(`✅ Student attendance recorded: ${siswaId} - ${status}`);
+      
+      // Send notification to student
+      await notificationService.sendStudentAttendanceNotification(siswaId, {
+        status,
+        keterangan,
+        guruId
+      });
+      
+    } catch (error) {
+      console.error('❌ Error recording student attendance:', error);
+      throw error;
+    }
+  },
+  
+  // 2. Get student attendance for a class
+  getStudentAttendance: async (jadwalId, tanggal = null) => {
+    const targetDate = tanggal || new Date().toISOString().split('T')[0];
+    
+    const [attendance] = await db.execute(`
+      SELECT 
+        as.*,
+        s.nama as nama_siswa,
+        s.nis,
+        g.nama as nama_guru,
+        j.hari,
+        j.jam_ke,
+        j.jam_mulai,
+        j.jam_selesai
+      FROM absensi_siswa as
+      JOIN siswa_perwakilan s ON as.siswa_id = s.id_siswa
+      JOIN guru g ON as.guru_id = g.id_guru
+      JOIN jadwal j ON as.jadwal_id = j.id_jadwal
+      WHERE as.jadwal_id = ? AND as.tanggal = ?
+      ORDER BY s.nama
+    `, [jadwalId, targetDate]);
+    
+    return attendance;
+  }
+};
+```
+
+## 📱 Frontend Components
+
+### Teacher Attendance Interface
+```typescript
+// TeacherAttendanceComponent.tsx
+interface TeacherAttendanceProps {
+  jadwalId: number;
+  tanggal: string;
+  onAttendanceRecorded: (data: any) => void;
+}
+
+const TeacherAttendanceComponent: React.FC<TeacherAttendanceProps> = ({
+  jadwalId,
+  tanggal,
+  onAttendanceRecorded
+}) => {
+  const [students, setStudents] = useState([]);
+  const [attendance, setAttendance] = useState({});
+  const [loading, setLoading] = useState(false);
+
+  // Load students for the class
+  const loadStudents = async () => {
+    try {
+      const response = await api.get(`/api/attendance/students/${jadwalId}?tanggal=${tanggal}`);
+      setStudents(response.data);
+    } catch (error) {
+      console.error('Error loading students:', error);
+    }
+  };
+
+  // Record student attendance
+  const recordAttendance = async (siswaId: number, status: string, keterangan?: string) => {
+    try {
+      setLoading(true);
+      await api.post('/api/attendance/student', {
+        jadwalId,
+        siswaId,
+        status,
+        keterangan
+      });
+      
+      setAttendance(prev => ({
+        ...prev,
+        [siswaId]: { status, keterangan }
+      }));
+      
+      onAttendanceRecorded({ siswaId, status, keterangan });
+    } catch (error) {
+      console.error('Error recording attendance:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="teacher-attendance">
+      <h3>Absensi Siswa</h3>
+      <div className="students-list">
+        {students.map(student => (
+          <StudentAttendanceCard
+            key={student.id}
+            student={student}
+            attendance={attendance[student.id]}
+            onStatusChange={(status, keterangan) => 
+              recordAttendance(student.id, status, keterangan)
+            }
+            loading={loading}
+          />
+        ))}
+      </div>
+    </div>
+  );
+};
+```
+
+### Student Attendance Interface
+```typescript
+// StudentAttendanceComponent.tsx
+interface StudentAttendanceProps {
+  jadwalId: number;
+  tanggal: string;
+  onAttendanceRecorded: (data: any) => void;
+}
+
+const StudentAttendanceComponent: React.FC<StudentAttendanceProps> = ({
+  jadwalId,
+  tanggal,
+  onAttendanceRecorded
+}) => {
+  const [teachers, setTeachers] = useState([]);
+  const [attendance, setAttendance] = useState({});
+  const [loading, setLoading] = useState(false);
+
+  // Load teachers for the schedule
+  const loadTeachers = async () => {
+    try {
+      const response = await api.get(`/api/attendance/teachers/${jadwalId}?tanggal=${tanggal}`);
+      setTeachers(response.data);
+    } catch (error) {
+      console.error('Error loading teachers:', error);
+    }
+  };
+
+  // Record teacher attendance
+  const recordAttendance = async (guruId: number, status: string, keterangan?: string) => {
+    try {
+      setLoading(true);
+      await api.post('/api/attendance/teacher', {
+        jadwalId,
+        guruId,
+        status,
+        keterangan
+      });
+      
+      setAttendance(prev => ({
+        ...prev,
+        [guruId]: { status, keterangan }
+      }));
+      
+      onAttendanceRecorded({ guruId, status, keterangan });
+    } catch (error) {
+      console.error('Error recording attendance:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="student-attendance">
+      <h3>Absensi Guru</h3>
+      <div className="teachers-list">
+        {teachers.map(teacher => (
+          <TeacherAttendanceCard
+            key={teacher.id}
+            teacher={teacher}
+            attendance={attendance[teacher.id]}
+            onStatusChange={(status, keterangan) => 
+              recordAttendance(teacher.id, status, keterangan)
+            }
+            loading={loading}
+          />
+        ))}
+      </div>
+    </div>
+  );
+};
+```
+
+## 🔄 Real-time Synchronization
+
+### WebSocket Implementation
+```javascript
+const attendanceWebSocket = {
+  // 1. Initialize WebSocket connection
+  initialize: (io) => {
+    io.on('connection', (socket) => {
+      console.log('User connected:', socket.id);
+      
+      // Join class room for real-time updates
+      socket.on('join-class', (jadwalId) => {
+        socket.join(`class-${jadwalId}`);
+        console.log(`User joined class ${jadwalId}`);
+      });
+      
+      // Handle attendance updates
+      socket.on('attendance-update', (data) => {
+        // Broadcast to all users in the class
+        socket.to(`class-${data.jadwalId}`).emit('attendance-changed', data);
+      });
+      
+      // Handle disconnect
+      socket.on('disconnect', () => {
+        console.log('User disconnected:', socket.id);
+      });
+    });
+  },
+  
+  // 2. Broadcast attendance update
+  broadcastUpdate: (io, jadwalId, updateData) => {
+    io.to(`class-${jadwalId}`).emit('attendance-changed', updateData);
+  }
+};
+```
+
+### Real-time Attendance Updates
+```javascript
+const realTimeAttendance = {
+  // 1. Update attendance in real-time
+  updateAttendance: async (io, attendanceData) => {
+    try {
+      // Save to database
+      await attendanceService.saveAttendance(attendanceData);
+      
+      // Broadcast update
+      attendanceWebSocket.broadcastUpdate(io, attendanceData.jadwalId, {
+        type: 'attendance_update',
+        data: attendanceData,
+        timestamp: new Date().toISOString()
+      });
+      
+      console.log('✅ Attendance updated and broadcasted');
+    } catch (error) {
+      console.error('❌ Error updating attendance:', error);
+      throw error;
+    }
+  },
+  
+  // 2. Get live attendance status
+  getLiveAttendance: async (jadwalId) => {
+    const [attendance] = await db.execute(`
+      SELECT 
+        ag.*,
+        as.*,
+        g.nama as nama_guru,
+        s.nama as nama_siswa
+      FROM absensi_guru ag
+      LEFT JOIN absensi_siswa as ON ag.jadwal_id = as.jadwal_id AND ag.tanggal = as.tanggal
+      JOIN guru g ON ag.guru_id = g.id_guru
+      JOIN siswa_perwakilan s ON as.siswa_id = s.id_siswa
+      WHERE ag.jadwal_id = ? AND ag.tanggal = CURDATE()
+    `, [jadwalId]);
+    
+    return attendance;
+  }
+};
+```
+
+## 📊 Attendance Analytics
+
+### Attendance Statistics
+```javascript
+const attendanceAnalytics = {
+  // 1. Calculate attendance rates
+  calculateAttendanceRates: async (jadwalId, startDate, endDate) => {
+    const [stats] = await db.execute(`
+      SELECT 
+        COUNT(*) as total_sessions,
+        SUM(CASE WHEN ag.status = 'Hadir' THEN 1 ELSE 0 END) as guru_hadir,
+        SUM(CASE WHEN as.status = 'Hadir' THEN 1 ELSE 0 END) as siswa_hadir,
+        (SUM(CASE WHEN ag.status = 'Hadir' THEN 1 ELSE 0 END) / COUNT(*)) * 100 as guru_attendance_rate,
+        (SUM(CASE WHEN as.status = 'Hadir' THEN 1 ELSE 0 END) / COUNT(*)) * 100 as siswa_attendance_rate
+      FROM jadwal j
+      LEFT JOIN absensi_guru ag ON j.id_jadwal = ag.jadwal_id AND ag.tanggal BETWEEN ? AND ?
+      LEFT JOIN absensi_siswa as ON j.id_jadwal = as.jadwal_id AND as.tanggal BETWEEN ? AND ?
+      WHERE j.id_jadwal = ?
+    `, [startDate, endDate, startDate, endDate, jadwalId]);
+    
+    return stats[0];
+  },
+  
+  // 2. Get attendance trends
+  getAttendanceTrends: async (jadwalId, days = 30) => {
+    const [trends] = await db.execute(`
+      SELECT 
+        DATE(ag.tanggal) as tanggal,
+        COUNT(*) as total_attendance,
+        SUM(CASE WHEN ag.status = 'Hadir' THEN 1 ELSE 0 END) as guru_hadir,
+        SUM(CASE WHEN as.status = 'Hadir' THEN 1 ELSE 0 END) as siswa_hadir
+      FROM absensi_guru ag
+      LEFT JOIN absensi_siswa as ON ag.jadwal_id = as.jadwal_id AND ag.tanggal = as.tanggal
+      WHERE ag.jadwal_id = ? 
+        AND ag.tanggal >= DATE_SUB(CURDATE(), INTERVAL ? DAY)
+      GROUP BY DATE(ag.tanggal)
+      ORDER BY tanggal DESC
+    `, [jadwalId, days]);
+    
+    return trends;
+  }
+};
+```
+
+## 🚨 Error Handling for Attendance
+
+### Attendance Error Handling
+```javascript
+const attendanceErrorHandling = {
+  // 1. Validate attendance data
+  validateAttendanceData: (data) => {
+    const errors = [];
+    
+    if (!data.jadwalId) {
+      errors.push('Jadwal ID is required');
+    }
+    
+    if (!data.status) {
+      errors.push('Status is required');
+    }
+    
+    if (!['Hadir', 'Tidak Hadir', 'Sakit', 'Izin', 'Alpa', 'Dispen'].includes(data.status)) {
+      errors.push('Invalid status');
+    }
+    
+    return errors;
+  },
+  
+  // 2. Handle attendance conflicts
+  handleAttendanceConflict: async (jadwalId, userId, userType) => {
+    try {
+      // Check for existing attendance
+      const table = userType === 'guru' ? 'absensi_guru' : 'absensi_siswa';
+      const idField = userType === 'guru' ? 'guru_id' : 'siswa_id';
+      
+      const [existing] = await db.execute(
+        `SELECT * FROM ${table} WHERE jadwal_id = ? AND ${idField} = ? AND tanggal = CURDATE()`,
+        [jadwalId, userId]
+      );
+      
+      if (existing.length > 0) {
+        return {
+          conflict: true,
+          existing: existing[0],
+          message: 'Attendance already recorded for today'
+        };
+      }
+      
+      return { conflict: false };
+    } catch (error) {
+      console.error('Error checking attendance conflict:', error);
+      throw error;
+    }
+  }
+};
+```
+
+## 📋 API Endpoints for Attendance
+
+### Attendance API Endpoints
+```javascript
+// 1. Record teacher attendance
+app.post('/api/attendance/teacher', authenticateToken, async (req, res) => {
+  try {
+    const { jadwalId, guruId, status, keterangan } = req.body;
+    
+    // Validate data
+    const errors = attendanceErrorHandling.validateAttendanceData({
+      jadwalId, status
+    });
+    
+    if (errors.length > 0) {
+      return res.status(400).json(errorResponses.validation(errors));
+    }
+    
+    // Record attendance
+    await teacherAttendanceLogic.recordTeacherAttendance({
+      jadwalId,
+      guruId,
+      status,
+      keterangan
+    });
+    
+    res.success(null, 'Teacher attendance recorded successfully');
+  } catch (error) {
+    console.error('Error recording teacher attendance:', error);
+    res.error('Failed to record teacher attendance', error.message);
+  }
+});
+
+// 2. Record student attendance
+app.post('/api/attendance/student', authenticateToken, async (req, res) => {
+  try {
+    const { jadwalId, siswaId, status, keterangan } = req.body;
+    
+    // Validate data
+    const errors = attendanceErrorHandling.validateAttendanceData({
+      jadwalId, status
+    });
+    
+    if (errors.length > 0) {
+      return res.status(400).json(errorResponses.validation(errors));
+    }
+    
+    // Record attendance
+    await studentAttendanceLogic.recordStudentAttendance({
+      jadwalId,
+      siswaId,
+      status,
+      keterangan
+    });
+    
+    res.success(null, 'Student attendance recorded successfully');
+  } catch (error) {
+    console.error('Error recording student attendance:', error);
+    res.error('Failed to record student attendance', error.message);
+  }
+});
+
+// 3. Get attendance for a class
+app.get('/api/attendance/class/:jadwalId', authenticateToken, async (req, res) => {
+  try {
+    const { jadwalId } = req.params;
+    const { tanggal } = req.query;
+    
+    const [teacherAttendance] = await teacherAttendanceLogic.getTeacherAttendance(jadwalId, tanggal);
+    const [studentAttendance] = await studentAttendanceLogic.getStudentAttendance(jadwalId, tanggal);
+    
+    res.success({
+      teacherAttendance,
+      studentAttendance
+    }, 'Attendance data retrieved successfully');
+  } catch (error) {
+    console.error('Error getting attendance:', error);
+    res.error('Failed to get attendance data', error.message);
+  }
+});
+```

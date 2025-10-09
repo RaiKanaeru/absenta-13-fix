@@ -1,0 +1,474 @@
+---
+globs: *.js,*.sql
+description: Complete database schema and query patterns for Absenta system
+---
+
+# Absenta Database Schema - Complete Guide
+
+## 🗄️ Database Overview
+
+**Database Name**: `absenta13`  
+**Engine**: InnoDB (MySQL 10.4+ / MariaDB compatible)  
+**Charset**: utf8mb4_general_ci  
+**Total Tables**: 25+ tables  
+**Total Records**: ~1,595 records  
+
+## 📋 Core Tables Structure
+
+### 1. **users** (User Accounts) - PRIMARY TABLE
+```sql
+CREATE TABLE `users` (
+  `id` int(11) NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  `username` varchar(50) NOT NULL UNIQUE,
+  `password` varchar(255) NOT NULL,
+  `role` enum('admin','guru','siswa') NOT NULL,
+  `nama` varchar(100) NOT NULL,
+  `email` varchar(100) DEFAULT NULL,
+  `status` enum('aktif','tidak_aktif','ditangguhkan') DEFAULT 'aktif',
+  `created_at` timestamp NULL DEFAULT current_timestamp(),
+  `updated_at` timestamp NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()
+);
+```
+
+**Key Relationships**:
+- `guru.user_id` → `users.id`
+- `siswa.user_id` → `users.id`
+
+**Indexes**:
+- `idx_users_username` (username)
+- `idx_users_role` (role)
+- `idx_users_status` (status)
+- `idx_users_role_status` (role, status)
+
+### 2. **guru** (Teacher Data)
+```sql
+CREATE TABLE `guru` (
+  `id` int(11) NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  `id_guru` int(11) NOT NULL UNIQUE,
+  `user_id` int(11) NOT NULL,
+  `nama_pengguna` varchar(50) NOT NULL,
+  `nip` varchar(30) NOT NULL,
+  `nama` varchar(100) NOT NULL,
+  `email` varchar(100) DEFAULT NULL,
+  `mata_pelajaran` varchar(100) DEFAULT NULL, -- DEPRECATED
+  `mapel_id` int(11) DEFAULT NULL,
+  `no_telp` varchar(20) DEFAULT NULL,
+  `alamat` text DEFAULT NULL,
+  `jenis_kelamin` enum('L','P') DEFAULT NULL,
+  `status` enum('aktif','tidak_aktif','pensiun') DEFAULT 'aktif',
+  `dibuat_pada` timestamp NULL DEFAULT current_timestamp(),
+  `diperbarui_pada` timestamp NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()
+);
+```
+
+**Key Relationships**:
+- `guru.id_pengguna` → `pengguna.id`
+- `guru.mapel_id` → `mapel.id_mapel`
+- `jadwal.guru_id` → `guru.id_guru`
+
+### 3. **siswa** (Student Data) - ACTIVE TABLE
+```sql
+CREATE TABLE `siswa` (
+  `id` int(11) NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  `id_siswa` int(11) NOT NULL UNIQUE,
+  `user_id` int(11) NOT NULL,
+  `nama_pengguna` varchar(50) NOT NULL,
+  `nis` varchar(30) NOT NULL UNIQUE,
+  `nama` varchar(100) NOT NULL,
+  `kelas_id` int(11) NOT NULL,
+  `jabatan` varchar(50) DEFAULT 'Sekretaris Kelas',
+  `jenis_kelamin` enum('L','P') DEFAULT NULL,
+  `email` varchar(100) DEFAULT NULL,
+  `alamat` text DEFAULT NULL,
+  `telepon_orangtua` varchar(20) DEFAULT NULL,
+  `telepon_siswa` varchar(20) DEFAULT NULL,
+  `status` enum('aktif','tidak_aktif','lulus','pindah','alumni','keluar') DEFAULT 'aktif',
+  `dibuat_pada` timestamp NULL DEFAULT current_timestamp(),
+  `diperbarui_pada` timestamp NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()
+);
+```
+
+**Migration Status**: ✅ **ACTIVE TABLE**
+- Student data stored in `siswa` table with user accounts in `users` table
+- Foreign key relationship maintained for data integrity
+
+### 4. **mapel** (Subjects)
+```sql
+CREATE TABLE `mapel` (
+  `id_mapel` int(11) NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  `kode_mapel` varchar(10) NOT NULL UNIQUE,
+  `nama_mapel` varchar(100) NOT NULL,
+  `deskripsi` text DEFAULT NULL,
+  `status` enum('aktif','tidak_aktif') DEFAULT 'aktif',
+  `dibuat_pada` timestamp NULL DEFAULT current_timestamp(),
+  `diperbarui_pada` timestamp NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()
+);
+```
+
+**Key Relationships**:
+- `guru.mapel_id` → `mapel.id_mapel`
+- `jadwal.mapel_id` → `mapel.id_mapel`
+
+### 5. **kelas** (Classes)
+```sql
+CREATE TABLE `kelas` (
+  `id_kelas` int(11) NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  `nama_kelas` varchar(50) NOT NULL,
+  `tingkat` varchar(10) NOT NULL, -- X, XI, XII
+  `ruang` varchar(50) DEFAULT NULL,
+  `kapasitas` int(11) DEFAULT NULL,
+  `status` enum('aktif','tidak_aktif') DEFAULT 'aktif',
+  `dibuat_pada` timestamp NULL DEFAULT current_timestamp(),
+  `diperbarui_pada` timestamp NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()
+);
+```
+
+**Key Relationships**:
+- `siswa_perwakilan.kelas_id` → `kelas.id_kelas`
+- `jadwal.kelas_id` → `kelas.id_kelas`
+
+### 6. **jadwal** (Schedules)
+```sql
+CREATE TABLE `jadwal` (
+  `id_jadwal` int(11) NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  `kelas_id` int(11) NOT NULL,
+  `mapel_id` int(11) NOT NULL,
+  `guru_id` int(11) NOT NULL,
+  `ruang_id` int(11) DEFAULT NULL,
+  `hari` varchar(10) NOT NULL, -- Senin, Selasa, dst.
+  `jam_ke` int(11) NOT NULL,
+  `jam_mulai` time NOT NULL,
+  `jam_selesai` time NOT NULL,
+  `status` enum('aktif','tidak_aktif') DEFAULT 'aktif',
+  `dibuat_pada` timestamp NULL DEFAULT current_timestamp()
+);
+```
+
+**Key Relationships**:
+- `jadwal.kelas_id` → `kelas.id_kelas`
+- `jadwal.mapel_id` → `mapel.id_mapel`
+- `jadwal.guru_id` → `guru.id_guru`
+
+## 📊 Attendance Tables
+
+### 7. **absensi_guru** (Teacher Attendance)
+```sql
+CREATE TABLE `absensi_guru` (
+  `id_absensi` int(11) NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  `jadwal_id` int(11) NOT NULL,
+  `guru_id` int(11) NOT NULL,
+  `kelas_id` int(11) NOT NULL,
+  `siswa_pencatat_id` int(11) NOT NULL,
+  `tanggal` date NOT NULL,
+  `jam_ke` int(11) NOT NULL,
+  `status` enum('Hadir','Tidak Hadir','Sakit','Izin','Dispen','Terlambat') NOT NULL,
+  `keterangan` text DEFAULT NULL,
+  `waktu_catat` timestamp NOT NULL DEFAULT current_timestamp(),
+  `waktu_scan` timestamp NULL DEFAULT NULL,
+  `metode_absen` enum('manual','scan','otomatis') DEFAULT 'manual',
+  `jam_terlambat` int(11) DEFAULT NULL,
+  `alasan_terlambat` text DEFAULT NULL
+);
+```
+
+### 8. **absensi_siswa** (Student Attendance)
+```sql
+CREATE TABLE `absensi_siswa` (
+  `id` int(11) NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  `siswa_id` int(11) NOT NULL,
+  `jadwal_id` int(11) DEFAULT NULL,
+  `tanggal` date NOT NULL,
+  `status` enum('Hadir','Izin','Sakit','Alpa','Dispen') NOT NULL,
+  `keterangan` text DEFAULT NULL,
+  `waktu_absen` datetime NOT NULL DEFAULT current_timestamp(),
+  `guru_id` int(11) DEFAULT NULL
+);
+```
+
+## 🔗 Foreign Key Relationships
+
+### Primary Relationships
+```sql
+-- User to Teacher
+ALTER TABLE `guru` ADD CONSTRAINT `fk_guru_pengguna` 
+FOREIGN KEY (`id_pengguna`) REFERENCES `pengguna`(`id`) ON DELETE CASCADE;
+
+-- User to Student (Historical)
+ALTER TABLE `siswa_perwakilan` ADD CONSTRAINT `fk_siswa_pengguna` 
+FOREIGN KEY (`user_id`) REFERENCES `pengguna`(`id`) ON DELETE CASCADE;
+
+-- Teacher to Subject
+ALTER TABLE `guru` ADD CONSTRAINT `fk_guru_mapel` 
+FOREIGN KEY (`mapel_id`) REFERENCES `mapel`(`id_mapel`) ON DELETE SET NULL;
+
+-- Student to Class
+ALTER TABLE `siswa_perwakilan` ADD CONSTRAINT `fk_siswa_kelas` 
+FOREIGN KEY (`kelas_id`) REFERENCES `kelas`(`id_kelas`) ON DELETE RESTRICT;
+
+-- Schedule Relationships
+ALTER TABLE `jadwal` ADD CONSTRAINT `fk_jadwal_kelas` 
+FOREIGN KEY (`kelas_id`) REFERENCES `kelas`(`id_kelas`) ON DELETE CASCADE;
+
+ALTER TABLE `jadwal` ADD CONSTRAINT `fk_jadwal_mapel` 
+FOREIGN KEY (`mapel_id`) REFERENCES `mapel`(`id_mapel`) ON DELETE CASCADE;
+
+ALTER TABLE `jadwal` ADD CONSTRAINT `fk_jadwal_guru` 
+FOREIGN KEY (`guru_id`) REFERENCES `guru`(`id_guru`) ON DELETE CASCADE;
+```
+
+## 📈 Query Patterns
+
+### User Authentication Queries
+```sql
+-- Login verification
+SELECT * FROM pengguna 
+WHERE nama_pengguna = ? 
+AND (status IN ("aktif", "active", "1", "1") OR status IS NULL);
+
+-- User role check
+SELECT peran, status FROM pengguna 
+WHERE id = ? AND peran = ?;
+```
+
+### Student Data Queries (After Migration)
+```sql
+-- Get all students from pengguna table
+SELECT 
+    p.id,
+    p.id as id_siswa,
+    p.id as user_id,
+    p.nama_pengguna as username,
+    p.nama,
+    p.email,
+    p.status,
+    'Ketua Kelas' as jabatan,
+    'L' as jenis_kelamin,
+    NULL as alamat,
+    NULL as telepon_orangtua,
+    NULL as telepon_siswa,
+    'X AK 1' as nama_kelas,
+    'X' as tingkat
+FROM pengguna p
+WHERE p.peran = 'siswa'
+ORDER BY p.nama;
+
+-- Create new student
+INSERT INTO pengguna (nama_pengguna, kata_sandi, peran, nama, email, status, dibuat_pada, diperbarui_pada) 
+VALUES (?, ?, 'siswa', ?, ?, ?, NOW(), NOW());
+```
+
+### Teacher Data Queries
+```sql
+-- Get teachers with user data
+SELECT 
+    g.*,
+    u.nama_pengguna,
+    u.status as user_status,
+    m.nama_mapel
+FROM guru g
+LEFT JOIN pengguna u ON g.id_pengguna = u.id
+LEFT JOIN mapel m ON g.mapel_id = m.id_mapel
+ORDER BY g.nama;
+
+-- Create teacher with user account
+INSERT INTO pengguna (nama_pengguna, kata_sandi, peran, nama, email, status) 
+VALUES (?, ?, 'guru', ?, ?, 'aktif');
+
+INSERT INTO guru (id_guru, id_pengguna, nama_pengguna, nip, nama, email, mapel_id, jenis_kelamin, status) 
+VALUES (?, LAST_INSERT_ID(), ?, ?, ?, ?, ?, ?, 'aktif');
+```
+
+### Subject Management Queries
+```sql
+-- Get all subjects
+SELECT * FROM mapel 
+WHERE status = 'aktif' 
+ORDER BY nama_mapel;
+
+-- Create new subject
+INSERT INTO mapel (kode_mapel, nama_mapel, deskripsi, status) 
+VALUES (?, ?, ?, 'aktif');
+
+-- Update subject
+UPDATE mapel 
+SET kode_mapel = ?, nama_mapel = ?, deskripsi = ?, status = ?, diperbarui_pada = NOW() 
+WHERE id_mapel = ?;
+```
+
+### Schedule Management Queries
+```sql
+-- Get schedule with related data
+SELECT 
+    j.*,
+    k.nama_kelas,
+    k.tingkat,
+    m.nama_mapel,
+    g.nama as nama_guru
+FROM jadwal j
+JOIN kelas k ON j.kelas_id = k.id_kelas
+JOIN mapel m ON j.mapel_id = m.id_mapel
+JOIN guru g ON j.guru_id = g.id_guru
+WHERE j.status = 'aktif'
+ORDER BY j.hari, j.jam_ke;
+```
+
+### Attendance Queries
+```sql
+-- Get teacher attendance
+SELECT 
+    ag.*,
+    g.nama as nama_guru,
+    k.nama_kelas,
+    m.nama_mapel
+FROM absensi_guru ag
+JOIN guru g ON ag.guru_id = g.id_guru
+JOIN kelas k ON ag.kelas_id = k.id_kelas
+JOIN mapel m ON ag.jadwal_id = m.id_mapel
+WHERE ag.tanggal = ?
+ORDER BY ag.jam_ke;
+
+-- Get student attendance
+SELECT 
+    as.*,
+    sp.nama as nama_siswa,
+    k.nama_kelas
+FROM absensi_siswa as
+JOIN siswa_perwakilan sp ON as.siswa_id = sp.id_siswa
+JOIN kelas k ON sp.kelas_id = k.id_kelas
+WHERE as.tanggal = ?
+ORDER BY sp.nama;
+```
+
+## 🔧 Database Maintenance
+
+### Index Optimization
+```sql
+-- Critical indexes for performance
+CREATE INDEX idx_pengguna_nama_pengguna ON pengguna(nama_pengguna);
+CREATE INDEX idx_pengguna_peran_status ON pengguna(peran, status);
+CREATE INDEX idx_guru_id_pengguna ON guru(id_pengguna);
+CREATE INDEX idx_jadwal_tanggal ON jadwal(tanggal);
+CREATE INDEX idx_absensi_guru_tanggal ON absensi_guru(tanggal);
+CREATE INDEX idx_absensi_siswa_tanggal ON absensi_siswa(tanggal);
+```
+
+### Data Integrity Checks
+```sql
+-- Check for orphaned records
+SELECT g.id FROM guru g 
+LEFT JOIN pengguna p ON g.id_pengguna = p.id 
+WHERE p.id IS NULL;
+
+-- Check for duplicate usernames
+SELECT nama_pengguna, COUNT(*) as count 
+FROM pengguna 
+GROUP BY nama_pengguna 
+HAVING count > 1;
+```
+
+### Backup Queries
+```sql
+-- Export user data
+SELECT * FROM pengguna 
+WHERE status = 'aktif' 
+ORDER BY peran, nama;
+
+-- Export attendance data
+SELECT * FROM absensi_guru 
+WHERE tanggal >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)
+ORDER BY tanggal DESC;
+```
+
+## 🚨 Common Database Issues
+
+### 1. **Table Name Inconsistencies**
+- **Problem**: Code uses `users` but database has `pengguna`
+- **Solution**: Always use `pengguna` table in queries
+- **Pattern**: `SELECT * FROM pengguna WHERE peran = 'siswa'`
+
+### 2. **Column Name Mismatches**
+- **Problem**: Code uses `username` but database has `nama_pengguna`
+- **Solution**: Use Indonesian column names consistently
+- **Pattern**: `SELECT nama_pengguna FROM pengguna`
+
+### 3. **Foreign Key Violations**
+- **Problem**: Deleting users with related records
+- **Solution**: Use CASCADE or RESTRICT appropriately
+- **Pattern**: `ON DELETE CASCADE` for dependent data
+
+### 4. **Performance Issues**
+- **Problem**: Slow queries on large tables
+- **Solution**: Add appropriate indexes
+- **Pattern**: Index on frequently queried columns
+
+## 📊 Data Migration Patterns
+
+### Student Data Migration (Completed)
+```sql
+-- Migrate from siswa_perwakilan to pengguna
+INSERT INTO pengguna (nama_pengguna, kata_sandi, peran, nama, email, status, dibuat_pada, diperbarui_pada)
+SELECT 
+    username,
+    '$2b$10$default_hash',
+    'siswa',
+    nama,
+    email,
+    status,
+    created_at,
+    updated_at
+FROM siswa_perwakilan
+WHERE NOT EXISTS (
+    SELECT 1 FROM pengguna p WHERE p.nama_pengguna = siswa_perwakilan.username
+);
+```
+
+### Data Validation Queries
+```sql
+-- Validate migration success
+SELECT 
+    (SELECT COUNT(*) FROM pengguna WHERE peran = 'siswa') as siswa_in_pengguna,
+    (SELECT COUNT(*) FROM siswa_perwakilan) as siswa_perwakilan_count;
+
+-- Check data integrity
+SELECT COUNT(*) as total_users FROM pengguna;
+SELECT COUNT(*) as total_teachers FROM guru;
+SELECT COUNT(*) as total_subjects FROM mapel;
+SELECT COUNT(*) as total_classes FROM kelas;
+```
+
+## 🔍 Monitoring Queries
+
+### System Health Checks
+```sql
+-- Database size
+SELECT 
+    table_schema as 'Database',
+    ROUND(SUM(data_length + index_length) / 1024 / 1024, 2) as 'Size (MB)'
+FROM information_schema.tables 
+WHERE table_schema = 'absenta13'
+GROUP BY table_schema;
+
+-- Table record counts
+SELECT 
+    table_name,
+    table_rows
+FROM information_schema.tables 
+WHERE table_schema = 'absenta13'
+ORDER BY table_rows DESC;
+```
+
+### Performance Monitoring
+```sql
+-- Slow query log analysis
+SHOW VARIABLES LIKE 'slow_query_log';
+SHOW VARIABLES LIKE 'long_query_time';
+
+-- Index usage analysis
+SELECT 
+    table_name,
+    index_name,
+    cardinality
+FROM information_schema.statistics 
+WHERE table_schema = 'absenta13'
+ORDER BY cardinality DESC;
+```

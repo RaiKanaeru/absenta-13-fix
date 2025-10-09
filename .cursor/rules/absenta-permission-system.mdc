@@ -1,0 +1,856 @@
+---
+globs: *.js,*.tsx
+description: Permission system for student leave requests in Absenta
+---
+
+# Absenta Permission System - Complete Guide
+
+## 📝 Permission System Overview
+
+**Absenta** memiliki sistem izin siswa yang memungkinkan:
+- **Siswa mengajukan izin** untuk ketidakhadiran di jam pelajaran tertentu
+- **Guru menyetujui/menolak izin** dengan alasan yang jelas
+- **Notifikasi real-time** untuk semua pihak yang terlibat
+- **Tracking status izin** dari pengajuan hingga keputusan
+- **Integrasi dengan absensi** untuk otomatis mencatat status izin
+
+## 🗄️ Database Schema for Permission System
+
+### Permission Tables (Based on absenta13.sql)
+```sql
+-- Tabel utama untuk pengajuan izin siswa
+CREATE TABLE `pengajuan_izin_siswa` (
+  `id_izin` int(11) NOT NULL,
+  `siswa_id` int(11) NOT NULL COMMENT 'ID siswa perwakilan yang mengajukan izin',
+  `jadwal_id` int(11) NOT NULL COMMENT 'ID jadwal yang akan diizinkan',
+  `tanggal_izin` date NOT NULL COMMENT 'Tanggal izin yang diajukan',
+  `tanggal_mulai` date NOT NULL COMMENT 'Tanggal mulai izin',
+  `tanggal_selesai` date NOT NULL COMMENT 'Tanggal selesai izin',
+  `jam_ke` int(11) NOT NULL COMMENT 'Jam ke berapa yang diizinkan',
+  `alasan_izin` text NOT NULL COMMENT 'Alasan mengajukan izin',
+  `bukti_pendukung` varchar(255) DEFAULT NULL COMMENT 'Path file bukti (surat dokter, dll)',
+  `status_izin` enum('pending','disetujui','ditolak','dibatalkan') NOT NULL DEFAULT 'pending',
+  `catatan_guru` text DEFAULT NULL COMMENT 'Catatan dari guru saat memproses izin',
+  `tanggal_pengajuan` timestamp NOT NULL DEFAULT current_timestamp(),
+  `tanggal_keputusan` timestamp NULL DEFAULT NULL COMMENT 'Waktu guru memberikan keputusan',
+  `diproses_oleh` int(11) DEFAULT NULL COMMENT 'ID guru yang memproses izin',
+  `kelas_id` int(11) NOT NULL COMMENT 'ID kelas untuk referensi',
+  `jenis_izin` enum('sakit','izin','acara_keluarga','kegiatan_sekolah','lainnya') NOT NULL DEFAULT 'sakit'
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- Tabel detail izin untuk multiple students
+CREATE TABLE `pengajuan_izin_detail` (
+  `id_detail` int(11) NOT NULL,
+  `izin_id` int(11) NOT NULL,
+  `nama_siswa` varchar(100) NOT NULL,
+  `alasan_izin` text NOT NULL,
+  `bukti_pendukung` varchar(255) DEFAULT NULL,
+  `status_izin` enum('pending','disetujui','ditolak') NOT NULL DEFAULT 'pending'
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- Tabel notifikasi izin
+CREATE TABLE `notifikasi_izin` (
+  `id` int(11) NOT NULL,
+  `izin_id` int(11) NOT NULL,
+  `penerima_id` int(11) NOT NULL,
+  `penerima_role` enum('siswa','guru','admin') NOT NULL,
+  `jenis_notifikasi` enum('pengajuan','keputusan','pengingat') NOT NULL,
+  `pesan` text NOT NULL,
+  `dibaca` boolean DEFAULT false,
+  `tanggal_kirim` timestamp NOT NULL DEFAULT current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+```
+
+## 🔄 Permission Business Logic
+
+### Permission Creation Logic
+```javascript
+const permissionCreationLogic = {
+  // 1. Create permission request for single student
+  createPermissionRequest: async (permissionData) => {
+    const {
+      siswaId,
+      jadwalId,
+      tanggalIzin,
+      tanggalMulai,
+      tanggalSelesai,
+      jamKe,
+      alasanIzin,
+      buktiPendukung,
+      jenisIzin = 'sakit'
+    } = permissionData;
+    
+    try {
+      await db.withTransaction(async (connection) => {
+        // Get class information
+        const [jadwal] = await connection.execute(
+          'SELECT kelas_id, guru_id FROM jadwal WHERE id_jadwal = ?',
+          [jadwalId]
+        );
+        
+        if (jadwal.length === 0) {
+          throw new Error('Jadwal tidak ditemukan');
+        }
+        
+        const kelasId = jadwal[0].kelas_id;
+        const guruId = jadwal[0].guru_id;
+        
+        // Create main permission record
+        const [result] = await connection.execute(
+          `INSERT INTO pengajuan_izin_siswa 
+           (siswa_id, jadwal_id, tanggal_izin, tanggal_mulai, tanggal_selesai, 
+            jam_ke, alasan_izin, bukti_pendukung, jenis_izin, kelas_id)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [siswaId, jadwalId, tanggalIzin, tanggalMulai, tanggalSelesai,
+           jamKe, alasanIzin, buktiPendukung, jenisIzin, kelasId]
+        );
+        
+        const izinId = result.insertId;
+        
+        // Create notification for teacher
+        await connection.execute(
+          `INSERT INTO notifikasi_izin 
+           (izin_id, penerima_id, penerima_role, jenis_notifikasi, pesan)
+           VALUES (?, ?, 'guru', 'pengajuan', ?)`,
+          [izinId, guruId, `Siswa mengajukan izin untuk tanggal ${tanggalIzin}`]
+        );
+        
+        // Create notification for admin (if configured)
+        const [admins] = await connection.execute(
+          'SELECT id FROM users WHERE role = "admin" AND status = "aktif"'
+        );
+        
+        for (const admin of admins) {
+          await connection.execute(
+            `INSERT INTO notifikasi_izin 
+             (izin_id, penerima_id, penerima_role, jenis_notifikasi, pesan)
+             VALUES (?, ?, 'admin', 'pengajuan', ?)`,
+            [izinId, admin.id, `Pengajuan izin baru - ID: ${izinId}`]
+          );
+        }
+      });
+      
+      console.log(`✅ Permission request created successfully: ${result.insertId}`);
+      
+      // Send real-time notification
+      await notificationService.sendPermissionNotification(guruId, {
+        type: 'new_permission',
+        izinId: result.insertId,
+        siswaId,
+        tanggalIzin
+      });
+      
+    } catch (error) {
+      console.error('❌ Error creating permission request:', error);
+      throw error;
+    }
+  },
+  
+  // 2. Create permission request for multiple students
+  createBulkPermissionRequest: async (bulkPermissionData) => {
+    const {
+      jadwalId,
+      tanggalIzin,
+      tanggalMulai,
+      tanggalSelesai,
+      jamKe,
+      students,
+      jenisIzin = 'sakit'
+    } = bulkPermissionData;
+    
+    try {
+      await db.withTransaction(async (connection) => {
+        // Get class information
+        const [jadwal] = await connection.execute(
+          'SELECT kelas_id, guru_id FROM jadwal WHERE id_jadwal = ?',
+          [jadwalId]
+        );
+        
+        if (jadwal.length === 0) {
+          throw new Error('Jadwal tidak ditemukan');
+        }
+        
+        const kelasId = jadwal[0].kelas_id;
+        const guruId = jadwal[0].guru_id;
+        
+        // Create main permission record
+        const [result] = await connection.execute(
+          `INSERT INTO pengajuan_izin_siswa 
+           (siswa_id, jadwal_id, tanggal_izin, tanggal_mulai, tanggal_selesai, 
+            jam_ke, alasan_izin, jenis_izin, kelas_id)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [students[0].siswaId, jadwalId, tanggalIzin, tanggalMulai, tanggalSelesai,
+           jamKe, 'Izin massal untuk ketidakhadiran', jenisIzin, kelasId]
+        );
+        
+        const izinId = result.insertId;
+        
+        // Create detail records for each student
+        for (const student of students) {
+          await connection.execute(
+            `INSERT INTO pengajuan_izin_detail 
+             (izin_id, nama_siswa, alasan_izin, bukti_pendukung)
+             VALUES (?, ?, ?, ?)`,
+            [izinId, student.nama, student.alasan, student.bukti]
+          );
+        }
+        
+        // Create notifications
+        await connection.execute(
+          `INSERT INTO notifikasi_izin 
+           (izin_id, penerima_id, penerima_role, jenis_notifikasi, pesan)
+           VALUES (?, ?, 'guru', 'pengajuan', ?)`,
+          [izinId, guruId, `Izin massal diajukan untuk ${students.length} siswa`]
+        );
+      });
+      
+      console.log(`✅ Bulk permission request created successfully`);
+      
+    } catch (error) {
+      console.error('❌ Error creating bulk permission request:', error);
+      throw error;
+    }
+  }
+};
+```
+
+### Permission Processing Logic
+```javascript
+const permissionProcessingLogic = {
+  // 1. Process permission decision
+  processPermissionDecision: async (izinId, decision, catatan, processedBy) => {
+    try {
+      await db.withTransaction(async (connection) => {
+        // Update permission status
+        await connection.execute(
+          `UPDATE pengajuan_izin_siswa 
+           SET status_izin = ?, catatan_guru = ?, tanggal_keputusan = NOW(), diproses_oleh = ?
+           WHERE id_izin = ?`,
+          [decision, catatan, processedBy, izinId]
+        );
+        
+        // Get permission details
+        const [permission] = await connection.execute(
+          'SELECT * FROM pengajuan_izin_siswa WHERE id_izin = ?',
+          [izinId]
+        );
+        
+        if (permission.length === 0) {
+          throw new Error('Permission request not found');
+        }
+        
+        const permissionData = permission[0];
+        
+        // If approved, create attendance record with "Izin" status
+        if (decision === 'disetujui') {
+          await connection.execute(
+            `INSERT INTO absensi_siswa 
+             (siswa_id, jadwal_id, tanggal, status, keterangan, guru_id)
+             VALUES (?, ?, ?, 'Izin', ?, ?)`,
+            [permissionData.siswa_id, permissionData.jadwal_id, 
+             permissionData.tanggal_izin, `Disetujui melalui izin - ${catatan}`, 
+             permissionData.diproses_oleh]
+          );
+        }
+        
+        // Create notification for student
+        await connection.execute(
+          `INSERT INTO notifikasi_izin 
+           (izin_id, penerima_id, penerima_role, jenis_notifikasi, pesan)
+           VALUES (?, ?, 'siswa', 'keputusan', ?)`,
+          [izinId, permissionData.siswa_id, 
+           `Izin Anda ${decision === 'disetujui' ? 'disetujui' : 'ditolak'}: ${catatan}`]
+        );
+        
+        // Create notification for admin
+        await connection.execute(
+          `INSERT INTO notifikasi_izin 
+           (izin_id, penerima_id, penerima_role, jenis_notifikasi, pesan)
+           VALUES (?, ?, 'admin', 'keputusan', ?)`,
+          [izinId, processedBy, `Izin ${izinId} telah diproses: ${decision}`]
+        );
+      });
+      
+      console.log(`✅ Permission ${izinId} processed: ${decision}`);
+      
+      // Send real-time notification
+      await notificationService.sendPermissionDecisionNotification(permissionData.siswa_id, {
+        type: 'permission_decision',
+        izinId,
+        decision,
+        catatan
+      });
+      
+    } catch (error) {
+      console.error('❌ Error processing permission:', error);
+      throw error;
+    }
+  },
+  
+  // 2. Get permissions for teacher
+  getTeacherPermissions: async (guruId, status = null) => {
+    let query = `
+      SELECT 
+        piz.*,
+        s.nama as nama_siswa,
+        s.nis,
+        j.hari,
+        j.jam_ke,
+        j.jam_mulai,
+        j.jam_selesai,
+        m.nama_mapel,
+        k.nama_kelas
+      FROM pengajuan_izin_siswa piz
+      JOIN siswa_perwakilan s ON piz.siswa_id = s.id_siswa
+      JOIN jadwal j ON piz.jadwal_id = j.id_jadwal
+      JOIN mapel m ON j.mapel_id = m.id_mapel
+      JOIN kelas k ON piz.kelas_id = k.id_kelas
+      WHERE j.guru_id = ?
+    `;
+    
+    const params = [guruId];
+    
+    if (status) {
+      query += ' AND piz.status_izin = ?';
+      params.push(status);
+    }
+    
+    query += ' ORDER BY piz.tanggal_pengajuan DESC';
+    
+    const [permissions] = await db.execute(query, params);
+    return permissions;
+  },
+  
+  // 3. Get permissions for student
+  getStudentPermissions: async (siswaId, status = null) => {
+    let query = `
+      SELECT 
+        piz.*,
+        g.nama as nama_guru,
+        j.hari,
+        j.jam_ke,
+        j.jam_mulai,
+        j.jam_selesai,
+        m.nama_mapel,
+        k.nama_kelas
+      FROM pengajuan_izin_siswa piz
+      JOIN guru g ON piz.diproses_oleh = g.id_guru
+      JOIN jadwal j ON piz.jadwal_id = j.id_jadwal
+      JOIN mapel m ON j.mapel_id = m.id_mapel
+      JOIN kelas k ON piz.kelas_id = k.id_kelas
+      WHERE piz.siswa_id = ?
+    `;
+    
+    const params = [siswaId];
+    
+    if (status) {
+      query += ' AND piz.status_izin = ?';
+      params.push(status);
+    }
+    
+    query += ' ORDER BY piz.tanggal_pengajuan DESC';
+    
+    const [permissions] = await db.execute(query, params);
+    return permissions;
+  }
+};
+```
+
+## 📱 Frontend Components
+
+### Permission Request Component
+```typescript
+// PermissionRequestComponent.tsx
+interface PermissionRequestProps {
+  studentId: number;
+  scheduleId: number;
+  onPermissionCreated: (permission: any) => void;
+}
+
+const PermissionRequestComponent: React.FC<PermissionRequestProps> = ({
+  studentId,
+  scheduleId,
+  onPermissionCreated
+}) => {
+  const [permissionData, setPermissionData] = useState({
+    tanggalIzin: '',
+    tanggalMulai: '',
+    tanggalSelesai: '',
+    jamKe: 1,
+    alasanIzin: '',
+    jenisIzin: 'sakit',
+    buktiPendukung: null
+  });
+  const [loading, setLoading] = useState(false);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    if (!permissionData.alasanIzin.trim()) {
+      toast.error('Alasan izin harus diisi');
+      return;
+    }
+
+    if (!permissionData.tanggalIzin) {
+      toast.error('Tanggal izin harus diisi');
+      return;
+    }
+
+    try {
+      setLoading(true);
+      
+      const response = await api.post('/api/permissions', {
+        siswaId: studentId,
+        jadwalId: scheduleId,
+        tanggalIzin: permissionData.tanggalIzin,
+        tanggalMulai: permissionData.tanggalMulai || permissionData.tanggalIzin,
+        tanggalSelesai: permissionData.tanggalSelesai || permissionData.tanggalIzin,
+        jamKe: permissionData.jamKe,
+        alasanIzin: permissionData.alasanIzin,
+        jenisIzin: permissionData.jenisIzin,
+        buktiPendukung: permissionData.buktiPendukung
+      });
+
+      toast.success('Izin berhasil diajukan');
+      onPermissionCreated(response.data);
+      
+    } catch (error) {
+      console.error('Error creating permission:', error);
+      toast.error('Gagal mengajukan izin');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <Dialog>
+      <DialogTrigger asChild>
+        <Button variant="outline" size="sm">
+          Ajukan Izin
+        </Button>
+      </DialogTrigger>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Ajukan Izin Siswa</DialogTitle>
+          <DialogDescription>
+            Ajukan izin untuk ketidakhadiran di jam pelajaran tertentu
+          </DialogDescription>
+        </DialogHeader>
+        
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <Label htmlFor="tanggalIzin">Tanggal Izin</Label>
+              <Input
+                id="tanggalIzin"
+                type="date"
+                value={permissionData.tanggalIzin}
+                onChange={(e) => setPermissionData(prev => ({ ...prev, tanggalIzin: e.target.value }))}
+                required
+              />
+            </div>
+            
+            <div>
+              <Label htmlFor="jamKe">Jam Ke</Label>
+              <Select
+                value={permissionData.jamKe.toString()}
+                onValueChange={(value) => setPermissionData(prev => ({ ...prev, jamKe: parseInt(value) }))}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {[1,2,3,4,5,6,7,8,9,10].map(jam => (
+                    <SelectItem key={jam} value={jam.toString()}>Jam {jam}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          
+          <div>
+            <Label htmlFor="jenisIzin">Jenis Izin</Label>
+            <Select
+              value={permissionData.jenisIzin}
+              onValueChange={(value) => setPermissionData(prev => ({ ...prev, jenisIzin: value }))}
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="sakit">Sakit</SelectItem>
+                <SelectItem value="izin">Izin</SelectItem>
+                <SelectItem value="acara_keluarga">Acara Keluarga</SelectItem>
+                <SelectItem value="kegiatan_sekolah">Kegiatan Sekolah</SelectItem>
+                <SelectItem value="lainnya">Lainnya</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          
+          <div>
+            <Label htmlFor="alasanIzin">Alasan Izin</Label>
+            <Textarea
+              id="alasanIzin"
+              value={permissionData.alasanIzin}
+              onChange={(e) => setPermissionData(prev => ({ ...prev, alasanIzin: e.target.value }))}
+              placeholder="Jelaskan alasan mengajukan izin..."
+              rows={4}
+              required
+            />
+          </div>
+          
+          <div>
+            <Label htmlFor="buktiPendukung">Bukti Pendukung (Opsional)</Label>
+            <Input
+              id="buktiPendukung"
+              type="file"
+              accept="image/*,.pdf"
+              onChange={(e) => setPermissionData(prev => ({ ...prev, buktiPendukung: e.target.files?.[0] }))}
+            />
+          </div>
+          
+          <DialogFooter>
+            <Button type="submit" disabled={loading}>
+              {loading ? 'Mengirim...' : 'Ajukan Izin'}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+};
+```
+
+### Permission Management Component
+```typescript
+// PermissionManagementComponent.tsx
+interface PermissionManagementProps {
+  teacherId: number;
+  onPermissionProcessed: (permission: any) => void;
+}
+
+const PermissionManagementComponent: React.FC<PermissionManagementProps> = ({
+  teacherId,
+  onPermissionProcessed
+}) => {
+  const [permissions, setPermissions] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [filter, setFilter] = useState('pending');
+
+  const loadPermissions = async () => {
+    try {
+      setLoading(true);
+      const response = await api.get(`/api/permissions/teacher/${teacherId}?status=${filter}`);
+      setPermissions(response.data);
+    } catch (error) {
+      console.error('Error loading permissions:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const processPermission = async (izinId: number, decision: string, catatan: string) => {
+    try {
+      await api.post(`/api/permissions/${izinId}/process`, {
+        decision,
+        catatan
+      });
+      
+      toast.success(`Izin ${decision === 'disetujui' ? 'disetujui' : 'ditolak'}`);
+      loadPermissions();
+      onPermissionProcessed({ izinId, decision });
+      
+    } catch (error) {
+      console.error('Error processing permission:', error);
+      toast.error('Gagal memproses izin');
+    }
+  };
+
+  useEffect(() => {
+    loadPermissions();
+  }, [filter]);
+
+  return (
+    <div className="permission-management">
+      <div className="flex justify-between items-center mb-4">
+        <h3>Manajemen Izin Siswa</h3>
+        <Select value={filter} onValueChange={setFilter}>
+          <SelectTrigger className="w-48">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="pending">Menunggu</SelectItem>
+            <SelectItem value="disetujui">Disetujui</SelectItem>
+            <SelectItem value="ditolak">Ditolak</SelectItem>
+            <SelectItem value="all">Semua</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+      
+      <div className="space-y-4">
+        {loading ? (
+          <div className="text-center py-8">Loading...</div>
+        ) : permissions.length === 0 ? (
+          <div className="text-center py-8 text-gray-500">
+            Tidak ada izin untuk ditampilkan
+          </div>
+        ) : (
+          permissions.map(permission => (
+            <PermissionCard
+              key={permission.id_izin}
+              permission={permission}
+              onProcess={processPermission}
+            />
+          ))
+        )}
+      </div>
+    </div>
+  );
+};
+```
+
+## 🔔 Notification System
+
+### Permission Notifications
+```javascript
+const permissionNotificationService = {
+  // 1. Send permission notification
+  sendPermissionNotification: async (recipientId, notificationData) => {
+    try {
+      // Send real-time notification via WebSocket
+      const io = require('./socket').io;
+      io.to(`user-${recipientId}`).emit('permission-notification', notificationData);
+      
+      // Send push notification (if configured)
+      if (process.env.PUSH_NOTIFICATION_ENABLED === 'true') {
+        await pushNotificationService.send(recipientId, {
+          title: 'Pengajuan Izin Baru',
+          body: notificationData.message,
+          data: notificationData
+        });
+      }
+      
+      console.log(`✅ Permission notification sent to user ${recipientId}`);
+    } catch (error) {
+      console.error('❌ Error sending permission notification:', error);
+    }
+  },
+  
+  // 2. Send permission decision notification
+  sendPermissionDecisionNotification: async (recipientId, decisionData) => {
+    try {
+      const io = require('./socket').io;
+      io.to(`user-${recipientId}`).emit('permission-decision', decisionData);
+      
+      console.log(`✅ Permission decision notification sent to user ${recipientId}`);
+    } catch (error) {
+      console.error('❌ Error sending permission decision notification:', error);
+    }
+  }
+};
+```
+
+## 📊 Permission Analytics
+
+### Permission Statistics
+```javascript
+const permissionAnalytics = {
+  // 1. Get permission statistics
+  getPermissionStats: async (startDate, endDate) => {
+    const [stats] = await db.execute(`
+      SELECT 
+        COUNT(*) as total_permissions,
+        SUM(CASE WHEN status_izin = 'pending' THEN 1 ELSE 0 END) as pending_permissions,
+        SUM(CASE WHEN status_izin = 'disetujui' THEN 1 ELSE 0 END) as approved_permissions,
+        SUM(CASE WHEN status_izin = 'ditolak' THEN 1 ELSE 0 END) as rejected_permissions,
+        (SUM(CASE WHEN status_izin = 'disetujui' THEN 1 ELSE 0 END) / COUNT(*)) * 100 as approval_rate
+      FROM pengajuan_izin_siswa 
+      WHERE tanggal_pengajuan BETWEEN ? AND ?
+    `, [startDate, endDate]);
+    
+    return stats[0];
+  },
+  
+  // 2. Get permission trends by type
+  getPermissionTrendsByType: async (days = 30) => {
+    const [trends] = await db.execute(`
+      SELECT 
+        jenis_izin,
+        COUNT(*) as total_permissions,
+        SUM(CASE WHEN status_izin = 'disetujui' THEN 1 ELSE 0 END) as approved,
+        SUM(CASE WHEN status_izin = 'ditolak' THEN 1 ELSE 0 END) as rejected
+      FROM pengajuan_izin_siswa 
+      WHERE tanggal_pengajuan >= DATE_SUB(CURDATE(), INTERVAL ? DAY)
+      GROUP BY jenis_izin
+      ORDER BY total_permissions DESC
+    `, [days]);
+    
+    return trends;
+  }
+};
+```
+
+## 🚨 Error Handling for Permissions
+
+### Permission Error Handling
+```javascript
+const permissionErrorHandling = {
+  // 1. Validate permission data
+  validatePermissionData: (data) => {
+    const errors = [];
+    
+    if (!data.siswaId) {
+      errors.push('Student ID is required');
+    }
+    
+    if (!data.jadwalId) {
+      errors.push('Schedule ID is required');
+    }
+    
+    if (!data.tanggalIzin) {
+      errors.push('Permission date is required');
+    }
+    
+    if (!data.alasanIzin || data.alasanIzin.trim().length < 10) {
+      errors.push('Reason must be at least 10 characters long');
+    }
+    
+    if (data.tanggalMulai && data.tanggalSelesai) {
+      const startDate = new Date(data.tanggalMulai);
+      const endDate = new Date(data.tanggalSelesai);
+      
+      if (startDate > endDate) {
+        errors.push('Start date cannot be after end date');
+      }
+    }
+    
+    return errors;
+  },
+  
+  // 2. Check permission eligibility
+  checkPermissionEligibility: async (siswaId, jadwalId, tanggalIzin) => {
+    try {
+      // Check if permission already exists for the same date and schedule
+      const [existing] = await db.execute(
+        'SELECT id_izin FROM pengajuan_izin_siswa WHERE siswa_id = ? AND jadwal_id = ? AND tanggal_izin = ?',
+        [siswaId, jadwalId, tanggalIzin]
+      );
+      
+      if (existing.length > 0) {
+        return {
+          eligible: false,
+          reason: 'Permission already exists for this date and schedule'
+        };
+      }
+      
+      // Check if date is not in the past
+      const permissionDate = new Date(tanggalIzin);
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      
+      if (permissionDate < today) {
+        return {
+          eligible: false,
+          reason: 'Cannot request permission for past dates'
+        };
+      }
+      
+      // Check if date is not too far in the future (e.g., 30 days)
+      const maxDate = new Date();
+      maxDate.setDate(maxDate.getDate() + 30);
+      
+      if (permissionDate > maxDate) {
+        return {
+          eligible: false,
+          reason: 'Cannot request permission more than 30 days in advance'
+        };
+      }
+      
+      return { eligible: true };
+      
+    } catch (error) {
+      console.error('Error checking permission eligibility:', error);
+      return {
+        eligible: false,
+        reason: 'Error checking eligibility'
+      };
+    }
+  }
+};
+```
+
+## 📋 API Endpoints for Permissions
+
+### Permission API Endpoints
+```javascript
+// 1. Create permission request
+app.post('/api/permissions', authenticateToken, async (req, res) => {
+  try {
+    const permissionData = req.body;
+    
+    // Validate data
+    const errors = permissionErrorHandling.validatePermissionData(permissionData);
+    if (errors.length > 0) {
+      return res.status(400).json(errorResponses.validation(errors));
+    }
+    
+    // Check eligibility
+    const eligibility = await permissionErrorHandling.checkPermissionEligibility(
+      permissionData.siswaId, 
+      permissionData.jadwalId,
+      permissionData.tanggalIzin
+    );
+    
+    if (!eligibility.eligible) {
+      return res.status(400).json(errorResponses.validation([eligibility.reason]));
+    }
+    
+    // Create permission
+    await permissionCreationLogic.createPermissionRequest(permissionData);
+    
+    res.success(null, 'Permission request created successfully');
+  } catch (error) {
+    console.error('Error creating permission:', error);
+    res.error('Failed to create permission request', error.message);
+  }
+});
+
+// 2. Process permission
+app.post('/api/permissions/:id/process', authenticateToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { decision, catatan } = req.body;
+    
+    if (!['disetujui', 'ditolak'].includes(decision)) {
+      return res.status(400).json(errorResponses.validation(['Invalid decision']));
+    }
+    
+    await permissionProcessingLogic.processPermissionDecision(
+      id, 
+      decision, 
+      catatan, 
+      req.user.id
+    );
+    
+    res.success(null, 'Permission processed successfully');
+  } catch (error) {
+    console.error('Error processing permission:', error);
+    res.error('Failed to process permission', error.message);
+  }
+});
+
+// 3. Get teacher permissions
+app.get('/api/permissions/teacher/:teacherId', authenticateToken, async (req, res) => {
+  try {
+    const { teacherId } = req.params;
+    const { status } = req.query;
+    
+    const permissions = await permissionProcessingLogic.getTeacherPermissions(teacherId, status);
+    
+    res.success(permissions, 'Teacher permissions retrieved successfully');
+  } catch (error) {
+    console.error('Error getting teacher permissions:', error);
+    res.error('Failed to get teacher permissions', error.message);
+  }
+});
+```

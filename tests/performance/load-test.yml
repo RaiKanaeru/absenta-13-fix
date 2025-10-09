@@ -1,0 +1,119 @@
+config:
+  target: 'http://localhost:3001'
+  phases:
+    - duration: 60
+      arrivalRate: 5
+      name: "Warm up"
+    - duration: 300
+      arrivalRate: 20
+      name: "Load test"
+    - duration: 60
+      arrivalRate: 5
+      name: "Cool down"
+  defaults:
+    headers:
+      Content-Type: 'application/json'
+
+scenarios:
+  - name: "Admin Login Flow"
+    weight: 30
+    flow:
+      - post:
+          url: "/api/login"
+          json:
+            username: "admin"
+            password: "admin123"
+          capture:
+            - json: "$.data.token"
+              as: "adminToken"
+      - get:
+          url: "/api/admin/dashboard"
+          headers:
+            Authorization: "Bearer {{ adminToken }}"
+      - get:
+          url: "/api/admin/users"
+          headers:
+            Authorization: "Bearer {{ adminToken }}"
+
+  - name: "Teacher Login Flow"
+    weight: 40
+    flow:
+      - post:
+          url: "/api/login"
+          json:
+            username: "guru001"
+            password: "admin123"
+          capture:
+            - json: "$.data.token"
+              as: "teacherToken"
+      - get:
+          url: "/api/guru/jadwal"
+          headers:
+            Authorization: "Bearer {{ teacherToken }}"
+      - get:
+          url: "/api/guru/attendance"
+          headers:
+            Authorization: "Bearer {{ teacherToken }}"
+
+  - name: "Student Login Flow"
+    weight: 30
+    flow:
+      - post:
+          url: "/api/login"
+          json:
+            username: "perwakilan2000"
+            password: "admin123"
+          capture:
+            - json: "$.data.token"
+              as: "studentToken"
+      - get:
+          url: "/api/siswa/jadwal"
+          headers:
+            Authorization: "Bearer {{ studentToken }}"
+      - get:
+          url: "/api/siswa/attendance"
+          headers:
+            Authorization: "Bearer {{ studentToken }}"
+
+  - name: "Attendance Submission"
+    weight: 20
+    flow:
+      - post:
+          url: "/api/login"
+          json:
+            username: "guru001"
+            password: "admin123"
+          capture:
+            - json: "$.data.token"
+              as: "teacherToken"
+      - post:
+          url: "/api/attendance/submit"
+          headers:
+            Authorization: "Bearer {{ teacherToken }}"
+          json:
+            jadwal_id: 1
+            attendance:
+              "2000": "Hadir"
+              "2001": "Izin"
+            keterangan: "Test attendance"
+
+  - name: "Permission Request"
+    weight: 10
+    flow:
+      - post:
+          url: "/api/login"
+          json:
+            username: "perwakilan2000"
+            password: "admin123"
+          capture:
+            - json: "$.data.token"
+              as: "studentToken"
+      - post:
+          url: "/api/siswa/permission"
+          headers:
+            Authorization: "Bearer {{ studentToken }}"
+          json:
+            jadwal_id: 1
+            tanggal_izin: "2025-01-10"
+            jenis_izin: "sakit"
+            alasan: "Sakit demam"

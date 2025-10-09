@@ -1,0 +1,114 @@
+---
+globs: *.js
+description: API development patterns and conventions for Absenta backend
+---
+
+# Absenta API Development Patterns
+
+## Authentication & Authorization
+```javascript
+// Always use these middleware for protected routes
+app.get('/api/admin/endpoint', authenticateToken, requireRole(['admin']), async (req, res) => {
+    // Endpoint logic
+});
+```
+
+## Response Patterns
+```javascript
+// Success responses
+res.success(data, 'Operation successful');
+
+// Error responses
+res.error('Error message', 'Operation failed');
+res.unauthorized('Invalid credentials');
+res.notFound('Resource not found');
+```
+
+## Database Query Patterns (Based on absenta13.sql)
+```javascript
+// User queries - use users table (not pengguna)
+const [rows] = await db.execute(
+    'SELECT * FROM users WHERE username = ? AND role = ?',
+    [username, role]
+);
+
+// Subject queries - use mapel table with id_mapel
+const [subjects] = await db.execute(
+    'SELECT * FROM mapel WHERE status = "aktif" ORDER BY nama_mapel'
+);
+
+// JOIN patterns with users table
+const [data] = await db.execute(`
+    SELECT g.*, u.username, u.status as user_status
+    FROM guru g
+    LEFT JOIN users u ON g.user_id = u.id
+`);
+
+// Schedule queries with multi-teacher support
+const [schedules] = await db.execute(`
+    SELECT 
+        j.*,
+        m.nama_mapel,
+        k.nama_kelas,
+        g.nama as nama_guru,
+        'primary' as role
+    FROM jadwal j
+    JOIN mapel m ON j.mapel_id = m.id_mapel
+    JOIN kelas k ON j.kelas_id = k.id_kelas
+    JOIN guru g ON j.guru_id = g.id_guru
+    WHERE j.status = 'aktif'
+    
+    UNION ALL
+    
+    SELECT 
+        j.*,
+        m.nama_mapel,
+        k.nama_kelas,
+        g.nama as nama_guru,
+        jgt.role
+    FROM jadwal j
+    JOIN mapel m ON j.mapel_id = m.id_mapel
+    JOIN kelas k ON j.kelas_id = k.id_kelas
+    JOIN jadwal_guru_tambahan jgt ON j.id_jadwal = jgt.jadwal_id
+    JOIN guru g ON jgt.guru_id = g.id_guru
+    WHERE j.status = 'aktif' AND jgt.status = 'aktif'
+`);
+```
+
+## Error Handling
+```javascript
+try {
+    // Database operations
+    const [result] = await db.execute(query, params);
+    console.log('✅ Operation successful');
+    res.success(result, 'Operation completed');
+} catch (error) {
+    console.error('❌ Operation failed:', error);
+    res.error('Internal server error', 'Operation failed');
+}
+```
+
+## Validation Patterns
+```javascript
+// Required field validation
+if (!username || !password) {
+    return res.status(400).json({ error: 'Username and password are required' });
+}
+
+// Uniqueness validation
+const [existing] = await db.execute('SELECT id FROM pengguna WHERE nama_pengguna = ?', [username]);
+if (existing.length > 0) {
+    return res.status(400).json({ error: 'Username already exists' });
+}
+```
+
+## Caching Patterns
+```javascript
+// Use cache middleware for GET endpoints
+app.get('/api/endpoint', 
+    cacheMiddleware(300, (req) => `cache:key:${JSON.stringify(req.query)}`), 
+    async (req, res) => {
+        // Endpoint logic
+    }
+);
+```

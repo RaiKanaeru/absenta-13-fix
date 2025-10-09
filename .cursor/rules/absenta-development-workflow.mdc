@@ -1,0 +1,900 @@
+---
+globs: *.js,*.tsx,*.ts,*.sql,*.md
+description: Development workflow and best practices for Absenta system
+---
+
+# Absenta Development Workflow - Complete Guide
+
+## 🚀 Development Workflow Overview
+
+**Absenta Development Workflow** adalah panduan lengkap untuk development, testing, dan deployment sistem Absenta dengan best practices yang terstruktur dan efisien.
+
+## 📋 Development Phases
+
+### Phase 1: Planning & Setup
+```bash
+# 1. Project Setup
+git clone <repository-url>
+cd absenta-optimize-old
+npm install
+
+# 2. Environment Setup
+cp .env.example .env
+# Configure database, Redis, and other services
+
+# 3. Database Setup
+mysql -u root -p < absenta13.sql
+# Verify database connection
+
+# 4. Start Development Servers
+npm run dev:backend  # Backend server
+npm run dev:frontend # Frontend server
+```
+
+### Phase 2: Feature Development
+```bash
+# 1. Create Feature Branch
+git checkout -b feature/new-feature-name
+
+# 2. Development Process
+# - Write code following Cursor Rules
+# - Implement tests
+# - Update documentation
+# - Test locally
+
+# 3. Commit Changes
+git add .
+git commit -m "feat: add new feature description"
+
+# 4. Push and Create PR
+git push origin feature/new-feature-name
+# Create Pull Request
+```
+
+### Phase 3: Testing & Quality Assurance
+```bash
+# 1. Run Tests
+npm run test
+npm run test:e2e
+npm run test:coverage
+
+# 2. Code Quality Checks
+npm run lint
+npm run type-check
+npm run format
+
+# 3. Security Audit
+npm audit
+npm run security:scan
+
+# 4. Performance Testing
+npm run test:performance
+npm run test:load
+```
+
+### Phase 4: Deployment
+```bash
+# 1. Build Production
+npm run build
+
+# 2. Deploy to Staging
+npm run deploy:staging
+
+# 3. Deploy to Production
+npm run deploy:production
+
+# 4. Post-deployment Verification
+npm run health:check
+npm run smoke:test
+```
+
+## 🛠️ Development Tools Setup
+
+### Required Tools
+```json
+{
+  "development_tools": {
+    "node": ">=18.0.0",
+    "npm": ">=8.0.0",
+    "mysql": ">=8.0.0",
+    "redis": ">=6.0.0",
+    "git": ">=2.30.0",
+    "vscode": "latest",
+    "cursor": "latest"
+  }
+}
+```
+
+### VS Code Extensions
+```json
+{
+  "recommendations": [
+    "ms-vscode.vscode-typescript-next",
+    "bradlc.vscode-tailwindcss",
+    "esbenp.prettier-vscode",
+    "ms-vscode.vscode-eslint",
+    "ms-vscode.vscode-json",
+    "redhat.vscode-yaml",
+    "ms-vscode.vscode-mysql",
+    "ms-vscode.vscode-redis",
+    "ms-vscode.vscode-git",
+    "ms-vscode.vscode-github"
+  ]
+}
+```
+
+### Cursor Rules Integration
+```bash
+# 1. Install Cursor Rules
+# Copy all .cursor/rules/*.mdc files to project
+
+# 2. Configure Cursor
+# Enable rules in Cursor settings
+
+# 3. Use Rules in Development
+# - Follow architecture patterns
+# - Use database schema rules
+# - Implement API patterns
+# - Follow security patterns
+```
+
+## 🔄 Git Workflow
+
+### Branch Strategy
+```bash
+# Main Branches
+main                    # Production-ready code
+develop                 # Integration branch
+staging                 # Pre-production testing
+
+# Feature Branches
+feature/user-management
+feature/attendance-system
+feature/reporting
+feature/mobile-app
+
+# Bug Fix Branches
+bugfix/login-error
+bugfix/attendance-sync
+bugfix/performance-issue
+
+# Hotfix Branches
+hotfix/critical-security-fix
+hotfix/production-bug
+```
+
+### Commit Convention
+```bash
+# Commit Message Format
+<type>(<scope>): <description>
+
+# Types
+feat:     # New feature
+fix:      # Bug fix
+docs:     # Documentation changes
+style:    # Code style changes
+refactor: # Code refactoring
+test:     # Test changes
+chore:    # Build process or auxiliary tool changes
+
+# Examples
+feat(auth): add JWT token refresh mechanism
+fix(attendance): resolve sync issue with multi-teacher
+docs(api): update endpoint documentation
+style(ui): improve mobile responsiveness
+refactor(db): optimize attendance queries
+test(api): add integration tests for attendance
+chore(deps): update dependencies to latest versions
+```
+
+### Pull Request Template
+```markdown
+## Description
+Brief description of changes
+
+## Type of Change
+- [ ] Bug fix
+- [ ] New feature
+- [ ] Breaking change
+- [ ] Documentation update
+
+## Testing
+- [ ] Unit tests pass
+- [ ] Integration tests pass
+- [ ] Manual testing completed
+- [ ] Performance testing completed
+
+## Checklist
+- [ ] Code follows project style guidelines
+- [ ] Self-review completed
+- [ ] Documentation updated
+- [ ] No breaking changes
+- [ ] Security considerations addressed
+
+## Screenshots (if applicable)
+Add screenshots to help explain your changes
+
+## Related Issues
+Closes #issue-number
+```
+
+## 🧪 Testing Strategy
+
+### Test Pyramid
+```typescript
+// 1. Unit Tests (70%)
+// Test individual functions and components
+describe('AttendanceService', () => {
+  it('should record teacher attendance', async () => {
+    const result = await attendanceService.recordTeacherAttendance({
+      jadwalId: 1,
+      guruId: 1,
+      status: 'Hadir'
+    });
+    
+    expect(result.success).toBe(true);
+    expect(result.data.status).toBe('Hadir');
+  });
+});
+
+// 2. Integration Tests (20%)
+// Test component interactions
+describe('Attendance Integration', () => {
+  it('should sync attendance between teacher and student', async () => {
+    // Test complete flow
+  });
+});
+
+// 3. E2E Tests (10%)
+// Test complete user journeys
+describe('Attendance E2E', () => {
+  it('should complete full attendance flow', async () => {
+    // Test from UI to database
+  });
+});
+```
+
+### Test Configuration
+```javascript
+// jest.config.js
+module.exports = {
+  testEnvironment: 'node',
+  setupFilesAfterEnv: ['<rootDir>/tests/setup.js'],
+  testMatch: [
+    '**/__tests__/**/*.test.js',
+    '**/?(*.)+(spec|test).js'
+  ],
+  collectCoverageFrom: [
+    'src/**/*.js',
+    'server_modern.js',
+    '!src/**/*.test.js',
+    '!src/**/*.spec.js'
+  ],
+  coverageThreshold: {
+    global: {
+      branches: 80,
+      functions: 80,
+      lines: 80,
+      statements: 80
+    }
+  }
+};
+```
+
+### Test Data Management
+```typescript
+// Test data factories
+const createTestUser = (overrides = {}) => ({
+  id: 1,
+  username: 'testuser',
+  password: 'hashedpassword',
+  role: 'guru',
+  nama: 'Test User',
+  email: 'test@example.com',
+  status: 'aktif',
+  ...overrides
+});
+
+const createTestSchedule = (overrides = {}) => ({
+  id_jadwal: 1,
+  kelas_id: 1,
+  mapel_id: 1,
+  guru_id: 1,
+  hari: 'Senin',
+  jam_ke: 1,
+  jam_mulai: '07:00:00',
+  jam_selesai: '08:00:00',
+  status: 'aktif',
+  ...overrides
+});
+```
+
+## 🔧 Code Quality Standards
+
+### ESLint Configuration
+```javascript
+// .eslintrc.js
+module.exports = {
+  env: {
+    browser: true,
+    es2021: true,
+    node: true
+  },
+  extends: [
+    'eslint:recommended',
+    '@typescript-eslint/recommended',
+    'plugin:react/recommended',
+    'plugin:react-hooks/recommended'
+  ],
+  parser: '@typescript-eslint/parser',
+  parserOptions: {
+    ecmaFeatures: {
+      jsx: true
+    },
+    ecmaVersion: 12,
+    sourceType: 'module'
+  },
+  plugins: [
+    'react',
+    '@typescript-eslint',
+    'react-hooks'
+  ],
+  rules: {
+    'no-console': 'warn',
+    'no-unused-vars': 'error',
+    'prefer-const': 'error',
+    'no-var': 'error',
+    'react/prop-types': 'off',
+    'react-hooks/rules-of-hooks': 'error',
+    'react-hooks/exhaustive-deps': 'warn'
+  }
+};
+```
+
+### Prettier Configuration
+```json
+{
+  "semi": true,
+  "trailingComma": "es5",
+  "singleQuote": true,
+  "printWidth": 80,
+  "tabWidth": 2,
+  "useTabs": false,
+  "bracketSpacing": true,
+  "arrowParens": "avoid"
+}
+```
+
+### TypeScript Configuration
+```json
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "lib": ["ES2020", "DOM", "DOM.Iterable"],
+    "allowJs": true,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "strict": true,
+    "forceConsistentCasingInFileNames": true,
+    "module": "ESNext",
+    "moduleResolution": "node",
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "noEmit": true,
+    "jsx": "react-jsx"
+  },
+  "include": ["src"],
+  "exclude": ["node_modules", "dist"]
+}
+```
+
+## 🗄️ Database Development
+
+### Migration Strategy
+```sql
+-- 1. Create migration file
+-- migrations/001_add_multi_teacher_support.sql
+
+-- 2. Add new tables
+CREATE TABLE `jadwal_guru_tambahan` (
+  `id` int(11) NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  `jadwal_id` int(11) NOT NULL,
+  `guru_id` int(11) NOT NULL,
+  `role` enum('secondary','assistant','substitute') NOT NULL DEFAULT 'secondary',
+  `status` enum('aktif','tidak_aktif') NOT NULL DEFAULT 'aktif',
+  `created_at` timestamp NULL DEFAULT current_timestamp(),
+  `updated_at` timestamp NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  
+  FOREIGN KEY (`jadwal_id`) REFERENCES `jadwal`(`id_jadwal`) ON DELETE CASCADE,
+  FOREIGN KEY (`guru_id`) REFERENCES `guru`(`id_guru`) ON DELETE CASCADE,
+  UNIQUE KEY `unique_jadwal_guru` (`jadwal_id`, `guru_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- 3. Add indexes
+CREATE INDEX `idx_jadwal_guru_tambahan_jadwal_id` ON `jadwal_guru_tambahan`(`jadwal_id`);
+CREATE INDEX `idx_jadwal_guru_tambahan_guru_id` ON `jadwal_guru_tambahan`(`guru_id`);
+
+-- 4. Update existing data
+UPDATE `jadwal` SET `status` = 'aktif' WHERE `status` IS NULL;
+```
+
+### Database Testing
+```typescript
+// Database test setup
+const setupTestDatabase = async () => {
+  // Create test database
+  await db.execute('CREATE DATABASE IF NOT EXISTS absenta_test');
+  await db.execute('USE absenta_test');
+  
+  // Run migrations
+  await runMigrations();
+  
+  // Seed test data
+  await seedTestData();
+};
+
+const teardownTestDatabase = async () => {
+  // Clean up test database
+  await db.execute('DROP DATABASE IF EXISTS absenta_test');
+};
+```
+
+## 🚀 Deployment Strategy
+
+### Environment Configuration
+```bash
+# Development
+NODE_ENV=development
+PORT=3000
+DB_HOST=localhost
+DB_PORT=3306
+DB_NAME=absenta_dev
+REDIS_URL=redis://localhost:6379
+
+# Staging
+NODE_ENV=staging
+PORT=3001
+DB_HOST=staging-db.example.com
+DB_PORT=3306
+DB_NAME=absenta_staging
+REDIS_URL=redis://staging-redis.example.com:6379
+
+# Production
+NODE_ENV=production
+PORT=3000
+DB_HOST=prod-db.example.com
+DB_PORT=3306
+DB_NAME=absenta_prod
+REDIS_URL=redis://prod-redis.example.com:6379
+```
+
+### Docker Configuration
+```dockerfile
+# Dockerfile
+FROM node:18-alpine
+
+WORKDIR /app
+
+# Copy package files
+COPY package*.json ./
+
+# Install dependencies
+RUN npm ci --only=production
+
+# Copy source code
+COPY . .
+
+# Build application
+RUN npm run build
+
+# Expose port
+EXPOSE 3000
+
+# Start application
+CMD ["npm", "start"]
+```
+
+```yaml
+# docker-compose.yml
+version: '3.8'
+
+services:
+  app:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - DB_HOST=db
+      - REDIS_URL=redis://redis:6379
+    depends_on:
+      - db
+      - redis
+
+  db:
+    image: mysql:8.0
+    environment:
+      - MYSQL_ROOT_PASSWORD=rootpassword
+      - MYSQL_DATABASE=absenta
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./absenta13.sql:/docker-entrypoint-initdb.d/init.sql
+
+  redis:
+    image: redis:6-alpine
+    ports:
+      - "6379:6379"
+
+volumes:
+  mysql_data:
+```
+
+### CI/CD Pipeline
+```yaml
+# .github/workflows/ci.yml
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: absenta_test
+        ports:
+          - 3306:3306
+        options: --health-cmd="mysqladmin ping" --health-interval=10s --health-timeout=5s --health-retries=3
+      
+      redis:
+        image: redis:6-alpine
+        ports:
+          - 6379:6379
+        options: --health-cmd="redis-cli ping" --health-interval=10s --health-timeout=5s --health-retries=3
+
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+          cache: 'npm'
+      
+      - name: Install dependencies
+        run: npm ci
+      
+      - name: Run linter
+        run: npm run lint
+      
+      - name: Run type check
+        run: npm run type-check
+      
+      - name: Run tests
+        run: npm run test
+        env:
+          DB_HOST: localhost
+          DB_PORT: 3306
+          DB_NAME: absenta_test
+          REDIS_URL: redis://localhost:6379
+      
+      - name: Run E2E tests
+        run: npm run test:e2e
+      
+      - name: Upload coverage
+        uses: codecov/codecov-action@v3
+        with:
+          file: ./coverage/lcov.info
+
+  deploy-staging:
+    needs: test
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/develop'
+    
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Deploy to staging
+        run: |
+          echo "Deploying to staging environment"
+          # Add deployment commands here
+
+  deploy-production:
+    needs: test
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Deploy to production
+        run: |
+          echo "Deploying to production environment"
+          # Add deployment commands here
+```
+
+## 📊 Monitoring & Logging
+
+### Application Monitoring
+```javascript
+// Monitoring setup
+const monitoring = {
+  // Performance monitoring
+  performance: {
+    enabled: true,
+    sampleRate: 0.1,
+    endpoints: ['/api/attendance', '/api/schedule']
+  },
+  
+  // Error tracking
+  errors: {
+    enabled: true,
+    level: 'error',
+    includeStack: true
+  },
+  
+  // Custom metrics
+  metrics: {
+    attendanceRate: 'gauge',
+    responseTime: 'histogram',
+    activeUsers: 'counter'
+  }
+};
+```
+
+### Logging Strategy
+```javascript
+// Logging configuration
+const logger = {
+  level: process.env.LOG_LEVEL || 'info',
+  format: 'json',
+  transports: [
+    {
+      type: 'console',
+      level: 'debug'
+    },
+    {
+      type: 'file',
+      filename: 'logs/application.log',
+      level: 'info'
+    },
+    {
+      type: 'file',
+      filename: 'logs/error.log',
+      level: 'error'
+    }
+  ]
+};
+```
+
+## 🔒 Security Development
+
+### Security Checklist
+```markdown
+## Security Checklist
+
+### Authentication & Authorization
+- [ ] JWT tokens properly implemented
+- [ ] Password hashing with bcrypt
+- [ ] Role-based access control
+- [ ] Session management
+- [ ] Rate limiting implemented
+
+### Input Validation
+- [ ] All inputs validated
+- [ ] SQL injection prevention
+- [ ] XSS protection
+- [ ] CSRF protection
+- [ ] File upload validation
+
+### Data Protection
+- [ ] Sensitive data encrypted
+- [ ] Database connections secured
+- [ ] API endpoints protected
+- [ ] Error messages sanitized
+- [ ] Logs don't contain sensitive data
+
+### Infrastructure
+- [ ] HTTPS enabled
+- [ ] Security headers set
+- [ ] Dependencies updated
+- [ ] Environment variables secured
+- [ ] Backup encryption
+```
+
+### Security Testing
+```bash
+# Security audit
+npm audit
+npm audit fix
+
+# Dependency scanning
+npm run security:scan
+
+# Penetration testing
+npm run security:test
+
+# Vulnerability scanning
+npm run security:vuln-scan
+```
+
+## 📚 Documentation Standards
+
+### Code Documentation
+```typescript
+/**
+ * Records teacher attendance for a specific schedule
+ * @param attendanceData - The attendance data to record
+ * @param attendanceData.jadwalId - The schedule ID
+ * @param attendanceData.guruId - The teacher ID
+ * @param attendanceData.status - The attendance status
+ * @param attendanceData.keterangan - Optional remarks
+ * @returns Promise<AttendanceResult> - The result of the operation
+ * @throws {ValidationError} When required fields are missing
+ * @throws {DatabaseError} When database operation fails
+ * @example
+ * ```typescript
+ * const result = await recordTeacherAttendance({
+ *   jadwalId: 1,
+ *   guruId: 1,
+ *   status: 'Hadir',
+ *   keterangan: 'On time'
+ * });
+ * ```
+ */
+async function recordTeacherAttendance(attendanceData: AttendanceData): Promise<AttendanceResult> {
+  // Implementation
+}
+```
+
+### API Documentation
+```yaml
+# OpenAPI/Swagger documentation
+openapi: 3.0.0
+info:
+  title: Absenta API
+  version: 1.0.0
+  description: Attendance management system API
+
+paths:
+  /api/attendance/teacher:
+    post:
+      summary: Record teacher attendance
+      tags:
+        - Attendance
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TeacherAttendanceRequest'
+      responses:
+        '200':
+          description: Attendance recorded successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AttendanceResponse'
+        '400':
+          description: Invalid request data
+        '401':
+          description: Unauthorized
+        '500':
+          description: Internal server error
+```
+
+## 🎯 Performance Optimization
+
+### Performance Checklist
+```markdown
+## Performance Checklist
+
+### Backend Optimization
+- [ ] Database queries optimized
+- [ ] Connection pooling configured
+- [ ] Caching implemented
+- [ ] API response compression
+- [ ] Memory usage optimized
+
+### Frontend Optimization
+- [ ] Code splitting implemented
+- [ ] Lazy loading enabled
+- [ ] Images optimized
+- [ ] Bundle size minimized
+- [ ] Caching strategies applied
+
+### Database Optimization
+- [ ] Indexes created
+- [ ] Query performance analyzed
+- [ ] Connection limits set
+- [ ] Query caching enabled
+- [ ] Slow query monitoring
+```
+
+### Performance Testing
+```bash
+# Load testing
+npm run test:load
+
+# Stress testing
+npm run test:stress
+
+# Performance profiling
+npm run profile
+
+# Memory usage analysis
+npm run memory:analyze
+```
+
+## 🔄 Maintenance Workflow
+
+### Regular Maintenance Tasks
+```bash
+# Daily
+- Check system health
+- Monitor error logs
+- Verify backups
+
+# Weekly
+- Update dependencies
+- Review performance metrics
+- Clean up old logs
+
+# Monthly
+- Security audit
+- Performance review
+- Database optimization
+- Documentation update
+```
+
+### Backup Strategy
+```bash
+# Database backup
+mysqldump -u root -p absenta > backup_$(date +%Y%m%d_%H%M%S).sql
+
+# File backup
+tar -czf files_backup_$(date +%Y%m%d_%H%M%S).tar.gz uploads/ logs/
+
+# Automated backup script
+#!/bin/bash
+DATE=$(date +%Y%m%d_%H%M%S)
+mysqldump -u root -p absenta > /backups/db_$DATE.sql
+tar -czf /backups/files_$DATE.tar.gz uploads/ logs/
+find /backups -name "*.sql" -mtime +7 -delete
+find /backups -name "*.tar.gz" -mtime +7 -delete
+```
+
+## 🎉 Best Practices Summary
+
+### Development Best Practices
+1. **Follow Cursor Rules**: Implement all patterns from Cursor Rules
+2. **Write Tests**: Maintain high test coverage
+3. **Code Review**: All code must be reviewed
+4. **Documentation**: Keep documentation updated
+5. **Security First**: Implement security from the start
+6. **Performance**: Optimize for performance
+7. **Monitoring**: Implement comprehensive monitoring
+8. **Backup**: Regular backups and disaster recovery
+
+### Team Collaboration
+1. **Communication**: Clear communication channels
+2. **Code Standards**: Consistent coding standards
+3. **Knowledge Sharing**: Regular knowledge sharing sessions
+4. **Mentoring**: Pair programming and mentoring
+5. **Continuous Learning**: Stay updated with latest technologies
+
+### Quality Assurance
+1. **Automated Testing**: Comprehensive test suite
+2. **Code Quality**: Static analysis and linting
+3. **Security**: Regular security audits
+4. **Performance**: Continuous performance monitoring
+5. **User Experience**: Regular UX testing and feedback

@@ -1,0 +1,792 @@
+---
+globs: *.js,*.tsx
+description: Multi-teacher system for subjects with multiple teachers in Absenta
+---
+
+# Absenta Multi-Teacher System - Complete Guide
+
+## 👥 Multi-Teacher System Overview
+
+**Absenta** mendukung sistem multi-guru untuk mata pelajaran yang sama dengan fitur:
+- **Multiple teachers per subject** - Satu mata pelajaran bisa diajar oleh beberapa guru
+- **Role-based assignment** - Primary, secondary, dan assistant teachers
+- **Flexible scheduling** - Guru bisa mengajar di jadwal yang berbeda
+- **Attendance tracking** - Absensi terpisah untuk setiap guru
+- **Permission management** - Izin dan banding bisa diproses oleh guru yang relevan
+
+## 🗄️ Database Schema for Multi-Teacher
+
+### Enhanced Schedule Table (Based on absenta13.sql)
+```sql
+-- Tabel jadwal sudah ada dengan struktur:
+CREATE TABLE `jadwal` (
+  `id_jadwal` int(11) NOT NULL,
+  `kelas_id` int(11) NOT NULL,
+  `mapel_id` int(11) NOT NULL,
+  `guru_id` int(11) NOT NULL,  -- Primary teacher
+  `ruang_id` int(11) DEFAULT NULL,
+  `hari` varchar(10) NOT NULL,
+  `jam_ke` int(11) NOT NULL,
+  `jam_mulai` time NOT NULL,
+  `jam_selesai` time NOT NULL,
+  `status` enum('aktif','tidak_aktif') NOT NULL DEFAULT 'aktif',
+  `created_at` timestamp NULL DEFAULT current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- Tabel baru untuk assignment guru tambahan
+CREATE TABLE `jadwal_guru_tambahan` (
+  `id` int(11) NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  `jadwal_id` int(11) NOT NULL,
+  `guru_id` int(11) NOT NULL,
+  `role` enum('secondary','assistant','substitute') NOT NULL DEFAULT 'secondary',
+  `status` enum('aktif','tidak_aktif') NOT NULL DEFAULT 'aktif',
+  `created_at` timestamp NULL DEFAULT current_timestamp(),
+  `updated_at` timestamp NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  
+  -- Foreign keys
+  FOREIGN KEY (`jadwal_id`) REFERENCES `jadwal`(`id_jadwal`) ON DELETE CASCADE,
+  FOREIGN KEY (`guru_id`) REFERENCES `guru`(`id_guru`) ON DELETE CASCADE,
+  
+  -- Unique constraint
+  UNIQUE KEY `unique_jadwal_guru` (`jadwal_id`, `guru_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- Tabel untuk tracking guru yang hadir per jadwal
+CREATE TABLE `kehadiran_guru_jadwal` (
+  `id` int(11) NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  `jadwal_id` int(11) NOT NULL,
+  `guru_id` int(11) NOT NULL,
+  `tanggal` date NOT NULL,
+  `status` enum('Hadir','Tidak Hadir','Sakit','Izin','Dispen','Terlambat') NOT NULL,
+  `keterangan` text DEFAULT NULL,
+  `waktu_catat` timestamp NOT NULL DEFAULT current_timestamp(),
+  `metode_absen` enum('manual','scan','otomatis') DEFAULT 'manual',
+  `dikonfirmasi_oleh` int(11) DEFAULT NULL,
+  
+  -- Foreign keys
+  FOREIGN KEY (`jadwal_id`) REFERENCES `jadwal`(`id_jadwal`),
+  FOREIGN KEY (`guru_id`) REFERENCES `guru`(`id_guru`),
+  FOREIGN KEY (`dikonfirmasi_oleh`) REFERENCES `users`(`id`),
+  
+  -- Unique constraint
+  UNIQUE KEY `unique_guru_jadwal_tanggal` (`jadwal_id`, `guru_id`, `tanggal`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+```
+
+## 🔄 Multi-Teacher Business Logic
+
+### Multi-Teacher Assignment Logic
+```javascript
+const multiTeacherAssignmentLogic = {
+  // 1. Assign additional teachers to schedule
+  assignAdditionalTeachers: async (jadwalId, teachers) => {
+    try {
+      await db.withTransaction(async (connection) => {
+        // Remove existing additional teachers
+        await connection.execute(
+          'DELETE FROM jadwal_guru_tambahan WHERE jadwal_id = ?',
+          [jadwalId]
+        );
+        
+        // Add new additional teachers
+        for (const teacher of teachers) {
+          await connection.execute(
+            `INSERT INTO jadwal_guru_tambahan (jadwal_id, guru_id, role, status) 
+             VALUES (?, ?, ?, 'aktif')`,
+            [jadwalId, teacher.guru_id, teacher.role || 'secondary']
+          );
+        }
+      });
+      
+      console.log(`✅ Assigned ${teachers.length} additional teachers to schedule ${jadwalId}`);
+    } catch (error) {
+      console.error('❌ Error assigning additional teachers:', error);
+      throw error;
+    }
+  },
+  
+  // 2. Get all teachers for a schedule
+  getScheduleTeachers: async (jadwalId) => {
+    const [teachers] = await db.execute(`
+      SELECT 
+        'primary' as role,
+        g.id_guru,
+        g.nama as nama_guru,
+        g.nip,
+        g.email,
+        u.username,
+        j.guru_id as assigned_guru_id
+      FROM jadwal j
+      JOIN guru g ON j.guru_id = g.id_guru
+      JOIN users u ON g.user_id = u.id
+      WHERE j.id_jadwal = ?
+      
+      UNION ALL
+      
+      SELECT 
+        jgt.role,
+        g.id_guru,
+        g.nama as nama_guru,
+        g.nip,
+        g.email,
+        u.username,
+        jgt.guru_id as assigned_guru_id
+      FROM jadwal_guru_tambahan jgt
+      JOIN guru g ON jgt.guru_id = g.id_guru
+      JOIN users u ON g.user_id = u.id
+      WHERE jgt.jadwal_id = ? AND jgt.status = 'aktif'
+      
+      ORDER BY 
+        CASE role 
+          WHEN 'primary' THEN 1 
+          WHEN 'secondary' THEN 2 
+          WHEN 'assistant' THEN 3 
+          WHEN 'substitute' THEN 4 
+        END,
+        nama_guru
+    `, [jadwalId, jadwalId]);
+    
+    return teachers;
+  },
+  
+  // 3. Check if teacher is assigned to schedule
+  isTeacherAssigned: async (jadwalId, guruId) => {
+    const [result] = await db.execute(`
+      SELECT 'primary' as role FROM jadwal WHERE id_jadwal = ? AND guru_id = ?
+      UNION ALL
+      SELECT role FROM jadwal_guru_tambahan 
+      WHERE jadwal_id = ? AND guru_id = ? AND status = 'aktif'
+    `, [jadwalId, guruId, jadwalId, guruId]);
+    
+    return result.length > 0 ? result[0] : null;
+  },
+  
+  // 4. Get schedules for a teacher
+  getTeacherSchedules: async (guruId, status = 'aktif') => {
+    const [schedules] = await db.execute(`
+      SELECT 
+        j.*,
+        'primary' as role,
+        m.nama_mapel,
+        k.nama_kelas,
+        r.nama_ruang
+      FROM jadwal j
+      JOIN mapel m ON j.mapel_id = m.id_mapel
+      JOIN kelas k ON j.kelas_id = k.id_kelas
+      LEFT JOIN ruang_kelas r ON j.ruang_id = r.id_ruang
+      WHERE j.guru_id = ? AND j.status = ?
+      
+      UNION ALL
+      
+      SELECT 
+        j.*,
+        jgt.role,
+        m.nama_mapel,
+        k.nama_kelas,
+        r.nama_ruang
+      FROM jadwal_guru_tambahan jgt
+      JOIN jadwal j ON jgt.jadwal_id = j.id_jadwal
+      JOIN mapel m ON j.mapel_id = m.id_mapel
+      JOIN kelas k ON j.kelas_id = k.id_kelas
+      LEFT JOIN ruang_kelas r ON j.ruang_id = r.id_ruang
+      WHERE jgt.guru_id = ? AND jgt.status = 'aktif' AND j.status = ?
+      
+      ORDER BY hari, jam_ke
+    `, [guruId, status, guruId, status]);
+    
+    return schedules;
+  }
+};
+```
+
+### Multi-Teacher Attendance Logic
+```javascript
+const multiTeacherAttendanceLogic = {
+  // 1. Record teacher attendance for specific schedule
+  recordTeacherAttendance: async (attendanceData) => {
+    const {
+      jadwalId,
+      guruId,
+      tanggal,
+      status,
+      keterangan,
+      metodeAbsen = 'manual',
+      dikonfirmasiOleh
+    } = attendanceData;
+    
+    try {
+      // Check if teacher is assigned to schedule
+      const assignment = await multiTeacherAssignmentLogic.isTeacherAssigned(jadwalId, guruId);
+      if (!assignment) {
+        throw new Error('Guru tidak ditugaskan pada jadwal ini');
+      }
+      
+      // Check if attendance already exists
+      const [existing] = await db.execute(
+        'SELECT id FROM kehadiran_guru_jadwal WHERE jadwal_id = ? AND guru_id = ? AND tanggal = ?',
+        [jadwalId, guruId, tanggal]
+      );
+      
+      if (existing.length > 0) {
+        // Update existing attendance
+        await db.execute(
+          `UPDATE kehadiran_guru_jadwal 
+           SET status = ?, keterangan = ?, metode_absen = ?, waktu_catat = NOW(), dikonfirmasi_oleh = ?
+           WHERE id = ?`,
+          [status, keterangan, metodeAbsen, dikonfirmasiOleh, existing[0].id]
+        );
+      } else {
+        // Create new attendance record
+        await db.execute(
+          `INSERT INTO kehadiran_guru_jadwal 
+           (jadwal_id, guru_id, tanggal, status, keterangan, metode_absen, dikonfirmasi_oleh)
+           VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          [jadwalId, guruId, tanggal, status, keterangan, metodeAbsen, dikonfirmasiOleh]
+        );
+      }
+      
+      console.log(`✅ Teacher attendance recorded: ${guruId} - ${status}`);
+      
+      // Send notification to other teachers in the same schedule
+      await notificationService.sendTeacherAttendanceNotification(jadwalId, guruId, {
+        status,
+        keterangan,
+        role: assignment.role
+      });
+      
+    } catch (error) {
+      console.error('❌ Error recording teacher attendance:', error);
+      throw error;
+    }
+  },
+  
+  // 2. Get teacher attendance for a schedule
+  getScheduleTeacherAttendance: async (jadwalId, tanggal = null) => {
+    const targetDate = tanggal || new Date().toISOString().split('T')[0];
+    
+    const [attendance] = await db.execute(`
+      SELECT 
+        kgj.*,
+        g.nama as nama_guru,
+        g.nip,
+        u.username,
+        jgt.role,
+        j.hari,
+        j.jam_ke,
+        j.jam_mulai,
+        j.jam_selesai
+      FROM kehadiran_guru_jadwal kgj
+      JOIN guru g ON kgj.guru_id = g.id_guru
+      JOIN users u ON g.user_id = u.id
+      LEFT JOIN jadwal_guru_tambahan jgt ON kgj.jadwal_id = jgt.jadwal_id AND kgj.guru_id = jgt.guru_id
+      JOIN jadwal j ON kgj.jadwal_id = j.id_jadwal
+      WHERE kgj.jadwal_id = ? AND kgj.tanggal = ?
+      ORDER BY 
+        CASE jgt.role 
+          WHEN 'primary' THEN 1 
+          WHEN 'secondary' THEN 2 
+          WHEN 'assistant' THEN 3 
+          WHEN 'substitute' THEN 4 
+        END,
+        g.nama
+    `, [jadwalId, targetDate]);
+    
+    return attendance;
+  },
+  
+  // 3. Get teacher attendance summary
+  getTeacherAttendanceSummary: async (guruId, startDate, endDate) => {
+    const [summary] = await db.execute(`
+      SELECT 
+        COUNT(*) as total_sessions,
+        SUM(CASE WHEN kgj.status = 'Hadir' THEN 1 ELSE 0 END) as hadir,
+        SUM(CASE WHEN kgj.status = 'Tidak Hadir' THEN 1 ELSE 0 END) as tidak_hadir,
+        SUM(CASE WHEN kgj.status = 'Sakit' THEN 1 ELSE 0 END) as sakit,
+        SUM(CASE WHEN kgj.status = 'Izin' THEN 1 ELSE 0 END) as izin,
+        SUM(CASE WHEN kgj.status = 'Terlambat' THEN 1 ELSE 0 END) as terlambat,
+        (SUM(CASE WHEN kgj.status = 'Hadir' THEN 1 ELSE 0 END) / COUNT(*)) * 100 as attendance_rate
+      FROM kehadiran_guru_jadwal kgj
+      WHERE kgj.guru_id = ? AND kgj.tanggal BETWEEN ? AND ?
+    `, [guruId, startDate, endDate]);
+    
+    return summary[0];
+  }
+};
+```
+
+### Multi-Teacher Permission Logic
+```javascript
+const multiTeacherPermissionLogic = {
+  // 1. Get available teachers for permission processing
+  getAvailableTeachersForPermission: async (jadwalId) => {
+    const [teachers] = await db.execute(`
+      SELECT 
+        g.id_guru,
+        g.nama as nama_guru,
+        g.nip,
+        g.email,
+        u.username,
+        'primary' as role
+      FROM jadwal j
+      JOIN guru g ON j.guru_id = g.id_guru
+      JOIN users u ON g.user_id = u.id
+      WHERE j.id_jadwal = ? AND g.status = 'aktif'
+      
+      UNION ALL
+      
+      SELECT 
+        g.id_guru,
+        g.nama as nama_guru,
+        g.nip,
+        g.email,
+        u.username,
+        jgt.role
+      FROM jadwal_guru_tambahan jgt
+      JOIN guru g ON jgt.guru_id = g.id_guru
+      JOIN users u ON g.user_id = u.id
+      WHERE jgt.jadwal_id = ? AND jgt.status = 'aktif' AND g.status = 'aktif'
+      
+      ORDER BY 
+        CASE role 
+          WHEN 'primary' THEN 1 
+          WHEN 'secondary' THEN 2 
+          WHEN 'assistant' THEN 3 
+          WHEN 'substitute' THEN 4 
+        END
+    `, [jadwalId, jadwalId]);
+    
+    return teachers;
+  },
+  
+  // 2. Assign permission to specific teacher
+  assignPermissionToTeacher: async (izinId, guruId) => {
+    try {
+      await db.execute(
+        'UPDATE pengajuan_izin_siswa SET diproses_oleh = ? WHERE id_izin = ?',
+        [guruId, izinId]
+      );
+      
+      console.log(`✅ Permission ${izinId} assigned to teacher ${guruId}`);
+    } catch (error) {
+      console.error('❌ Error assigning permission to teacher:', error);
+      throw error;
+    }
+  },
+  
+  // 3. Get permissions assigned to teacher
+  getTeacherAssignedPermissions: async (guruId, status = null) => {
+    let query = `
+      SELECT 
+        piz.*,
+        s.nama as nama_siswa,
+        s.nis,
+        j.hari,
+        j.jam_ke,
+        j.jam_mulai,
+        j.jam_selesai,
+        m.nama_mapel,
+        k.nama_kelas
+      FROM pengajuan_izin_siswa piz
+      JOIN siswa_perwakilan s ON piz.siswa_id = s.id_siswa
+      JOIN jadwal j ON piz.jadwal_id = j.id_jadwal
+      JOIN mapel m ON j.mapel_id = m.id_mapel
+      JOIN kelas k ON piz.kelas_id = k.id_kelas
+      WHERE piz.diproses_oleh = ?
+    `;
+    
+    const params = [guruId];
+    
+    if (status) {
+      query += ' AND piz.status_izin = ?';
+      params.push(status);
+    }
+    
+    query += ' ORDER BY piz.tanggal_pengajuan DESC';
+    
+    const [permissions] = await db.execute(query, params);
+    return permissions;
+  }
+};
+```
+
+## 📱 Frontend Components
+
+### Multi-Teacher Assignment Component
+```typescript
+// MultiTeacherAssignmentComponent.tsx
+interface MultiTeacherAssignmentProps {
+  scheduleId: number;
+  onTeachersAssigned: (teachers: any[]) => void;
+}
+
+const MultiTeacherAssignmentComponent: React.FC<MultiTeacherAssignmentProps> = ({
+  scheduleId,
+  onTeachersAssigned
+}) => {
+  const [availableTeachers, setAvailableTeachers] = useState([]);
+  const [assignedTeachers, setAssignedTeachers] = useState([]);
+  const [loading, setLoading] = useState(false);
+
+  const loadAvailableTeachers = async () => {
+    try {
+      const response = await api.get('/api/teachers/available');
+      setAvailableTeachers(response.data);
+    } catch (error) {
+      console.error('Error loading teachers:', error);
+    }
+  };
+
+  const loadAssignedTeachers = async () => {
+    try {
+      const response = await api.get(`/api/schedules/${scheduleId}/teachers`);
+      setAssignedTeachers(response.data);
+    } catch (error) {
+      console.error('Error loading assigned teachers:', error);
+    }
+  };
+
+  const assignTeacher = async (teacherId: number, role: string) => {
+    try {
+      setLoading(true);
+      await api.post(`/api/schedules/${scheduleId}/teachers`, {
+        guru_id: teacherId,
+        role
+      });
+      
+      loadAssignedTeachers();
+      onTeachersAssigned(assignedTeachers);
+      
+    } catch (error) {
+      console.error('Error assigning teacher:', error);
+      toast.error('Gagal menugaskan guru');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const removeTeacher = async (teacherId: number) => {
+    try {
+      setLoading(true);
+      await api.delete(`/api/schedules/${scheduleId}/teachers/${teacherId}`);
+      
+      loadAssignedTeachers();
+      onTeachersAssigned(assignedTeachers);
+      
+    } catch (error) {
+      console.error('Error removing teacher:', error);
+      toast.error('Gagal menghapus guru');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadAvailableTeachers();
+    loadAssignedTeachers();
+  }, [scheduleId]);
+
+  return (
+    <div className="multi-teacher-assignment">
+      <h3>Penugasan Multi-Guru</h3>
+      
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        {/* Assigned Teachers */}
+        <div>
+          <h4>Guru yang Ditugaskan</h4>
+          <div className="space-y-2">
+            {assignedTeachers.map(teacher => (
+              <div key={teacher.id_guru} className="flex items-center justify-between p-3 border rounded">
+                <div>
+                  <p className="font-medium">{teacher.nama_guru}</p>
+                  <p className="text-sm text-gray-500">{teacher.role}</p>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => removeTeacher(teacher.id_guru)}
+                  disabled={loading}
+                >
+                  Hapus
+                </Button>
+              </div>
+            ))}
+          </div>
+        </div>
+        
+        {/* Available Teachers */}
+        <div>
+          <h4>Guru Tersedia</h4>
+          <div className="space-y-2">
+            {availableTeachers.map(teacher => (
+              <div key={teacher.id_guru} className="flex items-center justify-between p-3 border rounded">
+                <div>
+                  <p className="font-medium">{teacher.nama_guru}</p>
+                  <p className="text-sm text-gray-500">{teacher.mata_pelajaran}</p>
+                </div>
+                <div className="flex gap-2">
+                  <Select onValueChange={(role) => assignTeacher(teacher.id_guru, role)}>
+                    <SelectTrigger className="w-32">
+                      <SelectValue placeholder="Pilih Role" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="secondary">Secondary</SelectItem>
+                      <SelectItem value="assistant">Assistant</SelectItem>
+                      <SelectItem value="substitute">Substitute</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+```
+
+### Multi-Teacher Attendance Component
+```typescript
+// MultiTeacherAttendanceComponent.tsx
+interface MultiTeacherAttendanceProps {
+  scheduleId: number;
+  date: string;
+  onAttendanceRecorded: (attendance: any) => void;
+}
+
+const MultiTeacherAttendanceComponent: React.FC<MultiTeacherAttendanceProps> = ({
+  scheduleId,
+  date,
+  onAttendanceRecorded
+}) => {
+  const [teachers, setTeachers] = useState([]);
+  const [attendance, setAttendance] = useState({});
+  const [loading, setLoading] = useState(false);
+
+  const loadTeachers = async () => {
+    try {
+      const response = await api.get(`/api/schedules/${scheduleId}/teachers`);
+      setTeachers(response.data);
+    } catch (error) {
+      console.error('Error loading teachers:', error);
+    }
+  };
+
+  const loadAttendance = async () => {
+    try {
+      const response = await api.get(`/api/schedules/${scheduleId}/attendance?tanggal=${date}`);
+      const attendanceData = {};
+      response.data.forEach(att => {
+        attendanceData[att.guru_id] = att;
+      });
+      setAttendance(attendanceData);
+    } catch (error) {
+      console.error('Error loading attendance:', error);
+    }
+  };
+
+  const recordAttendance = async (guruId: number, status: string, keterangan?: string) => {
+    try {
+      setLoading(true);
+      await api.post('/api/attendance/teacher', {
+        jadwalId: scheduleId,
+        guruId,
+        tanggal: date,
+        status,
+        keterangan
+      });
+      
+      setAttendance(prev => ({
+        ...prev,
+        [guruId]: { status, keterangan }
+      }));
+      
+      onAttendanceRecorded({ guruId, status, keterangan });
+      
+    } catch (error) {
+      console.error('Error recording attendance:', error);
+      toast.error('Gagal mencatat absensi');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadTeachers();
+    loadAttendance();
+  }, [scheduleId, date]);
+
+  return (
+    <div className="multi-teacher-attendance">
+      <h3>Absensi Multi-Guru</h3>
+      <p className="text-sm text-gray-500 mb-4">Tanggal: {date}</p>
+      
+      <div className="space-y-4">
+        {teachers.map(teacher => (
+          <div key={teacher.id_guru} className="border rounded-lg p-4">
+            <div className="flex items-center justify-between mb-3">
+              <div>
+                <h4 className="font-medium">{teacher.nama_guru}</h4>
+                <p className="text-sm text-gray-500">{teacher.role} • {teacher.nip}</p>
+              </div>
+              <div className="text-sm">
+                {attendance[teacher.id_guru] ? (
+                  <span className={`px-2 py-1 rounded ${
+                    attendance[teacher.id_guru].status === 'Hadir' ? 'bg-green-100 text-green-800' :
+                    attendance[teacher.id_guru].status === 'Tidak Hadir' ? 'bg-red-100 text-red-800' :
+                    'bg-yellow-100 text-yellow-800'
+                  }`}>
+                    {attendance[teacher.id_guru].status}
+                  </span>
+                ) : (
+                  <span className="text-gray-500">Belum absen</span>
+                )}
+              </div>
+            </div>
+            
+            <div className="flex gap-2">
+              {['Hadir', 'Tidak Hadir', 'Sakit', 'Izin', 'Terlambat'].map(status => (
+                <Button
+                  key={status}
+                  variant={attendance[teacher.id_guru]?.status === status ? 'default' : 'outline'}
+                  size="sm"
+                  onClick={() => recordAttendance(teacher.id_guru, status)}
+                  disabled={loading}
+                >
+                  {status}
+                </Button>
+              ))}
+            </div>
+            
+            {attendance[teacher.id_guru]?.keterangan && (
+              <p className="text-sm text-gray-600 mt-2">
+                Keterangan: {attendance[teacher.id_guru].keterangan}
+              </p>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+```
+
+## 📊 Multi-Teacher Analytics
+
+### Multi-Teacher Statistics
+```javascript
+const multiTeacherAnalytics = {
+  // 1. Get multi-teacher statistics
+  getMultiTeacherStats: async (startDate, endDate) => {
+    const [stats] = await db.execute(`
+      SELECT 
+        COUNT(DISTINCT j.id_jadwal) as total_schedules,
+        COUNT(DISTINCT j.guru_id) as primary_teachers,
+        COUNT(DISTINCT jgt.guru_id) as additional_teachers,
+        AVG(teacher_count.teacher_count) as avg_teachers_per_schedule
+      FROM jadwal j
+      LEFT JOIN jadwal_guru_tambahan jgt ON j.id_jadwal = jgt.jadwal_id AND jgt.status = 'aktif'
+      LEFT JOIN (
+        SELECT 
+          j.id_jadwal,
+          COUNT(DISTINCT j.guru_id) + COUNT(DISTINCT jgt.guru_id) as teacher_count
+        FROM jadwal j
+        LEFT JOIN jadwal_guru_tambahan jgt ON j.id_jadwal = jgt.jadwal_id AND jgt.status = 'aktif'
+        GROUP BY j.id_jadwal
+      ) teacher_count ON j.id_jadwal = teacher_count.id_jadwal
+      WHERE j.created_at BETWEEN ? AND ?
+    `, [startDate, endDate]);
+    
+    return stats[0];
+  },
+  
+  // 2. Get teacher workload distribution
+  getTeacherWorkloadDistribution: async (startDate, endDate) => {
+    const [workload] = await db.execute(`
+      SELECT 
+        g.nama as nama_guru,
+        g.nip,
+        COUNT(DISTINCT j.id_jadwal) as primary_schedules,
+        COUNT(DISTINCT jgt.jadwal_id) as additional_schedules,
+        COUNT(DISTINCT j.id_jadwal) + COUNT(DISTINCT jgt.jadwal_id) as total_schedules
+      FROM guru g
+      LEFT JOIN jadwal j ON g.id_guru = j.guru_id
+      LEFT JOIN jadwal_guru_tambahan jgt ON g.id_guru = jgt.guru_id AND jgt.status = 'aktif'
+      WHERE g.status = 'aktif'
+      GROUP BY g.id_guru, g.nama, g.nip
+      ORDER BY total_schedules DESC
+    `);
+    
+    return workload;
+  }
+};
+```
+
+## 📋 API Endpoints for Multi-Teacher
+
+### Multi-Teacher API Endpoints
+```javascript
+// 1. Assign additional teachers to schedule
+app.post('/api/schedules/:id/teachers', authenticateToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { guru_id, role } = req.body;
+    
+    await multiTeacherAssignmentLogic.assignAdditionalTeachers(id, [{
+      guru_id,
+      role: role || 'secondary'
+    }]);
+    
+    res.success(null, 'Teacher assigned successfully');
+  } catch (error) {
+    console.error('Error assigning teacher:', error);
+    res.error('Failed to assign teacher', error.message);
+  }
+});
+
+// 2. Get schedule teachers
+app.get('/api/schedules/:id/teachers', authenticateToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    const teachers = await multiTeacherAssignmentLogic.getScheduleTeachers(id);
+    
+    res.success(teachers, 'Schedule teachers retrieved successfully');
+  } catch (error) {
+    console.error('Error getting schedule teachers:', error);
+    res.error('Failed to get schedule teachers', error.message);
+  }
+});
+
+// 3. Record multi-teacher attendance
+app.post('/api/attendance/teacher', authenticateToken, async (req, res) => {
+  try {
+    const attendanceData = req.body;
+    
+    await multiTeacherAttendanceLogic.recordTeacherAttendance({
+      ...attendanceData,
+      dikonfirmasiOleh: req.user.id
+    });
+    
+    res.success(null, 'Teacher attendance recorded successfully');
+  } catch (error) {
+    console.error('Error recording teacher attendance:', error);
+    res.error('Failed to record teacher attendance', error.message);
+  }
+});
+
+// 4. Get multi-teacher attendance
+app.get('/api/schedules/:id/attendance', authenticateToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { tanggal } = req.query;
+    
+    const attendance = await multiTeacherAttendanceLogic.getScheduleTeacherAttendance(id, tanggal);
+    
+    res.success(attendance, 'Teacher attendance retrieved successfully');
+  } catch (error) {
+    console.error('Error getting teacher attendance:', error);
+    res.error('Failed to get teacher attendance', error.message);
+  }
+});
+```

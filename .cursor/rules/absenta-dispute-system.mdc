@@ -1,0 +1,802 @@
+---
+globs: *.js,*.tsx
+description: Dispute system for attendance disputes and appeals in Absenta
+---
+
+# Absenta Dispute System - Complete Guide
+
+## 🚨 Dispute System Overview
+
+**Absenta** memiliki sistem banding absen yang memungkinkan:
+- **Siswa mengajukan banding** ketika guru mencatat mereka sebagai "Alpa"
+- **Guru menolak/menerima banding** dengan alasan yang jelas
+- **Notifikasi real-time** untuk semua pihak yang terlibat
+- **Tracking status banding** dari pengajuan hingga keputusan
+- **Audit trail** untuk semua aktivitas banding
+
+## 🗄️ Database Schema for Dispute System
+
+### Dispute Tables
+```sql
+-- Tabel utama untuk banding absen
+CREATE TABLE `banding_absen` (
+  `id_banding` int(11) NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  `absensi_id` int(11) NOT NULL,
+  `siswa_id` int(11) NOT NULL,
+  `guru_id` int(11) NOT NULL,
+  `jadwal_id` int(11) NOT NULL,
+  `tanggal_absen` date NOT NULL,
+  `status_asli` enum('Hadir','Izin','Sakit','Alpa','Dispen') NOT NULL,
+  `status_diajukan` enum('Hadir','Izin','Sakit','Alpa','Dispen') NOT NULL,
+  `alasan_banding` text NOT NULL,
+  `bukti_pendukung` varchar(255) DEFAULT NULL,
+  `status_banding` enum('pending','dikabulkan','ditolak','dibatalkan') DEFAULT 'pending',
+  `keterangan_guru` text DEFAULT NULL,
+  `tanggal_pengajuan` timestamp NOT NULL DEFAULT current_timestamp(),
+  `tanggal_keputusan` timestamp NULL DEFAULT NULL,
+  `diproses_oleh` int(11) DEFAULT NULL,
+  `created_at` timestamp NULL DEFAULT current_timestamp(),
+  `updated_at` timestamp NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  
+  -- Foreign keys
+  FOREIGN KEY (`absensi_id`) REFERENCES `absensi_siswa`(`id`),
+  FOREIGN KEY (`siswa_id`) REFERENCES `siswa_perwakilan`(`id_siswa`),
+  FOREIGN KEY (`guru_id`) REFERENCES `guru`(`id_guru`),
+  FOREIGN KEY (`jadwal_id`) REFERENCES `jadwal`(`id_jadwal`),
+  FOREIGN KEY (`diproses_oleh`) REFERENCES `pengguna`(`id`)
+);
+
+-- Tabel detail banding untuk multiple students
+CREATE TABLE `banding_absen_detail` (
+  `id_detail` int(11) NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  `banding_id` int(11) NOT NULL,
+  `nama_siswa` varchar(100) NOT NULL,
+  `status_asli` enum('hadir','izin','sakit','alpa','dispen') NOT NULL,
+  `status_diajukan` enum('hadir','izin','sakit','alpa','dispen') NOT NULL,
+  `alasan_banding` text NOT NULL,
+  `bukti_pendukung` varchar(255) DEFAULT NULL,
+  
+  -- Foreign key
+  FOREIGN KEY (`banding_id`) REFERENCES `banding_absen`(`id_banding`) ON DELETE CASCADE
+);
+
+-- Tabel notifikasi banding
+CREATE TABLE `notifikasi_banding` (
+  `id` int(11) NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  `banding_id` int(11) NOT NULL,
+  `penerima_id` int(11) NOT NULL,
+  `penerima_role` enum('siswa','guru','admin') NOT NULL,
+  `jenis_notifikasi` enum('pengajuan','keputusan','pengingat') NOT NULL,
+  `pesan` text NOT NULL,
+  `dibaca` boolean DEFAULT false,
+  `tanggal_kirim` timestamp NOT NULL DEFAULT current_timestamp(),
+  
+  -- Foreign keys
+  FOREIGN KEY (`banding_id`) REFERENCES `banding_absen`(`id_banding`),
+  FOREIGN KEY (`penerima_id`) REFERENCES `pengguna`(`id`)
+);
+```
+
+## 🔄 Dispute Business Logic
+
+### Dispute Creation Logic
+```javascript
+const disputeCreationLogic = {
+  // 1. Create dispute for single student
+  createDispute: async (disputeData) => {
+    const {
+      absensiId,
+      siswaId,
+      guruId,
+      jadwalId,
+      tanggalAbsen,
+      statusAsli,
+      statusDiajukan,
+      alasanBanding,
+      buktiPendukung
+    } = disputeData;
+    
+    try {
+      await db.withTransaction(async (connection) => {
+        // Create main dispute record
+        const [result] = await connection.execute(
+          `INSERT INTO banding_absen 
+           (absensi_id, siswa_id, guru_id, jadwal_id, tanggal_absen, 
+            status_asli, status_diajukan, alasan_banding, bukti_pendukung)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [absensiId, siswaId, guruId, jadwalId, tanggalAbsen,
+           statusAsli, statusDiajukan, alasanBanding, buktiPendukung]
+        );
+        
+        const bandingId = result.insertId;
+        
+        // Create notification for teacher
+        await connection.execute(
+          `INSERT INTO notifikasi_banding 
+           (banding_id, penerima_id, penerima_role, jenis_notifikasi, pesan)
+           VALUES (?, ?, 'guru', 'pengajuan', ?)`,
+          [bandingId, guruId, `Siswa mengajukan banding absen untuk tanggal ${tanggalAbsen}`]
+        );
+        
+        // Create notification for admin (if configured)
+        const [admins] = await connection.execute(
+          'SELECT id FROM pengguna WHERE peran = "admin" AND status = "aktif"'
+        );
+        
+        for (const admin of admins) {
+          await connection.execute(
+            `INSERT INTO notifikasi_banding 
+             (banding_id, penerima_id, penerima_role, jenis_notifikasi, pesan)
+             VALUES (?, ?, 'admin', 'pengajuan', ?)`,
+            [bandingId, admin.id, `Banding absen baru diajukan - ID: ${bandingId}`]
+          );
+        }
+      });
+      
+      console.log(`✅ Dispute created successfully: ${result.insertId}`);
+      
+      // Send real-time notification
+      await notificationService.sendDisputeNotification(guruId, {
+        type: 'new_dispute',
+        bandingId: result.insertId,
+        siswaId,
+        statusDiajukan
+      });
+      
+    } catch (error) {
+      console.error('❌ Error creating dispute:', error);
+      throw error;
+    }
+  },
+  
+  // 2. Create dispute for multiple students
+  createBulkDispute: async (bulkDisputeData) => {
+    const {
+      guruId,
+      jadwalId,
+      tanggalAbsen,
+      students
+    } = bulkDisputeData;
+    
+    try {
+      await db.withTransaction(async (connection) => {
+        // Create main dispute record
+        const [result] = await connection.execute(
+          `INSERT INTO banding_absen 
+           (guru_id, jadwal_id, tanggal_absen, status_asli, status_diajukan, alasan_banding)
+           VALUES (?, ?, ?, 'alpa', 'hadir', 'Banding massal untuk ketidakhadiran')`,
+          [guruId, jadwalId, tanggalAbsen]
+        );
+        
+        const bandingId = result.insertId;
+        
+        // Create detail records for each student
+        for (const student of students) {
+          await connection.execute(
+            `INSERT INTO banding_absen_detail 
+             (banding_id, nama_siswa, status_asli, status_diajukan, alasan_banding, bukti_pendukung)
+             VALUES (?, ?, ?, ?, ?, ?)`,
+            [bandingId, student.nama, student.statusAsli, student.statusDiajukan, 
+             student.alasan, student.bukti]
+          );
+        }
+        
+        // Create notifications
+        await connection.execute(
+          `INSERT INTO notifikasi_banding 
+           (banding_id, penerima_id, penerima_role, jenis_notifikasi, pesan)
+           VALUES (?, ?, 'guru', 'pengajuan', ?)`,
+          [bandingId, guruId, `Banding massal diajukan untuk ${students.length} siswa`]
+        );
+      });
+      
+      console.log(`✅ Bulk dispute created successfully`);
+      
+    } catch (error) {
+      console.error('❌ Error creating bulk dispute:', error);
+      throw error;
+    }
+  }
+};
+```
+
+### Dispute Processing Logic
+```javascript
+const disputeProcessingLogic = {
+  // 1. Process dispute decision
+  processDisputeDecision: async (bandingId, decision, keterangan, processedBy) => {
+    try {
+      await db.withTransaction(async (connection) => {
+        // Update dispute status
+        await connection.execute(
+          `UPDATE banding_absen 
+           SET status_banding = ?, keterangan_guru = ?, tanggal_keputusan = NOW(), diproses_oleh = ?
+           WHERE id_banding = ?`,
+          [decision, keterangan, processedBy, bandingId]
+        );
+        
+        // Get dispute details
+        const [dispute] = await connection.execute(
+          'SELECT * FROM banding_absen WHERE id_banding = ?',
+          [bandingId]
+        );
+        
+        if (dispute.length === 0) {
+          throw new Error('Dispute not found');
+        }
+        
+        const disputeData = dispute[0];
+        
+        // If approved, update attendance record
+        if (decision === 'dikabulkan') {
+          await connection.execute(
+            `UPDATE absensi_siswa 
+             SET status = ?, keterangan = ?, updated_at = NOW()
+             WHERE id = ?`,
+            [disputeData.status_diajukan, `Disetujui melalui banding - ${keterangan}`, disputeData.absensi_id]
+          );
+        }
+        
+        // Create notification for student
+        await connection.execute(
+          `INSERT INTO notifikasi_banding 
+           (banding_id, penerima_id, penerima_role, jenis_notifikasi, pesan)
+           VALUES (?, ?, 'siswa', 'keputusan', ?)`,
+          [bandingId, disputeData.siswa_id, 
+           `Banding Anda ${decision === 'dikabulkan' ? 'dikabulkan' : 'ditolak'}: ${keterangan}`]
+        );
+        
+        // Create notification for admin
+        await connection.execute(
+          `INSERT INTO notifikasi_banding 
+           (banding_id, penerima_id, penerima_role, jenis_notifikasi, pesan)
+           VALUES (?, ?, 'admin', 'keputusan', ?)`,
+          [bandingId, processedBy, `Banding ${bandingId} telah diproses: ${decision}`]
+        );
+      });
+      
+      console.log(`✅ Dispute ${bandingId} processed: ${decision}`);
+      
+      // Send real-time notification
+      await notificationService.sendDisputeDecisionNotification(disputeData.siswa_id, {
+        type: 'dispute_decision',
+        bandingId,
+        decision,
+        keterangan
+      });
+      
+    } catch (error) {
+      console.error('❌ Error processing dispute:', error);
+      throw error;
+    }
+  },
+  
+  // 2. Get disputes for teacher
+  getTeacherDisputes: async (guruId, status = null) => {
+    let query = `
+      SELECT 
+        ba.*,
+        s.nama as nama_siswa,
+        s.nis,
+        j.hari,
+        j.jam_ke,
+        j.jam_mulai,
+        j.jam_selesai,
+        m.nama_mapel,
+        k.nama_kelas
+      FROM banding_absen ba
+      JOIN siswa_perwakilan s ON ba.siswa_id = s.id_siswa
+      JOIN jadwal j ON ba.jadwal_id = j.id_jadwal
+      JOIN mapel m ON j.mapel_id = m.id_mapel
+      JOIN kelas k ON j.kelas_id = k.id_kelas
+      WHERE ba.guru_id = ?
+    `;
+    
+    const params = [guruId];
+    
+    if (status) {
+      query += ' AND ba.status_banding = ?';
+      params.push(status);
+    }
+    
+    query += ' ORDER BY ba.tanggal_pengajuan DESC';
+    
+    const [disputes] = await db.execute(query, params);
+    return disputes;
+  },
+  
+  // 3. Get disputes for student
+  getStudentDisputes: async (siswaId, status = null) => {
+    let query = `
+      SELECT 
+        ba.*,
+        g.nama as nama_guru,
+        j.hari,
+        j.jam_ke,
+        j.jam_mulai,
+        j.jam_selesai,
+        m.nama_mapel,
+        k.nama_kelas
+      FROM banding_absen ba
+      JOIN guru g ON ba.guru_id = g.id_guru
+      JOIN jadwal j ON ba.jadwal_id = j.id_jadwal
+      JOIN mapel m ON j.mapel_id = m.id_mapel
+      JOIN kelas k ON j.kelas_id = k.id_kelas
+      WHERE ba.siswa_id = ?
+    `;
+    
+    const params = [siswaId];
+    
+    if (status) {
+      query += ' AND ba.status_banding = ?';
+      params.push(status);
+    }
+    
+    query += ' ORDER BY ba.tanggal_pengajuan DESC';
+    
+    const [disputes] = await db.execute(query, params);
+    return disputes;
+  }
+};
+```
+
+## 📱 Frontend Components
+
+### Dispute Creation Component
+```typescript
+// DisputeCreationComponent.tsx
+interface DisputeCreationProps {
+  attendanceId: number;
+  studentId: number;
+  teacherId: number;
+  scheduleId: number;
+  currentStatus: string;
+  onDisputeCreated: (dispute: any) => void;
+}
+
+const DisputeCreationComponent: React.FC<DisputeCreationProps> = ({
+  attendanceId,
+  studentId,
+  teacherId,
+  scheduleId,
+  currentStatus,
+  onDisputeCreated
+}) => {
+  const [disputeData, setDisputeData] = useState({
+    statusDiajukan: 'Hadir',
+    alasanBanding: '',
+    buktiPendukung: null
+  });
+  const [loading, setLoading] = useState(false);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    if (!disputeData.alasanBanding.trim()) {
+      toast.error('Alasan banding harus diisi');
+      return;
+    }
+
+    try {
+      setLoading(true);
+      
+      const response = await api.post('/api/disputes', {
+        absensiId: attendanceId,
+        siswaId: studentId,
+        guruId: teacherId,
+        jadwalId: scheduleId,
+        tanggalAbsen: new Date().toISOString().split('T')[0],
+        statusAsli: currentStatus,
+        statusDiajukan: disputeData.statusDiajukan,
+        alasanBanding: disputeData.alasanBanding,
+        buktiPendukung: disputeData.buktiPendukung
+      });
+
+      toast.success('Banding berhasil diajukan');
+      onDisputeCreated(response.data);
+      
+    } catch (error) {
+      console.error('Error creating dispute:', error);
+      toast.error('Gagal mengajukan banding');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <Dialog>
+      <DialogTrigger asChild>
+        <Button variant="outline" size="sm">
+          Ajukan Banding
+        </Button>
+      </DialogTrigger>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Ajukan Banding Absen</DialogTitle>
+          <DialogDescription>
+            Anda akan mengajukan banding untuk status "{currentStatus}"
+          </DialogDescription>
+        </DialogHeader>
+        
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <Label htmlFor="statusDiajukan">Status yang Diajukan</Label>
+            <Select
+              value={disputeData.statusDiajukan}
+              onValueChange={(value) => setDisputeData(prev => ({ ...prev, statusDiajukan: value }))}
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="Hadir">Hadir</SelectItem>
+                <SelectItem value="Izin">Izin</SelectItem>
+                <SelectItem value="Sakit">Sakit</SelectItem>
+                <SelectItem value="Dispen">Dispen</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          
+          <div>
+            <Label htmlFor="alasanBanding">Alasan Banding</Label>
+            <Textarea
+              id="alasanBanding"
+              value={disputeData.alasanBanding}
+              onChange={(e) => setDisputeData(prev => ({ ...prev, alasanBanding: e.target.value }))}
+              placeholder="Jelaskan alasan mengapa status seharusnya berbeda..."
+              rows={4}
+              required
+            />
+          </div>
+          
+          <div>
+            <Label htmlFor="buktiPendukung">Bukti Pendukung (Opsional)</Label>
+            <Input
+              id="buktiPendukung"
+              type="file"
+              accept="image/*,.pdf"
+              onChange={(e) => setDisputeData(prev => ({ ...prev, buktiPendukung: e.target.files?.[0] }))}
+            />
+          </div>
+          
+          <DialogFooter>
+            <Button type="submit" disabled={loading}>
+              {loading ? 'Mengirim...' : 'Ajukan Banding'}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+};
+```
+
+### Dispute Management Component
+```typescript
+// DisputeManagementComponent.tsx
+interface DisputeManagementProps {
+  teacherId: number;
+  onDisputeProcessed: (dispute: any) => void;
+}
+
+const DisputeManagementComponent: React.FC<DisputeManagementProps> = ({
+  teacherId,
+  onDisputeProcessed
+}) => {
+  const [disputes, setDisputes] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [filter, setFilter] = useState('pending');
+
+  const loadDisputes = async () => {
+    try {
+      setLoading(true);
+      const response = await api.get(`/api/disputes/teacher/${teacherId}?status=${filter}`);
+      setDisputes(response.data);
+    } catch (error) {
+      console.error('Error loading disputes:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const processDispute = async (bandingId: number, decision: string, keterangan: string) => {
+    try {
+      await api.post(`/api/disputes/${bandingId}/process`, {
+        decision,
+        keterangan
+      });
+      
+      toast.success(`Banding ${decision === 'dikabulkan' ? 'dikabulkan' : 'ditolak'}`);
+      loadDisputes();
+      onDisputeProcessed({ bandingId, decision });
+      
+    } catch (error) {
+      console.error('Error processing dispute:', error);
+      toast.error('Gagal memproses banding');
+    }
+  };
+
+  useEffect(() => {
+    loadDisputes();
+  }, [filter]);
+
+  return (
+    <div className="dispute-management">
+      <div className="flex justify-between items-center mb-4">
+        <h3>Manajemen Banding Absen</h3>
+        <Select value={filter} onValueChange={setFilter}>
+          <SelectTrigger className="w-48">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="pending">Menunggu</SelectItem>
+            <SelectItem value="dikabulkan">Dikabulkan</SelectItem>
+            <SelectItem value="ditolak">Ditolak</SelectItem>
+            <SelectItem value="all">Semua</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+      
+      <div className="space-y-4">
+        {loading ? (
+          <div className="text-center py-8">Loading...</div>
+        ) : disputes.length === 0 ? (
+          <div className="text-center py-8 text-gray-500">
+            Tidak ada banding untuk ditampilkan
+          </div>
+        ) : (
+          disputes.map(dispute => (
+            <DisputeCard
+              key={dispute.id_banding}
+              dispute={dispute}
+              onProcess={processDispute}
+            />
+          ))
+        )}
+      </div>
+    </div>
+  );
+};
+```
+
+## 🔔 Notification System
+
+### Dispute Notifications
+```javascript
+const disputeNotificationService = {
+  // 1. Send dispute notification
+  sendDisputeNotification: async (recipientId, notificationData) => {
+    try {
+      // Send real-time notification via WebSocket
+      const io = require('./socket').io;
+      io.to(`user-${recipientId}`).emit('dispute-notification', notificationData);
+      
+      // Send push notification (if configured)
+      if (process.env.PUSH_NOTIFICATION_ENABLED === 'true') {
+        await pushNotificationService.send(recipientId, {
+          title: 'Banding Absen Baru',
+          body: notificationData.message,
+          data: notificationData
+        });
+      }
+      
+      console.log(`✅ Dispute notification sent to user ${recipientId}`);
+    } catch (error) {
+      console.error('❌ Error sending dispute notification:', error);
+    }
+  },
+  
+  // 2. Send dispute decision notification
+  sendDisputeDecisionNotification: async (recipientId, decisionData) => {
+    try {
+      const io = require('./socket').io;
+      io.to(`user-${recipientId}`).emit('dispute-decision', decisionData);
+      
+      console.log(`✅ Dispute decision notification sent to user ${recipientId}`);
+    } catch (error) {
+      console.error('❌ Error sending dispute decision notification:', error);
+    }
+  }
+};
+```
+
+## 📊 Dispute Analytics
+
+### Dispute Statistics
+```javascript
+const disputeAnalytics = {
+  // 1. Get dispute statistics
+  getDisputeStats: async (startDate, endDate) => {
+    const [stats] = await db.execute(`
+      SELECT 
+        COUNT(*) as total_disputes,
+        SUM(CASE WHEN status_banding = 'pending' THEN 1 ELSE 0 END) as pending_disputes,
+        SUM(CASE WHEN status_banding = 'dikabulkan' THEN 1 ELSE 0 END) as approved_disputes,
+        SUM(CASE WHEN status_banding = 'ditolak' THEN 1 ELSE 0 END) as rejected_disputes,
+        (SUM(CASE WHEN status_banding = 'dikabulkan' THEN 1 ELSE 0 END) / COUNT(*)) * 100 as approval_rate
+      FROM banding_absen 
+      WHERE tanggal_pengajuan BETWEEN ? AND ?
+    `, [startDate, endDate]);
+    
+    return stats[0];
+  },
+  
+  // 2. Get dispute trends
+  getDisputeTrends: async (days = 30) => {
+    const [trends] = await db.execute(`
+      SELECT 
+        DATE(tanggal_pengajuan) as tanggal,
+        COUNT(*) as total_disputes,
+        SUM(CASE WHEN status_banding = 'dikabulkan' THEN 1 ELSE 0 END) as approved,
+        SUM(CASE WHEN status_banding = 'ditolak' THEN 1 ELSE 0 END) as rejected
+      FROM banding_absen 
+      WHERE tanggal_pengajuan >= DATE_SUB(CURDATE(), INTERVAL ? DAY)
+      GROUP BY DATE(tanggal_pengajuan)
+      ORDER BY tanggal DESC
+    `, [days]);
+    
+    return trends;
+  }
+};
+```
+
+## 🚨 Error Handling for Disputes
+
+### Dispute Error Handling
+```javascript
+const disputeErrorHandling = {
+  // 1. Validate dispute data
+  validateDisputeData: (data) => {
+    const errors = [];
+    
+    if (!data.absensiId) {
+      errors.push('Attendance ID is required');
+    }
+    
+    if (!data.siswaId) {
+      errors.push('Student ID is required');
+    }
+    
+    if (!data.guruId) {
+      errors.push('Teacher ID is required');
+    }
+    
+    if (!data.statusDiajukan) {
+      errors.push('Proposed status is required');
+    }
+    
+    if (!data.alasanBanding || data.alasanBanding.trim().length < 10) {
+      errors.push('Reason must be at least 10 characters long');
+    }
+    
+    return errors;
+  },
+  
+  // 2. Check dispute eligibility
+  checkDisputeEligibility: async (absensiId, siswaId) => {
+    try {
+      // Check if dispute already exists
+      const [existing] = await db.execute(
+        'SELECT id_banding FROM banding_absen WHERE absensi_id = ? AND siswa_id = ?',
+        [absensiId, siswaId]
+      );
+      
+      if (existing.length > 0) {
+        return {
+          eligible: false,
+          reason: 'Dispute already exists for this attendance record'
+        };
+      }
+      
+      // Check if attendance record exists
+      const [attendance] = await db.execute(
+        'SELECT * FROM absensi_siswa WHERE id = ? AND siswa_id = ?',
+        [absensiId, siswaId]
+      );
+      
+      if (attendance.length === 0) {
+        return {
+          eligible: false,
+          reason: 'Attendance record not found'
+        };
+      }
+      
+      // Check if dispute is within time limit (e.g., 7 days)
+      const attendanceDate = new Date(attendance[0].tanggal);
+      const now = new Date();
+      const daysDiff = (now - attendanceDate) / (1000 * 60 * 60 * 24);
+      
+      if (daysDiff > 7) {
+        return {
+          eligible: false,
+          reason: 'Dispute must be submitted within 7 days'
+        };
+      }
+      
+      return { eligible: true };
+      
+    } catch (error) {
+      console.error('Error checking dispute eligibility:', error);
+      return {
+        eligible: false,
+        reason: 'Error checking eligibility'
+      };
+    }
+  }
+};
+```
+
+## 📋 API Endpoints for Disputes
+
+### Dispute API Endpoints
+```javascript
+// 1. Create dispute
+app.post('/api/disputes', authenticateToken, async (req, res) => {
+  try {
+    const disputeData = req.body;
+    
+    // Validate data
+    const errors = disputeErrorHandling.validateDisputeData(disputeData);
+    if (errors.length > 0) {
+      return res.status(400).json(errorResponses.validation(errors));
+    }
+    
+    // Check eligibility
+    const eligibility = await disputeErrorHandling.checkDisputeEligibility(
+      disputeData.absensiId, 
+      disputeData.siswaId
+    );
+    
+    if (!eligibility.eligible) {
+      return res.status(400).json(errorResponses.validation([eligibility.reason]));
+    }
+    
+    // Create dispute
+    await disputeCreationLogic.createDispute(disputeData);
+    
+    res.success(null, 'Dispute created successfully');
+  } catch (error) {
+    console.error('Error creating dispute:', error);
+    res.error('Failed to create dispute', error.message);
+  }
+});
+
+// 2. Process dispute
+app.post('/api/disputes/:id/process', authenticateToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { decision, keterangan } = req.body;
+    
+    if (!['dikabulkan', 'ditolak'].includes(decision)) {
+      return res.status(400).json(errorResponses.validation(['Invalid decision']));
+    }
+    
+    await disputeProcessingLogic.processDisputeDecision(
+      id, 
+      decision, 
+      keterangan, 
+      req.user.id
+    );
+    
+    res.success(null, 'Dispute processed successfully');
+  } catch (error) {
+    console.error('Error processing dispute:', error);
+    res.error('Failed to process dispute', error.message);
+  }
+});
+
+// 3. Get teacher disputes
+app.get('/api/disputes/teacher/:teacherId', authenticateToken, async (req, res) => {
+  try {
+    const { teacherId } = req.params;
+    const { status } = req.query;
+    
+    const disputes = await disputeProcessingLogic.getTeacherDisputes(teacherId, status);
+    
+    res.success(disputes, 'Teacher disputes retrieved successfully');
+  } catch (error) {
+    console.error('Error getting teacher disputes:', error);
+    res.error('Failed to get teacher disputes', error.message);
+  }
+});
+```

@@ -4,6 +4,7 @@ import { AdminDashboard } from "@/components/AdminDashboard_Modern";
 import { TeacherDashboard } from "@/components/TeacherDashboard_Modern";
 import { StudentDashboard } from "@/components/StudentDashboard_Modern";
 import { useToast } from "@/hooks/use-toast";
+import { api } from "@/utils/api";
 
 type AppState = 'login' | 'dashboard';
 type UserRole = 'admin' | 'guru' | 'siswa' | null;
@@ -38,47 +39,90 @@ const Index = () => {
     try {
       console.log('🔍 Checking existing authentication...');
       
-      const response = await fetch('/api/verify', {
-        method: 'GET',
-        credentials: 'include'
-      });
+      const result = await api.get('/api/verify');
       
-      console.log('🔍 Auth check response status:', response.status);
+      console.log('🔍 Auth check response:', result);
       
-      if (response.ok) {
-        // Check if the response is JSON
-        const contentType = response.headers.get('content-type');
-        if (!contentType || !contentType.includes('application/json')) {
-          console.log('ℹ️ Non-JSON response from auth check');
-          return;
-        }
-
-        const responseText = await response.text();
-        if (!responseText.trim()) {
-          console.log('ℹ️ Empty response from auth check');
-          return;
-        }
-
-        let result;
-        try {
-          result = JSON.parse(responseText);
-        } catch (parseError) {
-          console.log('ℹ️ Could not parse auth response:', parseError);
-          return;
-        }
-
-        if (result.success && result.user) {
-          console.log('✅ Existing auth found, user:', result.user);
-          setUserData(result.user);
+      // ✅ FIX: Check result.data instead of result directly
+      if (result.success && result.data && result.data.user) {
+          console.log('✅ Existing auth found, user:', result.data.user);
+          
+          // Load latest profile data based on role
+          try {
+            let profileData;
+            switch (result.data.user.role) {
+              case 'admin':
+                profileData = await api.get('/api/admin/info');
+                break;
+              case 'guru':
+                profileData = await api.get('/api/guru/info');
+                break;
+              case 'siswa':
+                profileData = await api.get('/api/siswa/info');
+                break;
+              default:
+                profileData = null;
+            }
+            
+            if (profileData) {
+              console.log('📋 Profile data received:', profileData);
+              
+              // ✅ FIX: Check profileData.data for wrapped response
+              const profileInfo = profileData.data || profileData;
+              
+              if (profileData.success) {
+                console.log('🔍 Profile info data:', profileInfo);
+                console.log('🔍 Profile guru_id:', profileInfo.guru_id);
+                console.log('🔍 Profile id:', profileInfo.id);
+                
+                // Merge JWT data with latest profile data
+                const updatedUserData = {
+                  ...result.data.user,
+                  ...profileInfo,
+                  // Map field names for compatibility based on role
+                  ...(result.data.user.role === 'siswa' && {
+                    siswa_id: profileInfo.id_siswa,
+                    nis: profileInfo.nis,
+                    kelas: profileInfo.nama_kelas,
+                    kelas_id: profileInfo.kelas_id
+                  }),
+                  ...(result.data.user.role === 'guru' && {
+                    guru_id: profileInfo.guru_id || profileInfo.id, // Use guru_id if available, fallback to id
+                    nip: profileInfo.nip,
+                    mapel: profileInfo.mata_pelajaran
+                  })
+                };
+                setUserData(updatedUserData);
+                console.log('✅ Updated user data with latest profile:', updatedUserData);
+              } else {
+                console.log('❌ Profile data not successful:', profileData);
+                setUserData(result.data.user);
+              }
+            } else {
+              console.log('❌ Profile data not successful:', profileData);
+              setUserData(result.data.user);
+            }
+          } catch (profileError) {
+            console.error('❌ Failed to load latest profile data:', profileError);
+            console.log('❌ Profile error details:', {
+              message: profileError.message,
+              stack: profileError.stack,
+              name: profileError.name
+            });
+            setUserData(result.data.user);
+          }
+          
           setCurrentState('dashboard');
+          
+          // ✅ FIX: Safe access with optional chaining
+          const userName = result.data.user?.nama || result.data.user?.username || 'User';
           
           toast({
             title: "Selamat datang kembali!",
-            description: `Halo ${result.user.nama}, Anda berhasil login otomatis.`,
+            description: `Halo ${userName}, Anda berhasil login otomatis.`,
           });
-        }
       } else {
-        console.log('ℹ️ No existing authentication found, status:', response.status);
+        console.log('ℹ️ No existing authentication found, result:', result);
       }
     } catch (error) {
       console.log('ℹ️ No existing auth or error checking:', error);
@@ -96,63 +140,39 @@ const Index = () => {
     setError(null);
 
     try {
-      const response = await fetch('/api/login', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        credentials: 'include',
-        body: JSON.stringify(credentials),
-      });
+      const result = await api.post('/api/login', credentials);
 
-      console.log('📡 Login response status:', response.status);
-      console.log('📡 Login response headers:', response.headers.get('content-type'));
+      console.log('📡 Login response:', result);
 
-      // Check if the response is JSON
-      const contentType = response.headers.get('content-type');
-      if (!contentType || !contentType.includes('application/json')) {
-        console.error('❌ Server returned non-JSON response');
-        throw new Error('Server mengirim respons yang tidak valid. Pastikan server berjalan dengan baik.');
-      }
-
-      // Check if response has content
-      const responseText = await response.text();
-      console.log('📡 Raw response text:', responseText);
-      
-      if (!responseText.trim()) {
-        console.error('❌ Empty response from server');
-        throw new Error('Server mengirim respons kosong. Periksa koneksi ke server.');
-      }
-
-      let result;
-      try {
-        result = JSON.parse(responseText);
-      } catch (parseError) {
-        console.error('❌ JSON parse error:', parseError);
-        console.error('❌ Response text that failed to parse:', responseText);
-        throw new Error('Server mengirim respons yang tidak dapat dibaca. Periksa log server.');
-      }
-
-      console.log('📡 Parsed login response:', result);
-
-      if (response.ok && result.success) {
-        console.log('✅ Login successful for user:', result.user);
+      if (result.success && result.data) {
+        // ✅ FIX: Validate data structure
+        if (!result.data.user) {
+          throw new Error('Invalid response structure: missing user data');
+        }
         
-        setUserData(result.user);
+        console.log('✅ Login successful for user:', result.data.user.username);
+        
+        // ✅ FIX: Access user from result.data
+        setUserData(result.data.user);
         setCurrentState('dashboard');
         setError(null);
         
         // Store token in localStorage for persistence
-        if (result.token) {
-          localStorage.setItem('authToken', result.token);
+        if (result.data.token) {
+          localStorage.setItem('token', result.data.token);
         }
+        
+        // ✅ FIX: Safe access with optional chaining
+        const userName = result.data.user?.nama || result.data.user?.username || 'User';
         
         toast({
           title: "Login Berhasil!",
-          description: `Selamat datang, ${result.user.nama}!`,
+          description: `Selamat datang, ${userName}!`,
         });
       } else {
-        throw new Error(result.error || 'Login failed');
+        // ✅ FIX: Better error handling
+        const errorMessage = result.error || result.message || 'Login failed';
+        throw new Error(errorMessage);
       }
     } catch (error) {
       console.error('❌ Login error:', error);
@@ -173,12 +193,10 @@ const Index = () => {
     console.log('🚪 Logging out user...');
     
     try {
-      await fetch('/api/logout', {
-        method: 'POST',
-        credentials: 'include'
-      });
+      await api.post('/api/logout');
       
       // Clear local storage
+      localStorage.removeItem('token');
       localStorage.removeItem('authToken');
       
       // Reset state
@@ -195,6 +213,7 @@ const Index = () => {
     } catch (error) {
       console.error('❌ Logout error:', error);
       // Force logout even if request fails
+      localStorage.removeItem('token');
       localStorage.removeItem('authToken');
       setUserData(null);
       setCurrentState('login');
