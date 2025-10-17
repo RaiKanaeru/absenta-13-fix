@@ -22,6 +22,8 @@ import SchedulePreviewGrid from "./SchedulePreviewGrid";
 import SimpleRestoreView from "./SimpleRestoreView";
 import RealtimeGuruAttendance from "./RealtimeGuruAttendance";
 import RuangKelasManagement from "./RuangKelasManagement";
+import SecurityManagementView from "./admin/SecurityManagementView";
+import PerformanceMonitoringView from "./admin/PerformanceMonitoringView";
 import { printReport } from "../utils/printLayouts";
 import ExcelPreview from './ExcelPreview';
 // import ReportHeader from './ReportHeader';
@@ -180,8 +182,8 @@ interface Room {
   id: number;
   nama_ruang: string;
   kode_ruang: string;
-  kapasitas?: number;
-  lokasi?: string;
+  kapasitas: number;
+  lokasi: string;
   status: 'aktif' | 'nonaktif';
   created_at?: string;
 }
@@ -234,6 +236,8 @@ const menuItems = [
   { id: 'add-subject', title: 'Mata Pelajaran', icon: BookOpen, description: 'Kelola mata pelajaran', gradient: 'from-red-500 to-red-700' },
   { id: 'add-class', title: 'Kelas', icon: Home, description: 'Kelola kelas', gradient: 'from-indigo-500 to-indigo-700' },
   { id: 'room-management', title: 'Ruang Kelas', icon: Building, description: 'Kelola ruang kelas dan alokasi', gradient: 'from-yellow-500 to-yellow-700' },
+    { id: 'security-management', title: 'Security Management', icon: Shield, description: 'Kelola keamanan sistem dan account lockout', gradient: 'from-red-500 to-red-700' },
+    { id: 'performance-monitoring', title: 'Performance Monitoring', icon: Activity, description: 'Monitor performa sistem dan database', gradient: 'from-purple-500 to-purple-700' },
   { id: 'add-schedule', title: 'Jadwal', icon: Calendar, description: 'Atur jadwal pelajaran', gradient: 'from-teal-500 to-teal-700' },
   { id: 'backup-management', title: 'Backup & Archive', icon: Database, description: 'Kelola backup dan arsip data', gradient: 'from-cyan-500 to-cyan-700' },
   { id: 'load-balancer', title: 'Load Balancer', icon: Activity, description: 'Monitoring performa sistem', gradient: 'from-emerald-500 to-emerald-700' },
@@ -3063,7 +3067,7 @@ const LiveSummaryView = ({ onLogout }: { onLogout: () => void }) => {
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {(liveData.ongoing_classes || []).map((kelas, index) => (
-                <Card key={index} className="border-l-4 border-l-blue-500">
+                <Card key={`ongoing-class-${kelas.id || kelas.kelas || index}`} className="border-l-4 border-l-blue-500">
                   <CardContent className="p-4">
                     <div className="space-y-2">
                       <div className="flex items-center justify-between">
@@ -3536,7 +3540,7 @@ const ManageSchedulesView = ({ onBack, onLogout }: { onBack: () => void; onLogou
             ) : (
               <div className="space-y-4">
                 {conflicts.map((conflict, index) => (
-                  <div key={index} className="border border-red-200 rounded-lg p-4 bg-red-50">
+                  <div key={`conflict-${conflict.id || conflict.type}-${index}`} className="border border-red-200 rounded-lg p-4 bg-red-50">
                     <div className="flex items-center gap-2 mb-2">
                       <AlertTriangle className="w-4 h-4 text-red-500" />
                       <span className="font-medium text-red-800">
@@ -3613,7 +3617,7 @@ const ManageSchedulesView = ({ onBack, onLogout }: { onBack: () => void; onLogou
                         <h4 className="font-medium text-sm mb-2 text-center">{hari}</h4>
                         <div className="space-y-1">
                           {jadwalHari[hari]?.map((jadwal: Schedule, index: number) => (
-                            <div key={index} className="text-xs bg-blue-50 p-1 rounded">
+                            <div key={`schedule-${jadwal.id || jadwal.nama_mapel}-${index}`} className="text-xs bg-blue-50 p-1 rounded">
                               <p className="font-medium">{jadwal.jam_mulai}-{jadwal.jam_selesai}</p>
                               <p className="text-gray-600">{jadwal.nama_mapel}</p>
                               <p className="text-gray-500">{jadwal.nama_guru}</p>
@@ -4156,7 +4160,7 @@ const LiveStudentAttendanceView = ({ onBack, onLogout }: { onBack: () => void; o
           
           {getPageNumbers().map((page, index) => (
             <Button
-              key={index}
+              key={`page-${page}-${index}`}
               variant={page === currentPage ? "default" : "outline"}
               size="sm"
               onClick={() => typeof page === 'number' && setCurrentPage(page)}
@@ -5098,7 +5102,7 @@ const LiveTeacherAttendanceView = ({ onBack, onLogout }: { onBack: () => void; o
             
             {getPageNumbers().map((page, index) => (
               <Button
-                key={index}
+                key={`page-${page}-${index}`}
                 variant={page === currentPage ? "default" : "outline"}
                 size="sm"
                 onClick={() => typeof page === 'number' && setCurrentPage(page)}
@@ -5554,7 +5558,7 @@ const AnalyticsDashboardView = ({ onBack, onLogout }: { onBack: () => void; onLo
                 <div className="h-[300px]">
                   <div className="space-y-4">
                     {studentAttendance.map((item, index) => (
-                      <div key={index} className="p-4 border rounded-lg">
+                      <div key={`student-attendance-${item.periode || index}`} className="p-4 border rounded-lg">
                         <h3 className="font-medium text-gray-900">{item.periode}</h3>
                         <div className="mt-2 flex justify-between items-center">
                           <div className="flex items-center">
@@ -5642,7 +5646,7 @@ const AnalyticsDashboardView = ({ onBack, onLogout }: { onBack: () => void; onLo
                 <div className="h-[300px]">
                   <div className="grid gap-4 md:grid-cols-3">
                     {teacherAttendance.map((item, index) => (
-                      <div key={index} className="p-4 border rounded-lg">
+                      <div key={`teacher-attendance-${item.periode || index}`} className="p-4 border rounded-lg">
                         <h3 className="font-medium text-gray-900">{item.periode}</h3>
                         <div className="mt-2 flex justify-between items-center">
                           <div className="flex items-center">
@@ -5692,7 +5696,7 @@ const AnalyticsDashboardView = ({ onBack, onLogout }: { onBack: () => void; onLo
                     </TableHeader>
                     <TableBody>
                       {topAbsentStudents.map((student, index) => (
-                        <TableRow key={index}>
+                        <TableRow key={`absent-student-${student.id || student.nama || index}`}>
                           <TableCell className="font-medium">{student.nama}</TableCell>
                           <TableCell>{student.nama_kelas}</TableCell>
                           <TableCell className="text-right">
@@ -5732,7 +5736,7 @@ const AnalyticsDashboardView = ({ onBack, onLogout }: { onBack: () => void; onLo
                     </TableHeader>
                     <TableBody>
                       {topAbsentTeachers.map((teacher, index) => (
-                        <TableRow key={index}>
+                        <TableRow key={`absent-teacher-${teacher.id || teacher.nama || index}`}>
                           <TableCell className="font-medium">{teacher.nama}</TableCell>
                           <TableCell className="text-right">
                             <span className="bg-orange-100 text-orange-800 px-2 py-1 rounded-full text-xs font-medium">
@@ -7987,7 +7991,7 @@ const RealtimeGuruAttendanceView = ({ onBack, onLogout }: { onBack: () => void; 
           ) : (
             <div className="space-y-4">
               {attendanceData.map((attendance, index) => (
-                <div key={index} className="border rounded-lg p-4 hover:bg-gray-50">
+                <div key={`attendance-${attendance.id || attendance.nama_guru || index}`} className="border rounded-lg p-4 hover:bg-gray-50">
                   <div className="flex items-center justify-between">
                     <div className="flex-1">
                       <div className="flex items-center gap-3 mb-2">
@@ -8044,7 +8048,7 @@ const RuangKelasManagementView = ({ onBack, onLogout }: { onBack: () => void; on
   const [formData, setFormData] = useState({
     nama_ruang: '',
     kode_ruang: '',
-    kapasitas: '',
+    kapasitas: 0,
     lokasi: ''
   });
   const [isLoading, setIsLoading] = useState(false);
@@ -8075,6 +8079,25 @@ const RuangKelasManagementView = ({ onBack, onLogout }: { onBack: () => void; on
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    // Validasi field wajib
+    if (!formData.nama_ruang.trim()) {
+      toast({ title: "Error", description: "Nama ruang wajib diisi", variant: "destructive" });
+      return;
+    }
+    if (!formData.kode_ruang.trim()) {
+      toast({ title: "Error", description: "Kode ruang wajib diisi", variant: "destructive" });
+      return;
+    }
+    if (!formData.kapasitas || formData.kapasitas <= 0) {
+      toast({ title: "Error", description: "Kapasitas harus lebih dari 0", variant: "destructive" });
+      return;
+    }
+    if (!formData.lokasi.trim()) {
+      toast({ title: "Error", description: "Lokasi wajib diisi", variant: "destructive" });
+      return;
+    }
+    
     setIsLoading(true);
 
     try {
@@ -8083,7 +8106,7 @@ const RuangKelasManagementView = ({ onBack, onLogout }: { onBack: () => void; on
       
       const submitData = {
         ...formData,
-        kapasitas: formData.kapasitas ? parseInt(formData.kapasitas) : null
+        kapasitas: parseInt(formData.kapasitas.toString())
       };
       
       await apiCall(url, {
@@ -8092,7 +8115,7 @@ const RuangKelasManagementView = ({ onBack, onLogout }: { onBack: () => void; on
       }, onLogout);
 
       toast({ title: editingId ? "Ruang kelas berhasil diupdate!" : "Ruang kelas berhasil ditambahkan!" });
-      setFormData({ nama_ruang: '', kode_ruang: '', kapasitas: '', lokasi: '' });
+      setFormData({ nama_ruang: '', kode_ruang: '', kapasitas: 0, lokasi: '' });
       setEditingId(null);
       fetchRooms();
     } catch (error) {
@@ -8107,7 +8130,7 @@ const RuangKelasManagementView = ({ onBack, onLogout }: { onBack: () => void; on
     setFormData({ 
       nama_ruang: room.nama_ruang, 
       kode_ruang: room.kode_ruang, 
-      kapasitas: room.kapasitas?.toString() || '', 
+      kapasitas: room.kapasitas || 0, 
       lokasi: room.lokasi || '' 
     });
     setEditingId(room.id);
@@ -8193,22 +8216,25 @@ const RuangKelasManagementView = ({ onBack, onLogout }: { onBack: () => void; on
               />
             </div>
             <div>
-              <Label htmlFor="room-capacity">Kapasitas</Label>
+              <Label htmlFor="room-capacity">Kapasitas *</Label>
               <Input 
                 id="room-capacity" 
                 type="number"
-                value={formData.kapasitas} 
-                onChange={(e) => setFormData({...formData, kapasitas: e.target.value})} 
+                value={formData.kapasitas || 0} 
+                onChange={(e) => setFormData({...formData, kapasitas: parseInt(e.target.value) || 0})} 
                 placeholder="Contoh: 30"
+                required
+                min="1"
               />
             </div>
             <div>
-              <Label htmlFor="room-location">Lokasi</Label>
+              <Label htmlFor="room-location">Lokasi *</Label>
               <Input 
                 id="room-location" 
                 value={formData.lokasi} 
                 onChange={(e) => setFormData({...formData, lokasi: e.target.value})} 
                 placeholder="Contoh: Lantai 1, Gedung A"
+                required
               />
             </div>
             <div className="flex items-end gap-2">
@@ -8218,7 +8244,7 @@ const RuangKelasManagementView = ({ onBack, onLogout }: { onBack: () => void; on
               {editingId && (
                 <Button type="button" variant="outline" onClick={() => {
                   setEditingId(null);
-                  setFormData({ nama_ruang: '', kode_ruang: '', kapasitas: '', lokasi: '' });
+                  setFormData({ nama_ruang: '', kode_ruang: '', kapasitas: 0, lokasi: '' });
                 }}>
                   Batal
                 </Button>
@@ -8243,13 +8269,13 @@ const RuangKelasManagementView = ({ onBack, onLogout }: { onBack: () => void; on
             <div className="overflow-x-auto">
               <Table>
                 <TableHeader>
-                  <TableRow>
-                    <TableHead>Nama Ruang</TableHead>
-                    <TableHead>Kode Ruang</TableHead>
-                    <TableHead>Kapasitas</TableHead>
-                    <TableHead>Lokasi</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead className="text-right">Aksi</TableHead>
+                  <TableRow key="header-row">
+                    <TableHead key="header-nama">Nama Ruang</TableHead>
+                    <TableHead key="header-kode">Kode Ruang</TableHead>
+                    <TableHead key="header-kapasitas">Kapasitas</TableHead>
+                    <TableHead key="header-lokasi">Lokasi</TableHead>
+                    <TableHead key="header-status">Status</TableHead>
+                    <TableHead key="header-aksi" className="text-right">Aksi</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -8259,7 +8285,7 @@ const RuangKelasManagementView = ({ onBack, onLogout }: { onBack: () => void; on
                       <TableCell>
                         <Badge variant="outline">{room.kode_ruang}</Badge>
                       </TableCell>
-                      <TableCell>{room.kapasitas || '-'}</TableCell>
+                      <TableCell>{room.kapasitas || 0}</TableCell>
                       <TableCell>{room.lokasi || '-'}</TableCell>
                       <TableCell>
                         <Badge variant={room.status === 'aktif' ? 'default' : 'secondary'}>
@@ -8267,15 +8293,16 @@ const RuangKelasManagementView = ({ onBack, onLogout }: { onBack: () => void; on
                         </Badge>
                       </TableCell>
                       <TableCell className="text-right">
-                        <div className="flex justify-end gap-2">
+                        <div className="flex justify-end gap-2" key={`actions-${room.id}`}>
                           <Button
+                            key={`edit-${room.id}`}
                             size="sm"
                             variant="outline"
                             onClick={() => handleEdit(room)}
                           >
                             <Edit className="w-4 h-4" />
                           </Button>
-                          <AlertDialog>
+                          <AlertDialog key={`delete-${room.id}`}>
                             <AlertDialogTrigger asChild>
                               <Button size="sm" variant="outline">
                                 <Trash2 className="w-4 h-4" />
@@ -8557,6 +8584,10 @@ export const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
         return <ManageClassesView onBack={handleBack} onLogout={onLogout} />;
       case 'room-management':
         return <RuangKelasManagementView onBack={handleBack} onLogout={onLogout} />;
+      case 'security-management':
+        return <SecurityManagementView />;
+      case 'performance-monitoring':
+        return <PerformanceMonitoringView />;
       case 'add-schedule':
         return <ManageSchedulesView onBack={handleBack} onLogout={onLogout} />;
       case 'backup-management':

@@ -1,125 +1,149 @@
-/**
- * Test Setup Configuration
- * Global setup untuk semua test suites dengan SQLite test database
- */
+// tests/setup.js
+import '@testing-library/jest-dom';
+import { configure } from '@testing-library/react';
+import { TextEncoder, TextDecoder } from 'util';
 
-require('dotenv').config();
-const { beforeAll, afterAll, beforeEach, afterEach } = require('@jest/globals');
-const MockDatabase = require('./helpers/mockDb');
+// Configure testing library
+configure({
+  testIdAttribute: 'data-testid',
+});
 
-// Test environment configuration
-process.env.NODE_ENV = 'test';
-process.env.JWT_SECRET = 'test-jwt-secret-key-for-testing-only';
-process.env.PASSWORD_PEPPER = 'test-pepper-2025';
-process.env.LOG_LEVEL = 'error'; // Reduce log noise during tests
+// Mock TextEncoder and TextDecoder for Node.js environment
+global.TextEncoder = TextEncoder;
+global.TextDecoder = TextDecoder;
 
-// Global test timeout
-jest.setTimeout(30000);
+// Mock window.matchMedia
+Object.defineProperty(window, 'matchMedia', {
+  writable: true,
+  value: jest.fn().mockImplementation(query => ({
+    matches: false,
+    media: query,
+    onchange: null,
+    addListener: jest.fn(), // deprecated
+    removeListener: jest.fn(), // deprecated
+    addEventListener: jest.fn(),
+    removeEventListener: jest.fn(),
+    dispatchEvent: jest.fn(),
+  })),
+});
 
-// Global test database instance
-global.testDb = null;
+// Mock window.ResizeObserver
+global.ResizeObserver = jest.fn().mockImplementation(() => ({
+  observe: jest.fn(),
+  unobserve: jest.fn(),
+  disconnect: jest.fn(),
+}));
 
-// Global test utilities
-global.testUtils = {
-    // Generate test JWT token
-    generateTestToken(payload = {}) {
-        const jwt = require('jsonwebtoken');
-        return jwt.sign(
-            {
-                id: payload.id || 1,
-                username: payload.username || 'testuser',
-                role: payload.role || 'admin',
-                ...payload
-            },
-            process.env.JWT_SECRET,
-            { expiresIn: '1h' }
-        );
-    },
+// Mock IntersectionObserver
+global.IntersectionObserver = jest.fn().mockImplementation(() => ({
+  observe: jest.fn(),
+  unobserve: jest.fn(),
+  disconnect: jest.fn(),
+}));
 
-    // Wait for async operations
-    async wait(ms = 100) {
-        return new Promise(resolve => setTimeout(resolve, ms));
-    },
+// Mock performance API
+Object.defineProperty(global, 'performance', {
+  writable: true,
+  value: {
+    now: jest.fn(() => Date.now()),
+    mark: jest.fn(),
+    measure: jest.fn(),
+    getEntriesByType: jest.fn(() => []),
+    getEntriesByName: jest.fn(() => []),
+    clearMarks: jest.fn(),
+    clearMeasures: jest.fn(),
+  },
+});
 
-    // Get test database instance
-    getTestDb() {
-        return global.testDb;
-    },
+// Mock fetch
+global.fetch = jest.fn();
 
-    // Create test database connection
-    async createTestDb() {
-        if (!global.testDb) {
-            global.testDb = new MockDatabase();
-            await global.testDb.connect();
-            await global.testDb.createTables();
-        }
-        return global.testDb;
-    },
-
-    // Clean test database
-    async cleanTestDb() {
-        if (global.testDb) {
-            await global.testDb.clearData();
-        }
-    },
-
-    // Seed test database
-    async seedTestDb() {
-        if (global.testDb) {
-            await global.testDb.seedTestData();
-        }
-    }
+// Mock localStorage
+const localStorageMock = {
+  getItem: jest.fn(),
+  setItem: jest.fn(),
+  removeItem: jest.fn(),
+  clear: jest.fn(),
 };
+global.localStorage = localStorageMock;
 
-// Global setup
-beforeAll(async () => {
-    console.log('🧪 Setting up test environment...');
-    
-    try {
-        // Create and setup test database
-        await global.testUtils.createTestDb();
-        await global.testUtils.seedTestDb();
-        console.log('✅ Test environment ready with SQLite database');
-    } catch (error) {
-        console.error('❌ Failed to setup test database:', error.message);
-        console.log('⚠️  Continuing with tests that don\'t require database...');
+// Mock sessionStorage
+const sessionStorageMock = {
+  getItem: jest.fn(),
+  setItem: jest.fn(),
+  removeItem: jest.fn(),
+  clear: jest.fn(),
+};
+global.sessionStorage = sessionStorageMock;
+
+// Mock console methods to reduce noise in tests
+const originalConsoleError = console.error;
+const originalConsoleWarn = console.warn;
+
+beforeAll(() => {
+  console.error = (...args) => {
+    if (
+      typeof args[0] === 'string' &&
+      args[0].includes('Warning: ReactDOM.render is no longer supported')
+    ) {
+      return;
     }
-});
+    originalConsoleError.call(console, ...args);
+  };
 
-// Global teardown
-afterAll(async () => {
-    console.log('🧹 Cleaning up test environment...');
-    
-    try {
-        if (global.testDb) {
-            await global.testDb.disconnect();
-            global.testDb = null;
-        }
-        console.log('✅ Test environment cleaned');
-    } catch (error) {
-        console.error('❌ Error during cleanup:', error.message);
+  console.warn = (...args) => {
+    if (
+      typeof args[0] === 'string' &&
+      (args[0].includes('Warning:') || args[0].includes('Deprecated'))
+    ) {
+      return;
     }
+    originalConsoleWarn.call(console, ...args);
+  };
 });
 
-// Test isolation
-beforeEach(async () => {
-    // Clean database before each test
-    if (global.testDb) {
-        await global.testUtils.cleanTestDb();
-        await global.testUtils.seedTestDb();
-    }
+afterAll(() => {
+  console.error = originalConsoleError;
+  console.warn = originalConsoleWarn;
 });
 
-afterEach(async () => {
-    // Clean up after each test if needed
-});
+// Mock environment variables
+process.env.NODE_ENV = 'test';
+process.env.VITE_API_URL = 'http://localhost:3001';
+process.env.VITE_SENTRY_DSN = 'https://test@sentry.io/test';
 
-// Handle unhandled promise rejections in tests
-process.on('unhandledRejection', (reason, promise) => {
-    console.error('Unhandled Rejection at:', promise, 'reason:', reason);
-});
+// Mock Sentry
+jest.mock('@sentry/react', () => ({
+  init: jest.fn(),
+  captureException: jest.fn(),
+  captureMessage: jest.fn(),
+  addBreadcrumb: jest.fn(),
+  setUser: jest.fn(),
+  setTag: jest.fn(),
+  setContext: jest.fn(),
+  withScope: jest.fn((callback) => callback({ setContext: jest.fn(), setTag: jest.fn() })),
+}));
 
-// Handle uncaught exceptions in tests
-process.on('uncaughtException', (error) => {
-    console.error('Uncaught Exception:', error);
+// Mock React Router
+jest.mock('react-router-dom', () => ({
+  ...jest.requireActual('react-router-dom'),
+  useNavigate: () => jest.fn(),
+  useLocation: () => ({ pathname: '/test' }),
+}));
+
+// Mock API calls
+jest.mock('../src/lib/api', () => ({
+  apiCall: jest.fn(),
+}));
+
+// Mock toast
+jest.mock('../src/components/ui/use-toast', () => ({
+  toast: jest.fn(),
+}));
+
+// Clean up after each test
+afterEach(() => {
+  jest.clearAllMocks();
+  localStorageMock.clear();
+  sessionStorageMock.clear();
 });

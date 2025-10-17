@@ -1,0 +1,675 @@
+openapi: 3.0.3
+info:
+  title: Absenta API
+  description: API untuk sistem manajemen kehadiran Absenta
+  version: 1.0.0
+  contact:
+    name: Absenta Development Team
+    email: support@absenta.com
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+
+servers:
+  - url: http://localhost:3001/api
+    description: Development server
+  - url: https://api.absenta.com/api
+    description: Production server
+
+security:
+  - BearerAuth: []
+
+paths:
+  # Authentication endpoints
+  /auth/login:
+    post:
+      tags:
+        - Authentication
+      summary: User login
+      description: Authenticate user and return JWT token
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - username
+                - password
+              properties:
+                username:
+                  type: string
+                  example: "admin"
+                password:
+                  type: string
+                  example: "admin123"
+      responses:
+        '200':
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      user:
+                        $ref: '#/components/schemas/User'
+                      token:
+                        type: string
+                        example: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+                  message:
+                    type: string
+                    example: "Success"
+        '401':
+          description: Invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /auth/logout:
+    post:
+      tags:
+        - Authentication
+      summary: User logout
+      description: Logout user (client-side token removal)
+      responses:
+        '200':
+          description: Logout successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  message:
+                    type: string
+                    example: "Logged out successfully"
+
+  /auth/verify:
+    get:
+      tags:
+        - Authentication
+      summary: Verify token
+      description: Verify JWT token validity
+      responses:
+        '200':
+          description: Token is valid
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      user:
+                        $ref: '#/components/schemas/User'
+                  message:
+                    type: string
+                    example: "Token is valid"
+
+  # Admin endpoints
+  /admin/info:
+    get:
+      tags:
+        - Admin
+      summary: Get admin info
+      description: Get current admin user information
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Admin info retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    $ref: '#/components/schemas/Admin'
+                  message:
+                    type: string
+                    example: "Admin info retrieved successfully"
+
+  /admin/guru:
+    get:
+      tags:
+        - Admin
+      summary: Get all teachers
+      description: Retrieve list of all teachers
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Teachers retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Teacher'
+                  message:
+                    type: string
+                    example: "Teachers retrieved successfully"
+
+    post:
+      tags:
+        - Admin
+      summary: Create teacher
+      description: Create a new teacher account
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TeacherInput'
+      responses:
+        '200':
+          description: Teacher created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+
+  /admin/guru/{id}:
+    put:
+      tags:
+        - Admin
+      summary: Update teacher
+      description: Update teacher information
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            example: 1
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TeacherInput'
+      responses:
+        '200':
+          description: Teacher updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+
+    delete:
+      tags:
+        - Admin
+      summary: Delete teacher
+      description: Delete teacher account
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            example: 1
+      responses:
+        '200':
+          description: Teacher deleted successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+
+  # Teacher endpoints
+  /guru/info:
+    get:
+      tags:
+        - Teacher
+      summary: Get teacher info
+      description: Get current teacher information
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Teacher info retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    $ref: '#/components/schemas/Teacher'
+                  message:
+                    type: string
+                    example: "Teacher info retrieved successfully"
+
+  /guru/jadwal:
+    get:
+      tags:
+        - Teacher
+      summary: Get teacher schedule
+      description: Get teacher's class schedule
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Schedule retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Schedule'
+                  message:
+                    type: string
+                    example: "Teacher schedule retrieved successfully"
+
+  # Student endpoints
+  /siswa/info:
+    get:
+      tags:
+        - Student
+      summary: Get student info
+      description: Get current student information
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Student info retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    $ref: '#/components/schemas/Student'
+                  message:
+                    type: string
+                    example: "Student info retrieved successfully"
+
+  # Attendance endpoints
+  /attendance/submit:
+    post:
+      tags:
+        - Attendance
+      summary: Submit attendance
+      description: Submit student attendance (teacher only)
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AttendanceInput'
+      responses:
+        '200':
+          description: Attendance submitted successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+
+  # Health check endpoints
+  /health:
+    get:
+      tags:
+        - Health
+      summary: Basic health check
+      description: Check if server is running
+      security: []
+      responses:
+        '200':
+          description: Server is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  message:
+                    type: string
+                    example: "Server is running"
+                  timestamp:
+                    type: string
+                    format: date-time
+                  uptime:
+                    type: number
+                    example: 3600
+                  version:
+                    type: string
+                    example: "1.0.0"
+
+  /health/detailed:
+    get:
+      tags:
+        - Health
+      summary: Detailed health check
+      description: Comprehensive health check with system metrics
+      security: []
+      responses:
+        '200':
+          description: Detailed health information
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    User:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 1
+        username:
+          type: string
+          example: "admin"
+        nama:
+          type: string
+          example: "Administrator"
+        role:
+          type: string
+          enum: [admin, guru, siswa]
+          example: "admin"
+        email:
+          type: string
+          format: email
+          example: "admin@absenta.com"
+
+    Admin:
+      allOf:
+        - $ref: '#/components/schemas/User'
+        - type: object
+          properties:
+            peran:
+              type: string
+              example: "admin"
+
+    Teacher:
+      type: object
+      properties:
+        id_guru:
+          type: integer
+          example: 1
+        nama:
+          type: string
+          example: "John Doe"
+        nip:
+          type: string
+          example: "123456789"
+        email:
+          type: string
+          format: email
+          example: "john@absenta.com"
+        no_telp:
+          type: string
+          example: "08123456789"
+        mapel_id:
+          type: integer
+          example: 1
+        nama_mapel:
+          type: string
+          example: "Matematika"
+        status:
+          type: string
+          enum: [aktif, tidak_aktif]
+          example: "aktif"
+
+    Student:
+      type: object
+      properties:
+        id_siswa:
+          type: integer
+          example: 1
+        nama:
+          type: string
+          example: "Jane Smith"
+        nis:
+          type: string
+          example: "2024001"
+        email:
+          type: string
+          format: email
+          example: "jane@absenta.com"
+        kelas_id:
+          type: integer
+          example: 1
+        nama_kelas:
+          type: string
+          example: "X AK 1"
+        status:
+          type: string
+          enum: [aktif, tidak_aktif]
+          example: "aktif"
+
+    Schedule:
+      type: object
+      properties:
+        id_jadwal:
+          type: integer
+          example: 1
+        kelas_id:
+          type: integer
+          example: 1
+        mapel_id:
+          type: integer
+          example: 1
+        guru_id:
+          type: integer
+          example: 1
+        hari:
+          type: string
+          enum: [Senin, Selasa, Rabu, Kamis, Jumat, Sabtu]
+          example: "Senin"
+        jam_ke:
+          type: integer
+          minimum: 1
+          maximum: 8
+          example: 1
+        jam_mulai:
+          type: string
+          format: time
+          example: "07:00"
+        jam_selesai:
+          type: string
+          format: time
+          example: "08:00"
+        status:
+          type: string
+          enum: [aktif, tidak_aktif]
+          example: "aktif"
+
+    TeacherInput:
+      type: object
+      required:
+        - nama
+        - nip
+        - email
+        - mapel_id
+      properties:
+        nama:
+          type: string
+          example: "John Doe"
+        nip:
+          type: string
+          example: "123456789"
+        email:
+          type: string
+          format: email
+          example: "john@absenta.com"
+        no_telp:
+          type: string
+          example: "08123456789"
+        mapel_id:
+          type: integer
+          example: 1
+        status:
+          type: string
+          enum: [aktif, tidak_aktif]
+          default: "aktif"
+
+    AttendanceInput:
+      type: object
+      required:
+        - jadwal_id
+        - siswa_id
+        - tanggal
+        - status
+      properties:
+        jadwal_id:
+          type: integer
+          example: 1
+        siswa_id:
+          type: integer
+          example: 1
+        tanggal:
+          type: string
+          format: date
+          example: "2024-01-15"
+        status:
+          type: string
+          enum: [Hadir, Izin, Sakit, Alpa, Dispen]
+          example: "Hadir"
+        keterangan:
+          type: string
+          example: "Hadir tepat waktu"
+
+    SuccessResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        message:
+          type: string
+          example: "Operation completed successfully"
+
+    ErrorResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: false
+        error:
+          type: string
+          example: "Error message"
+        message:
+          type: string
+          example: "Detailed error message"
+
+    HealthResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          type: object
+          properties:
+            server:
+              type: object
+              properties:
+                status:
+                  type: string
+                  example: "healthy"
+                responseTime:
+                  type: integer
+                  example: 15
+                timestamp:
+                  type: string
+                  format: date-time
+            database:
+              type: object
+              properties:
+                status:
+                  type: string
+                  example: "healthy"
+                responseTime:
+                  type: integer
+                  example: 5
+                poolStats:
+                  type: object
+                  properties:
+                    totalConnections:
+                      type: integer
+                      example: 10
+                    freeConnections:
+                      type: integer
+                      example: 8
+            system:
+              type: object
+              properties:
+                uptime:
+                  type: number
+                  example: 3600
+                memory:
+                  type: object
+                  properties:
+                    used:
+                      type: integer
+                      example: 52428800
+                    total:
+                      type: integer
+                      example: 104857600
+                cpu:
+                  type: object
+                  properties:
+                    usage:
+                      type: object
+                      properties:
+                        user:
+                          type: integer
+                          example: 1000000
+                        system:
+                          type: integer
+                          example: 500000
+        message:
+          type: string
+          example: "Detailed health check completed"
