@@ -24,7 +24,7 @@ if (!JWT_SECRET) {
   process.exit(1);
 }
 console.log('🔑 JWT Secret loaded from environment');
-console.log('🔑 JWT Secret configured:', JWT_SECRET.substring(0, 10) + '...');
+console.log('🔑 JWT Secret configured and loaded from environment');
 const saltRounds = 10;
 
 // Middleware setup
@@ -61,11 +61,8 @@ function authenticateToken(req, res, next) {
     const authHeader = req.headers['authorization'];
     const token = authHeader && authHeader.split(' ')[1] || req.cookies.token;
     
-    console.log(`🔍 Auth Debug - URL: ${req.url}`);
-    console.log(`🔍 Auth Debug - Method: ${req.method}`);
-    console.log(`🔍 Auth Debug - Auth Header: ${authHeader}`);
-    console.log(`🔍 Auth Debug - Token: ${token ? 'Present' : 'Missing'}`);
-    console.log(`🔍 Auth Debug - Token Length: ${token ? token.length : 0}`);
+    console.log(`🔍 Auth Request - ${req.method} ${req.url}`);
+    console.log(`🔍 Token Status: ${token ? 'Present' : 'Missing'}`);
     
     if (!token) {
         console.log('❌ Access denied: No token provided');
@@ -75,8 +72,7 @@ function authenticateToken(req, res, next) {
     jwt.verify(token, JWT_SECRET, (err, user) => {
         if (err) {
             console.log('❌ Token verification failed:', err.message);
-            console.log('❌ Token that failed:', token.substring(0, 50) + '...');
-            console.log('🔑 JWT Secret used:', JWT_SECRET.substring(0, 10) + '...');
+            console.log('🔒 Request ID:', req.headers['x-request-id'] || 'N/A');
             return res.status(403).json({ error: 'Invalid or expired token' });
         }
         console.log(`✅ Token verified for user: ${user.username} (${user.role})`);
@@ -1356,6 +1352,32 @@ app.delete('/api/admin/kelas/:id', authenticateToken, requireRole(['admin']), as
 });
 
 // ================================================
+// HELPER FUNCTIONS - Guru Data Normalization
+// ================================================
+
+// Helper function untuk normalisasi guru data
+function normalizeGuruData(requestBody) {
+    const { guru_ids, guru_id, is_multi_guru } = requestBody;
+    
+    // Validasi guru_ids
+    if (!guru_ids || !Array.isArray(guru_ids) || guru_ids.length === 0) {
+        throw new Error('guru_ids harus berupa array dengan minimal 1 guru');
+    }
+    
+    // Normalisasi: ambil guru pertama dari guru_ids sebagai guru_id
+    const normalizedGuruId = parseInt(guru_ids[0]);
+    
+    // Normalisasi: set is_multi_guru berdasarkan jumlah guru
+    const normalizedIsMultiGuru = guru_ids.length > 1;
+    
+    return {
+        guru_id: normalizedGuruId,
+        guru_ids: guru_ids.map(id => parseInt(id)),
+        is_multi_guru: normalizedIsMultiGuru
+    };
+}
+
+// ================================================
 // JADWAL ENDPOINTS - Schedule Management
 // ================================================
 
@@ -1432,6 +1454,12 @@ app.post('/api/admin/jadwal', authenticateToken, requireRole(['admin']), async (
         const { kelas_id, mapel_id, guru_id, guru_ids, is_multi_guru, ruang_id, hari, jam_ke, jam_mulai, jam_selesai } = req.body;
         console.log('➕ Adding schedule:', { kelas_id, mapel_id, guru_id, guru_ids, is_multi_guru, ruang_id, hari, jam_ke, jam_mulai, jam_selesai });
 
+        // Normalize guru data
+        const normalizedGuru = normalizeGuruData(req.body);
+        const normalizedGuruId = normalizedGuru.guru_id;
+        const normalizedGuruIds = normalizedGuru.guru_ids;
+        const normalizedIsMultiGuru = normalizedGuru.is_multi_guru;
+
         // Validation
         if (!kelas_id || !mapel_id || !hari || !jam_ke || !jam_mulai || !jam_selesai) {
             return res.status(400).json({ 
@@ -1440,14 +1468,14 @@ app.post('/api/admin/jadwal', authenticateToken, requireRole(['admin']), async (
             });
         }
 
-        // Validate guru_ids
-        if (!guru_ids || !Array.isArray(guru_ids) || guru_ids.length === 0) {
+        // Validate normalized guru_ids
+        if (normalizedGuruIds.length === 0) {
             return res.status(400).json({ 
                 error: 'Minimal 1 guru harus dipilih',
                 details: 'Pilih setidaknya satu guru untuk jadwal ini'
             });
         }
-        if (guru_ids.length > 3) {
+        if (normalizedGuruIds.length > 3) {
             return res.status(400).json({ 
                 error: 'Maksimal 3 guru per jadwal',
                 details: 'Pilih maksimal 3 guru untuk jadwal ini'
@@ -1469,7 +1497,7 @@ app.post('/api/admin/jadwal', authenticateToken, requireRole(['admin']), async (
         }
 
         // Check teacher availability - same day and time slot for EACH guru
-        for (const currentGuruId of guru_ids) {
+        for (const currentGuruId of normalizedGuruIds) {
             const [teacherConflicts] = await db.execute(
                 `SELECT id_jadwal FROM jadwal 
                  WHERE (guru_id = ? OR JSON_CONTAINS(guru_ids, CAST(? AS JSON))) 
@@ -1528,7 +1556,7 @@ app.post('/api/admin/jadwal', authenticateToken, requireRole(['admin']), async (
         const [result] = await db.execute(
             `INSERT INTO jadwal (kelas_id, mapel_id, guru_id, guru_ids, is_multi_guru, ruang_id, hari, jam_ke, jam_mulai, jam_selesai, status)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'aktif')`,
-            [kelas_id, mapel_id, guru_id, JSON.stringify(guru_ids), is_multi_guru || false, ruang_id || null, hari, jam_ke, jam_mulai, jam_selesai]
+            [kelas_id, mapel_id, normalizedGuruId, JSON.stringify(normalizedGuruIds), normalizedIsMultiGuru, ruang_id || null, hari, jam_ke, jam_mulai, jam_selesai]
         );
 
         console.log('✅ Schedule added successfully');
@@ -1549,19 +1577,25 @@ app.put('/api/admin/jadwal/:id', authenticateToken, requireRole(['admin']), asyn
         const { kelas_id, mapel_id, guru_id, guru_ids, is_multi_guru, ruang_id, hari, jam_ke, jam_mulai, jam_selesai } = req.body;
         console.log('✏️ Updating schedule:', { id, kelas_id, mapel_id, guru_id, guru_ids, is_multi_guru, ruang_id, hari, jam_ke, jam_mulai, jam_selesai });
 
+        // Normalize guru data
+        const normalizedGuru = normalizeGuruData(req.body);
+        const normalizedGuruId = normalizedGuru.guru_id;
+        const normalizedGuruIds = normalizedGuru.guru_ids;
+        const normalizedIsMultiGuru = normalizedGuru.is_multi_guru;
+
         // Validation
         if (!kelas_id || !mapel_id || !hari || !jam_ke || !jam_mulai || !jam_selesai) {
             return res.status(400).json({ error: 'Semua field wajib diisi' });
         }
 
-        // Validate guru_ids
-        if (!guru_ids || !Array.isArray(guru_ids) || guru_ids.length === 0) {
+        // Validate normalized guru_ids
+        if (normalizedGuruIds.length === 0) {
             return res.status(400).json({ 
                 error: 'Minimal 1 guru harus dipilih',
                 details: 'Pilih setidaknya satu guru untuk jadwal ini'
             });
         }
-        if (guru_ids.length > 3) {
+        if (normalizedGuruIds.length > 3) {
             return res.status(400).json({ 
                 error: 'Maksimal 3 guru per jadwal',
                 details: 'Pilih maksimal 3 guru untuk jadwal ini'
@@ -1580,7 +1614,7 @@ app.put('/api/admin/jadwal/:id', authenticateToken, requireRole(['admin']), asyn
         }
 
         // Check teacher availability (excluding current schedule) for EACH guru
-        for (const currentGuruId of guru_ids) {
+        for (const currentGuruId of normalizedGuruIds) {
             const [teacherConflicts] = await db.execute(
                 `SELECT id_jadwal FROM jadwal 
                  WHERE ((guru_id = ? OR JSON_CONTAINS(guru_ids, CAST(? AS JSON))) 
@@ -1636,7 +1670,7 @@ app.put('/api/admin/jadwal/:id', authenticateToken, requireRole(['admin']), asyn
             `UPDATE jadwal 
              SET kelas_id = ?, mapel_id = ?, guru_id = ?, guru_ids = ?, is_multi_guru = ?, ruang_id = ?, hari = ?, jam_ke = ?, jam_mulai = ?, jam_selesai = ?
              WHERE id_jadwal = ?`,
-            [kelas_id, mapel_id, guru_id, JSON.stringify(guru_ids), is_multi_guru || false, ruang_id || null, hari, jam_ke, jam_mulai, jam_selesai, id]
+            [kelas_id, mapel_id, normalizedGuruId, JSON.stringify(normalizedGuruIds), normalizedIsMultiGuru, ruang_id || null, hari, jam_ke, jam_mulai, jam_selesai, id]
         );
 
         if (result.affectedRows === 0) {
@@ -1667,11 +1701,11 @@ app.get('/api/admin/jadwal/preview', authenticateToken, requireRole(['admin']), 
                 j.jam_mulai,
                 j.jam_selesai,
                 j.status,
-                g.nama as nama_guru,
+                j.guru_ids,
+                j.is_multi_guru,
                 m.nama_mapel
             FROM jadwal j
             JOIN kelas k ON j.kelas_id = k.id_kelas
-            JOIN guru g ON j.guru_id = g.id_guru
             JOIN mapel m ON j.mapel_id = m.id_mapel
             WHERE j.status = 'aktif'
         `;
@@ -1686,6 +1720,26 @@ app.get('/api/admin/jadwal/preview', authenticateToken, requireRole(['admin']), 
         query += ' ORDER BY j.kelas_id, j.hari, j.jam_ke';
         
         const [schedules] = await db.execute(query, params);
+        
+        // Enrich dengan nama guru untuk setiap jadwal
+        for (const schedule of schedules) {
+            let guruIds = [];
+            
+            if (schedule.guru_ids && schedule.is_multi_guru) {
+                guruIds = JSON.parse(schedule.guru_ids);
+            } else {
+                guruIds = [schedule.guru_id];
+            }
+            
+            if (guruIds.length > 0) {
+                const [guruList] = await db.execute(
+                    `SELECT id_guru, nama FROM guru WHERE id_guru IN (${guruIds.join(',')})`
+                );
+                schedule.guru_names = guruList.map(g => g.nama).join(', ');
+            } else {
+                schedule.guru_names = '';
+            }
+        }
         
         // Group schedules by class and day
         const groupedSchedules = {};
@@ -1704,7 +1758,7 @@ app.get('/api/admin/jadwal/preview', authenticateToken, requireRole(['admin']), 
             groupedSchedules[className][day][timeSlot] = {
                 id: schedule.id_jadwal,
                 mapel: schedule.nama_mapel,
-                guru: schedule.nama_guru,
+                guru: schedule.guru_names,
                 jam_ke: schedule.jam_ke,
                 jam_mulai: schedule.jam_mulai,
                 jam_selesai: schedule.jam_selesai
@@ -1743,11 +1797,11 @@ app.get('/api/admin/jadwal/export', authenticateToken, requireRole(['admin']), a
                 j.jam_mulai,
                 j.jam_selesai,
                 j.status,
-                g.nama as nama_guru,
+                j.guru_ids,
+                j.is_multi_guru,
                 m.nama_mapel
             FROM jadwal j
             JOIN kelas k ON j.kelas_id = k.id_kelas
-            JOIN guru g ON j.guru_id = g.id_guru
             JOIN mapel m ON j.mapel_id = m.id_mapel
             WHERE j.status = 'aktif'
         `;
@@ -1762,6 +1816,26 @@ app.get('/api/admin/jadwal/export', authenticateToken, requireRole(['admin']), a
         query += ' ORDER BY j.kelas_id, j.hari, j.jam_ke';
         
         const [schedules] = await db.execute(query, params);
+        
+        // Enrich dengan nama guru untuk setiap jadwal
+        for (const schedule of schedules) {
+            let guruIds = [];
+            
+            if (schedule.guru_ids && schedule.is_multi_guru) {
+                guruIds = JSON.parse(schedule.guru_ids);
+            } else {
+                guruIds = [schedule.guru_id];
+            }
+            
+            if (guruIds.length > 0) {
+                const [guruList] = await db.execute(
+                    `SELECT id_guru, nama FROM guru WHERE id_guru IN (${guruIds.join(',')})`
+                );
+                schedule.nama_guru = guruList.map(g => g.nama).join(', ');
+            } else {
+                schedule.nama_guru = '';
+            }
+        }
         
         if (format === 'excel') {
             const ExcelJS = require('exceljs');
