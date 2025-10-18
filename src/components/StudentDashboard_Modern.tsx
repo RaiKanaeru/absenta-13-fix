@@ -607,8 +607,14 @@ const StudentDashboardComponent = ({ userData, onLogout }: StudentDashboardProps
   // Load jadwal by date for edit mode
   const loadJadwalByDate = useCallback(async (tanggal: string) => {
     console.log('[loadJadwalByDate] Called with tanggal:', tanggal, 'siswaId:', siswaId);
-    if (!siswaId || isLoading('jadwal')) {
-      console.log('[loadJadwalByDate] Early return - siswaId:', siswaId, 'isLoading:', isLoading('jadwal'));
+    if (!siswaId) {
+      console.log('[loadJadwalByDate] Early return - no siswaId');
+      return;
+    }
+
+    // Prevent multiple simultaneous calls
+    if (isLoading('jadwal')) {
+      console.log('[loadJadwalByDate] Already loading, skipping');
       return;
     }
 
@@ -674,7 +680,7 @@ const StudentDashboardComponent = ({ userData, onLogout }: StudentDashboardProps
     } finally {
       setLoadingRef.current('jadwal', false);
     }
-  }, [siswaId, isLoading]);
+  }, [siswaId]);
 
   // Load daftar siswa kelas
   const loadDaftarSiswa = useCallback(async () => {
@@ -1043,7 +1049,7 @@ const StudentDashboardComponent = ({ userData, onLogout }: StudentDashboardProps
     if (isEditMode && selectedDate !== today) {
       loadJadwalByDate(selectedDate);
     }
-  }, [isEditMode, selectedDate, today, loadJadwalByDate]);
+  }, [isEditMode, selectedDate, today]);
 
   const getStatusBadgeColor = useCallback((status: string) => {
     switch (status.toLowerCase()) {

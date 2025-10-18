@@ -124,7 +124,7 @@ const Index = () => {
                   })
                 };
                 // ✅ FIX: Data sudah dinormalisasi, langsung set
-                setUserData(updatedUserData);
+                setUserData(normalizeUserData(updatedUserData));
                 console.log('✅ Updated user data with latest profile:', updatedUserData);
               } else {
                 console.log('❌ Profile data not successful:', profileData);

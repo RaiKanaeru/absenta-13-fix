@@ -4183,7 +4183,7 @@ app.get('/api/siswa/:siswaId/jadwal-rentang', authenticateToken, requireRole(['s
         console.log('📅 Getting jadwal for siswa:', siswaId, 'tanggal:', tanggal);
 
         // Check database connection
-        if (!connection) {
+        if (!db) {
             console.error('❌ Database connection not available');
             return res.status(500).json({ 
                 success: false,
@@ -4300,7 +4300,7 @@ app.get('/api/siswa/:siswa_id/jadwal-rentang', authenticateToken, requireRole(['
         console.log('📅 Getting jadwal for siswa (legacy):', siswa_id, 'tanggal:', tanggal);
 
         // Check database connection
-        if (!connection) {
+        if (!db) {
             console.error('❌ Database connection not available');
             return res.status(500).json({ 
                 success: false,
