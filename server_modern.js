@@ -23,8 +23,6 @@ if (!JWT_SECRET) {
   console.error('   Please set JWT_SECRET in your .env file');
   process.exit(1);
 }
-console.log('🔑 JWT Secret loaded from environment');
-console.log('🔑 JWT Secret configured and loaded from environment');
 const saltRounds = 10;
 
 // Middleware setup
@@ -171,7 +169,7 @@ app.post('/api/login', async (req, res) => {
                 `SELECT g.*, m.nama_mapel 
                  FROM guru g 
                  LEFT JOIN mapel m ON g.mapel_id = m.id_mapel 
-                 WHERE g.user_id = ?`,
+                 WHERE g.id_pengguna = ?`,
                 [user.id]
             );
             console.log('🔍 Debug: Guru data found:', guruData.length, 'records');
@@ -208,7 +206,9 @@ app.post('/api/login', async (req, res) => {
             id: user.id,
             username: user.username,
             nama: user.nama,
-            role: user.role === 'perwakilan' ? 'siswa' : user.role.toLowerCase(), // Normalize perwakilan to siswa
+            role: (user.role === 'perwakilan' || user.role.toLowerCase() === 'perwakilan') 
+                  ? 'siswa' 
+                  : user.role.toLowerCase(), // Normalize perwakilan to siswa
             ...additionalData
         };
 
@@ -1416,29 +1416,40 @@ app.get('/api/admin/jadwal', authenticateToken, requireRole(['admin']), async (r
         const [rows] = await db.execute(query);
         console.log(`✅ Schedules retrieved: ${rows.length} items`);
         
-        // Enrich dengan guru_list untuk setiap jadwal
+        // Optimasi: Batch query untuk enrichment nama guru
+        // Kumpulkan semua guru_ids dari seluruh jadwal
+        const allGuruIds = new Set();
         for (const schedule of rows) {
             let guruIds = [];
-            
-            // Dual-mode: cek guru_ids dulu, fallback ke guru_id
+            if (schedule.guru_ids && schedule.is_multi_guru) {
+                guruIds = JSON.parse(schedule.guru_ids);
+            } else {
+                guruIds = [schedule.guru_id];
+            }
+            guruIds.forEach(id => allGuruIds.add(id));
+        }
+
+        // Query semua guru sekaligus (batch)
+        let guruMap = {};
+        if (allGuruIds.size > 0) {
+            const [allGuru] = await db.execute(
+                `SELECT id_guru, nama FROM guru WHERE id_guru IN (${[...allGuruIds].join(',')})`
+            );
+            guruMap = Object.fromEntries(allGuru.map(g => [g.id_guru, g.nama]));
+        }
+
+        // Mapping hasil ke setiap jadwal
+        for (const schedule of rows) {
+            let guruIds = [];
             if (schedule.guru_ids && schedule.is_multi_guru) {
                 guruIds = JSON.parse(schedule.guru_ids);
             } else {
                 guruIds = [schedule.guru_id];
             }
             
-            // Fetch nama semua guru
-            if (guruIds.length > 0) {
-                const [guruList] = await db.execute(
-                    `SELECT id_guru, nama FROM guru WHERE id_guru IN (${guruIds.join(',')})` 
-                );
-                
-                schedule.guru_list = guruList;
-                schedule.guru_names = guruList.map(g => g.nama).join(', ');
-            } else {
-                schedule.guru_list = [];
-                schedule.guru_names = schedule.nama_guru;
-            }
+            const guruNames = guruIds.map(id => guruMap[id] || 'Unknown').filter(n => n !== 'Unknown');
+            schedule.guru_list = guruIds.map(id => ({ id_guru: id, nama: guruMap[id] }));
+            schedule.guru_names = guruNames.join(', ');
         }
         
         res.json({ success: true, data: rows });
@@ -1817,24 +1828,39 @@ app.get('/api/admin/jadwal/export', authenticateToken, requireRole(['admin']), a
         
         const [schedules] = await db.execute(query, params);
         
-        // Enrich dengan nama guru untuk setiap jadwal
+        // Optimasi: Batch query untuk enrichment nama guru
+        // Kumpulkan semua guru_ids dari seluruh jadwal
+        const allGuruIds = new Set();
         for (const schedule of schedules) {
             let guruIds = [];
-            
+            if (schedule.guru_ids && schedule.is_multi_guru) {
+                guruIds = JSON.parse(schedule.guru_ids);
+            } else {
+                guruIds = [schedule.guru_id];
+            }
+            guruIds.forEach(id => allGuruIds.add(id));
+        }
+
+        // Query semua guru sekaligus (batch)
+        let guruMap = {};
+        if (allGuruIds.size > 0) {
+            const [allGuru] = await db.execute(
+                `SELECT id_guru, nama FROM guru WHERE id_guru IN (${[...allGuruIds].join(',')})`
+            );
+            guruMap = Object.fromEntries(allGuru.map(g => [g.id_guru, g.nama]));
+        }
+
+        // Mapping hasil ke setiap jadwal
+        for (const schedule of schedules) {
+            let guruIds = [];
             if (schedule.guru_ids && schedule.is_multi_guru) {
                 guruIds = JSON.parse(schedule.guru_ids);
             } else {
                 guruIds = [schedule.guru_id];
             }
             
-            if (guruIds.length > 0) {
-                const [guruList] = await db.execute(
-                    `SELECT id_guru, nama FROM guru WHERE id_guru IN (${guruIds.join(',')})`
-                );
-                schedule.nama_guru = guruList.map(g => g.nama).join(', ');
-            } else {
-                schedule.nama_guru = '';
-            }
+            const guruNames = guruIds.map(id => guruMap[id] || 'Unknown').filter(n => n !== 'Unknown');
+            schedule.nama_guru = guruNames.join(', ');
         }
         
         if (format === 'excel') {

@@ -300,6 +300,7 @@ const Index = () => {
         );
         
       case 'siswa':
+      case 'perwakilan': // ✅ Tambahkan case ini untuk kompatibilitas
         if (!userData.siswa_id) {
           console.error('❌ Siswa user missing siswa_id');
           handleLogout();
