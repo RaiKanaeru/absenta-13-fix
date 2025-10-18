@@ -17,7 +17,13 @@ const port = 3001;
 app.set('trust proxy', true);
 
 // Configuration
-const JWT_SECRET = process.env.JWT_SECRET || 'absenta-super-secret-key-2025';
+const JWT_SECRET = process.env.JWT_SECRET;
+if (!JWT_SECRET) {
+  console.error('❌ FATAL: JWT_SECRET environment variable is required');
+  console.error('   Please set JWT_SECRET in your .env file');
+  process.exit(1);
+}
+console.log('🔑 JWT Secret loaded from environment');
 console.log('🔑 JWT Secret configured:', JWT_SECRET.substring(0, 10) + '...');
 const saltRounds = 10;
 

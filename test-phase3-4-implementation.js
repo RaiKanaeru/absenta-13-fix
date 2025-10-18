@@ -14,7 +14,7 @@ async function test1LoginPerwakilan() {
   
   try {
     const response = await axios.post(`${BASE_URL}/api/login`, {
-      username: 'siswa1', // Change to actual PERWAKILAN username
+      username: 'siswa2', // Change to actual PERWAKILAN username
       password: 'siswa123'
     });
     

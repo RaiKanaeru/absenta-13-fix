@@ -117,33 +117,6 @@ interface HistoryData {
   };
 }
 
-interface PengajuanIzin {
-  id: number;
-  siswa_id: number;
-  nama_siswa: string;
-  nis: string;
-  nama_kelas: string;
-  jenis_izin: string;
-  tanggal_mulai: string;
-  tanggal_selesai: string;
-  alasan: string;
-  tanggal_pengajuan: string;
-  status_persetujuan: 'pending' | 'disetujui' | 'ditolak';
-  disetujui_oleh?: number;
-  catatan_guru?: string;
-  // Additional properties from backend
-  nama_mapel?: string;
-  nama_guru?: string;
-  jam_mulai?: string;
-  jam_selesai?: string;
-  // Data untuk kelas
-  siswa_izin?: Array<{
-    nama: string;
-    jenis_izin: string;
-    alasan: string;
-  }>;
-  total_siswa_izin?: number;
-}
 
 interface BandingAbsenTeacher {
   id_banding: number;
@@ -2835,9 +2808,11 @@ const TeacherReportsView = ({ user }: { user: TeacherDashboardProps['userData'] 
     </div>
   );
 };
-// Pengajuan Izin View for Teachers - to approve/reject student leave requests
-const PengajuanIzinView = ({ user }: { user: TeacherDashboardProps['userData'] }) => {
-  const [pengajuanList, setPengajuanList] = useState<PengajuanIzin[]>([]);
+// Pengajuan Izin feature removed per business requirements
+
+// Banding Absen View for Teachers - to process student attendance appeals
+const BandingAbsenView = ({ user }: { user: TeacherDashboardProps['userData'] }) => {
+  const [bandingList, setBandingList] = useState<BandingAbsenTeacher[]>([]);
   const [loading, setLoading] = useState(true);
   const [filterPending, setFilterPending] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);

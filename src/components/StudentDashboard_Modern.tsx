@@ -317,7 +317,6 @@ const StudentDashboardComponent = ({ userData, onLogout }: StudentDashboardProps
   //   jenis_izin: '',
   //   alasan: '',
   //   bukti_pendukung: ''
-  const [showFormIzinKelas, setShowFormIzinKelas] = useState(false);
   const [showFormBandingKelas, setShowFormBandingKelas] = useState(false);
   const [daftarSiswa, setDaftarSiswa] = useState<Array<{id: number; nama: string}>>([]);
   
@@ -339,16 +338,6 @@ const StudentDashboardComponent = ({ userData, onLogout }: StudentDashboardProps
   //   alasan_banding: '',
   //   bukti_pendukung: ''
 
-  const [formIzinKelas, setFormIzinKelas] = useState({
-    jadwal_id: '',
-    tanggal_izin: '',
-    siswa_izin: [] as Array<{
-      id?: number;
-      nama: string;
-      jenis_izin: 'sakit' | 'izin' | 'alpa' | 'dispen';
-      alasan: string;
-    }>
-  });
 
   // State untuk form banding absen kelas
   const [formBandingKelas, setFormBandingKelas] = useState({
@@ -388,10 +377,6 @@ const StudentDashboardComponent = ({ userData, onLogout }: StudentDashboardProps
     return riwayatData.slice(startIndex, endIndex);
   }, [riwayatData, riwayatPage, riwayatItemsPerPage]);
 
-  // Memoized total pages
-  const totalPengajuanPages = useMemo(() => 
-    Math.ceil(pengajuanIzin.length / itemsPerPage), [pengajuanIzin.length, itemsPerPage]
-  );
 
   const totalBandingPages = useMemo(() => 
     Math.ceil(bandingAbsen.length / itemsPerPage), [bandingAbsen.length, itemsPerPage]
@@ -439,10 +424,6 @@ const StudentDashboardComponent = ({ userData, onLogout }: StudentDashboardProps
     setIsEditMode(prev => !prev);
   }, []);
 
-  // Memoized pagination handlers
-  const handlePengajuanPageChange = useCallback((page: number) => {
-    setPengajuanIzinPage(page);
-  }, []);
 
   const handleBandingPageChange = useCallback((page: number) => {
     setBandingAbsenPage(page);
@@ -615,101 +596,6 @@ const StudentDashboardComponent = ({ userData, onLogout }: StudentDashboardProps
     }
   }, [siswaId, isLoading]);
 
-  // Load jadwal berdasarkan tanggal yang dipilih
-  const loadJadwalByDate = useCallback(async (tanggal: string) => {
-    if (!siswaId || isLoading('jadwal')) return;
-
-    setLoadingRef.current('jadwal', true);
-    try {
-      const token = localStorage.getItem('token');
-      const cleanToken = token ? token.replace(/['"]/g, '') : '';
-      
-      // Add cache busting and retry logic
-      const timestamp = Date.now();
-      const url = `/api/siswa/${siswaId}/jadwal-rentang?tanggal=${tanggal}&t=${timestamp}`;
-      
-      console.log(`🔄 Loading jadwal for siswa ${siswaId} on ${tanggal}...`);
-      
-      const result = await apiCall(url, {
-        headers: {
-          'Authorization': `Bearer ${cleanToken}`,
-          'Cache-Control': 'no-cache',
-          'Pragma': 'no-cache'
-        },
-        credentials: 'include'
-      });
-
-      console.log(`📊 Jadwal rentang response:`, result);
-
-      if (result && result.success) {
-        console.log('✅ Jadwal rentang loaded successfully');
-        console.log('📊 Raw data from API:', result.data);
-        
-        if (result.success && result.data) {
-          setJadwalBerdasarkanTanggal(result.data);
-          
-          // Initialize kehadiranData for edit mode
-          const initialKehadiran: KehadiranData = {};
-          result.data.forEach((jadwal: JadwalHariIni) => {
-            console.log(`🔍 Processing jadwal ${jadwal.id_jadwal} (edit mode):`, {
-              status: jadwal.status_kehadiran,
-              keterangan: jadwal.keterangan,
-              hasKeterangan: !!(jadwal.keterangan && jadwal.keterangan.trim() !== ''),
-              fullJadwalData: jadwal
-            });
-            
-            // Selalu inisialisasi data, terlepas dari status
-            initialKehadiran[jadwal.id_jadwal] = {
-              status: jadwal.status_kehadiran || 'Hadir',
-              keterangan: jadwal.keterangan || ''
-            };
-            
-            // Debug logging khusus untuk jadwal Kimia (id 1125) - edit mode
-            if (jadwal.id_jadwal === 1125) {
-              console.log(`🔍 SPECIAL DEBUG - Jadwal Kimia (1125) EDIT MODE:`, {
-                nama_mapel: jadwal.nama_mapel,
-                status: jadwal.status_kehadiran,
-                keterangan: jadwal.keterangan,
-                keteranganType: typeof jadwal.keterangan,
-                keteranganLength: jadwal.keterangan?.length,
-                isKeteranganEmpty: !jadwal.keterangan || jadwal.keterangan.trim() === '',
-                fullData: jadwal
-              });
-            }
-            
-            // Debug logging untuk keterangan
-            if (jadwal.keterangan && jadwal.keterangan.trim() !== '') {
-              console.log(`🔍 Loaded keterangan for jadwal ${jadwal.id_jadwal}:`, jadwal.keterangan);
-            }
-          });
-          
-          console.log('📊 Initialized kehadiranData for edit mode:', initialKehadiran);
-          setKehadiranData(initialKehadiran);
-        } else {
-          setJadwalBerdasarkanTanggal([]);
-          setKehadiranData({});
-        }
-      } else {
-        toast({
-          title: "Error memuat jadwal",
-          description: result?.error || 'Failed to load schedule',
-          variant: "destructive"
-        });
-        setJadwalBerdasarkanTanggal([]);
-        setKehadiranData({});
-      }
-    } catch (error) {
-      console.error('Error loading jadwal by date:', error);
-      toast({
-        title: "Error",
-        description: "Network error while loading schedule",
-        variant: "destructive"
-      });
-      setJadwalBerdasarkanTanggal([]);
-    } finally {
-      setLoadingRef.current('jadwal', false);
-    }
-  }, [siswaId, isLoading]);
 
   // loadJadwalBandingByDate - REMOVED (tidak digunakan lagi)
   // const loadJadwalBandingByDate = useCallback(async (tanggal: string) => {
@@ -871,88 +757,10 @@ const StudentDashboardComponent = ({ userData, onLogout }: StudentDashboardProps
     }
   }, [siswaId]);
 
-  // const submitPengajuanIzin = useCallback(async () => {
-  //   // Cek apakah sedang dalam proses submit
-  //   if (submitting) {
-  //     console.log('⚠️ Pengajuan izin sedang diproses, mencegah multiple submission');
-  //     return;
-  //   }
-
-  //   // Validasi form
-  //   if (!formIzin.tanggal_izin || !formIzin.jadwal_id || !formIzin.jenis_izin || !formIzin.alasan) {
-  //     toast({
-  //       title: "Error",
-  //       description: "Semua field wajib diisi",
-  //       variant: "destructive"
-  //     });
-  //     return;
-  //   }
-
-  //   setSubmitting(true);
-  //   setLoadingRef.current('submit', true);
-  //   try {
-  //     const requestData = {
-  //       jadwal_id: parseInt(formIzin.jadwal_id),
-  //       tanggal_mulai: formIzin.tanggal_izin,
-  //       tanggal_selesai: formIzin.tanggal_izin,
-  //       jenis_izin: formIzin.jenis_izin,
-  //       alasan: formIzin.alasan
-  //     };
-
-  //     // Get and clean token from localStorage
-  //     const rawToken = localStorage.getItem('token');
-  //     const cleanToken = rawToken ? rawToken.trim() : '';
-      
-  //     if (!cleanToken) {
-  //       toast({
-  //         title: "Error",
-  //         description: "Token tidak ditemukan. Silakan login ulang.",
-  //         variant: "destructive"
-  //       });
-  //       return;
-  //     }
-      
-  //     const response = await fetch(``, {
-  //       method: 'POST',
-  //       headers: {
-  //         'Content-Type': 'application/json',
-  //         'Authorization': `Bearer ${cleanToken}`
-  //       },
-  //       credentials: 'include',
-  //       body: JSON.stringify(requestData)
-  //     });
-
-  //     if (response.ok) {
-  //       toast({
-  //         title: "Berhasil",
-  //         description: "Pengajuan izin berhasil dikirim"
-  //       });
-        
-  //       loadPengajuanIzin();
-  //     } else {
-  //       const errorData = await response.json();
-  //       console.error('❌ Error submitting pengajuan izin:', errorData);
-  //       toast({
-  //         title: "Error",
-  //         variant: "destructive"
-  //       });
-  //     }
-  //   } catch (error) {
-  //     console.error('Error submitting pengajuan izin:', error);
-  //     toast({
-  //       title: "Error",
-  //       description: "Terjadi kesalahan saat mengirim pengajuan",
-  //       variant: "destructive"
-  //     });
-  //   } finally {
-  //     setSubmitting(false);
-  //     setLoadingRef.current('submit', false);
-  //   }
 
   // Create refs for functions to avoid dependency issues
   const loadJadwalHariIniRef = useRef(loadJadwalHariIni);
   const loadRiwayatDataRef = useRef(loadRiwayatData);
-  const loadPengajuanIzinRef = useRef(loadPengajuanIzin);
   const loadDaftarSiswaRef = useRef(loadDaftarSiswa);
   const loadBandingAbsenRef = useRef(loadBandingAbsen);
 
@@ -974,7 +782,6 @@ const StudentDashboardComponent = ({ userData, onLogout }: StudentDashboardProps
   // Update refs when functions change - using direct assignment to avoid re-render
   loadJadwalHariIniRef.current = loadJadwalHariIni;
   loadRiwayatDataRef.current = loadRiwayatData;
-  loadPengajuanIzinRef.current = loadPengajuanIzin;
   loadDaftarSiswaRef.current = loadDaftarSiswa;
   loadBandingAbsenRef.current = loadBandingAbsen;
 
@@ -986,12 +793,6 @@ const StudentDashboardComponent = ({ userData, onLogout }: StudentDashboardProps
     }
   }, [siswaId, activeTab]);
 
-  // Load jadwal when selected date changes in edit mode
-  useEffect(() => {
-    if (isEditMode && siswaId && selectedDate) {
-      loadJadwalByDate(selectedDate);
-    }
-  }, [isEditMode, selectedDate, siswaId, loadJadwalByDate]);
 
   // Submit kehadiran guru
   const submitKehadiran = useCallback(async () => {
@@ -1079,11 +880,7 @@ const StudentDashboardComponent = ({ userData, onLogout }: StudentDashboardProps
           });
           
           // Reload jadwal to get updated status
-          if (isEditMode) {
-            loadJadwalByDate(selectedDate);
-          } else {
-            loadJadwalHariIni();
-          }
+          loadJadwalHariIni();
         } else {
           const errorData = await response.json();
           throw new Error(errorData.error || `HTTP ${response.status}: ${response.statusText}`);
@@ -1100,7 +897,7 @@ const StudentDashboardComponent = ({ userData, onLogout }: StudentDashboardProps
       setSubmitting(false);
       setLoadingRef.current('submit', false);
     }
-  }, [siswaId, kehadiranData, adaTugasData, selectedDate, isEditMode, loadJadwalByDate, loadJadwalHariIni, executeWithRetryRef, submitting]);
+  }, [siswaId, kehadiranData, adaTugasData, selectedDate, isEditMode, loadJadwalHariIni, executeWithRetryRef, submitting]);
 
   const updateKehadiranStatus = useCallback((jadwalId: number, status: string) => {
     setKehadiranData(prev => ({
@@ -1131,18 +928,16 @@ const StudentDashboardComponent = ({ userData, onLogout }: StudentDashboardProps
     if (!isEditMode) {
       // Switching to edit mode, load today's schedule
       setSelectedDate(today);
-      loadJadwalByDate(today);
     } else {
       // Switching back to normal mode, load today's schedule
       loadJadwalHariIni();
     }
-  }, [isEditMode, today, loadJadwalByDate, loadJadwalHariIni]);
+  }, [isEditMode, today, loadJadwalHariIni]);
 
   // Handle date change
   const handleDateChange = useCallback((newDate: string) => {
     setSelectedDate(newDate);
-    loadJadwalByDate(newDate);
-  }, [loadJadwalByDate]);
+  }, []);
 
   const getStatusBadgeColor = useCallback((status: string) => {
     switch (status.toLowerCase()) {
@@ -1875,495 +1670,6 @@ const StudentDashboardComponent = ({ userData, onLogout }: StudentDashboardProps
     );
   };
 
-  // Render Pengajuan Izin Content untuk Kelas
-  const renderPengajuanIzinContent = () => {
-    return (
-      <div className="space-y-6">
-        {/* Header */}
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-          <div className="min-w-0">
-            <h2 className="text-2xl font-bold text-gray-900 truncate">Pengajuan Izin Kelas</h2>
-            <p className="text-gray-600">Ajukan izin ketidakhadiran untuk teman sekelas</p>
-          </div>
-          {/* Button Ajukan Izin (personal) - REMOVED */}
-          {/* <Button 
-            onClick={() => setShowFormIzin(true)}
-            className="bg-blue-600 hover:bg-blue-700"
-          >
-            <Send className="w-4 h-4 mr-2" />
-            Ajukan Izin
-          </Button> */}
-          <Button 
-            onClick={() => setShowFormIzinKelas(true)}
-            className="bg-green-600 hover:bg-green-700"
-          >
-            <Users className="w-4 h-4 mr-2" />
-            Ajukan Izin Kelas
-          </Button>
-        </div>
-
-        {/* Form Pengajuan Izin (Single Student) - REMOVED */}
-
-        {/* Form Pengajuan Izin Kelas */}
-        {showFormIzinKelas && (
-          <Card>
-            <CardHeader>
-              <CardTitle>Form Pengajuan Izin Kelas</CardTitle>
-              <p className="text-sm text-gray-600">Ajukan izin ketidakhadiran untuk teman sekelas</p>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <Label htmlFor="tanggal_izin_kelas">Tanggal Izin *</Label>
-                  <input
-                    id="tanggal_izin_kelas"
-                    type="date"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md"
-                    value={formIzinKelas.tanggal_izin}
-                    onChange={(e) => {
-                      const tanggal = e.target.value;
-                      setFormIzinKelas({
-                        jadwal_id: '',
-                        tanggal_izin: tanggal,
-                        siswa_izin: []
-                      });
-                      if (tanggal) {
-                        loadJadwalByDate(tanggal);
-                      } else {
-                        setJadwalBerdasarkanTanggal([]);
-                      }
-                    }}
-                    required
-                  />
-                  <p className="text-sm text-gray-500 mt-1">Pilih tanggal izin terlebih dahulu untuk melihat jadwal pelajaran</p>
-                </div>
-                
-                <div>
-                  <Label htmlFor="jadwal_kelas">Jadwal Pelajaran *</Label>
-                  <select 
-                    id="jadwal_kelas"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md"
-                    value={formIzinKelas.jadwal_id}
-                    onChange={(e) => setFormIzinKelas({...formIzinKelas, jadwal_id: e.target.value})}
-                    disabled={!formIzinKelas.tanggal_izin || jadwalBerdasarkanTanggal.length === 0}
-                    required
-                  >
-                    <option value="">
-                      {!formIzinKelas.tanggal_izin 
-                        ? "Pilih tanggal izin terlebih dahulu..." 
-                        : jadwalBerdasarkanTanggal.length === 0 
-                          ? "Tidak ada jadwal untuk tanggal ini" 
-                          : "Pilih jadwal pelajaran..."
-                      }
-                    </option>
-                    {jadwalBerdasarkanTanggal.map((jadwal) => (
-                      <option key={jadwal.id_jadwal} value={jadwal.id_jadwal}>
-                        {jadwal.nama_mapel} - {jadwal.nama_guru} (Jam {jadwal.jam_ke}: {jadwal.jam_mulai}-{jadwal.jam_selesai})
-                      </option>
-                    ))}
-                  </select>
-                  {formIzinKelas.tanggal_izin && jadwalBerdasarkanTanggal.length === 0 && (
-                    <p className="text-sm text-red-500 mt-1">Tidak ada jadwal pelajaran untuk tanggal {formIzinKelas.tanggal_izin}</p>
-                  )}
-                </div>
-              </div>
-
-              {/* Daftar Siswa untuk Izin Kelas */}
-              {formIzinKelas.jadwal_id && (
-                <div className="border-t pt-4">
-                  <div className="space-y-4">
-                    <div className="flex items-center justify-between">
-                      <h3 className="text-lg font-medium">Pilih Siswa yang Izin</h3>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={() => {
-                          const newSiswa = {
-                            id: undefined as number | undefined,
-                            nama: '',
-                            jenis_izin: 'sakit' as const,
-                            alasan: ''
-                          };
-                          // Cek apakah sudah ada siswa kosong (belum dipilih)
-                          const hasEmptySiswa = formIzinKelas.siswa_izin.some(siswa => !siswa.id);
-                          if (hasEmptySiswa) {
-                            toast({
-                              title: "Peringatan",
-                              description: "Selesaikan pemilihan siswa yang ada terlebih dahulu",
-                              variant: "destructive"
-                            });
-                            return;
-                          }
-                          // Cek apakah sudah mencapai maksimal 10 siswa
-                          if (formIzinKelas.siswa_izin.length >= 10) {
-                            toast({
-                              title: "Peringatan",
-                              description: "Maksimal 10 siswa per pengajuan",
-                              variant: "destructive"
-                            });
-                            return;
-                          }
-                          const updatedSiswaIzin = [...formIzinKelas.siswa_izin, newSiswa];
-                          console.log('➕ Adding siswa, total now:', updatedSiswaIzin.length);
-                          setFormIzinKelas({
-                            ...formIzinKelas,
-                            siswa_izin: updatedSiswaIzin
-                          });
-                        }}
-                      >
-                        <Plus className="w-4 h-4 mr-2" />
-                        Tambah Siswa
-                      </Button>
-                    </div>
-
-                    {(() => {
-                      console.log('🔍 Rendering siswa_izin:', formIzinKelas.siswa_izin.length, 'items');
-                      return null;
-                    })()}
-                    {formIzinKelas.siswa_izin.map((siswa, index) => {
-                      console.log(`   └─ [${index}]`, siswa.id, siswa.nama);
-                      return (
-                      <div key={`siswa-izin-${siswa.id || index}-${index}`} className="border rounded-lg p-4 space-y-3">
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                          <div>
-                            <Label htmlFor={`siswa_nama_${index}`}>Nama Siswa *</Label>
-                            <select
-                              id={`siswa_nama_${index}`}
-                              className="w-full px-3 py-2 border border-gray-300 rounded-md"
-                              value={siswa.id || ''}
-                              onChange={(e) => {
-                                const selectedId = parseInt(e.target.value);
-                                
-                                // Cek apakah siswa sudah dipilih di form lain
-                                if (selectedId) {
-                                  const isAlreadySelected = formIzinKelas.siswa_izin.some((s, i) => 
-                                    i !== index && s.id === selectedId
-                                  );
-                                  
-                                  if (isAlreadySelected) {
-                                    toast({
-                                      title: "Peringatan",
-                                      description: "Siswa ini sudah dipilih di form lain",
-                                      variant: "destructive"
-                                    });
-                                    return;
-                                  }
-                                }
-                                
-                                const selectedSiswa = daftarSiswa.find(s => s.id === selectedId);
-                                const updatedSiswa = [...formIzinKelas.siswa_izin];
-                                updatedSiswa[index] = {
-                                  ...siswa,
-                                  id: selectedId,
-                                  nama: selectedSiswa?.nama || ''
-                                };
-                                setFormIzinKelas({...formIzinKelas, siswa_izin: updatedSiswa});
-                              }}
-                              required
-                            >
-                              <option value="">Pilih siswa...</option>
-                              {daftarSiswa.map((s) => {
-                                const isSelected = formIzinKelas.siswa_izin.some((siswa, i) => 
-                                  i !== index && siswa.id === s.id
-                                );
-                                return (
-                                  <option 
-                                    key={s.id} 
-                                    value={s.id}
-                                    disabled={isSelected}
-                                    style={{ 
-                                      opacity: isSelected ? 0.5 : 1,
-                                      backgroundColor: isSelected ? '#f3f4f6' : 'white'
-                                    }}
-                                  >
-                                    {s.nama} {isSelected ? '(Sudah dipilih)' : ''}
-                                  </option>
-                                );
-                              })}
-                            </select>
-                          </div>
-
-                          <div>
-                            <Label htmlFor={`siswa_jenis_${index}`}>Jenis Izin *</Label>
-                            <select
-                              id={`siswa_jenis_${index}`}
-                              className="w-full px-3 py-2 border border-gray-300 rounded-md"
-                              value={siswa.jenis_izin}
-                              onChange={(e) => {
-                                const updatedSiswa = [...formIzinKelas.siswa_izin];
-                                updatedSiswa[index] = {...siswa, jenis_izin: e.target.value as 'sakit' | 'izin' | 'alpa' | 'dispen'};
-                                setFormIzinKelas({...formIzinKelas, siswa_izin: updatedSiswa});
-                              }}
-                              required
-                            >
-                              <option value="sakit">Sakit</option>
-                              <option value="izin">Izin</option>
-                              <option value="alpa">Alpa</option>
-                              <option value="dispen">Dispen</option>
-                            </select>
-                          </div>
-                        </div>
-
-                        <div>
-                          <Label htmlFor={`siswa_alasan_${index}`}>Alasan *</Label>
-                          <textarea
-                            id={`siswa_alasan_${index}`}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-md"
-                            rows={2}
-                            value={siswa.alasan}
-                            onChange={(e) => {
-                              const updatedSiswa = [...formIzinKelas.siswa_izin];
-                              updatedSiswa[index] = {...siswa, alasan: e.target.value};
-                              setFormIzinKelas({...formIzinKelas, siswa_izin: updatedSiswa});
-                            }}
-                            placeholder="Jelaskan alasan ketidakhadiran..."
-                            required
-                          />
-                        </div>
-
-                        <div className="flex justify-end">
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            onClick={() => {
-                              const updatedSiswa = formIzinKelas.siswa_izin.filter((_, i) => i !== index);
-                              setFormIzinKelas({...formIzinKelas, siswa_izin: updatedSiswa});
-                            }}
-                            className="text-red-600 hover:text-red-700"
-                          >
-                            <Trash2 className="w-4 h-4 mr-2" />
-                            Hapus
-                          </Button>
-                        </div>
-                      </div>
-                    );
-                    })}
-
-                    {formIzinKelas.siswa_izin.length === 0 && (
-                      <div className="text-center py-8 text-gray-500">
-                        <Users className="w-12 h-12 mx-auto mb-2 text-gray-400" />
-                        <p>Belum ada siswa yang dipilih</p>
-                        <p className="text-sm">Klik "Tambah Siswa" untuk memilih siswa yang akan izin</p>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
-
-              <div className="flex gap-2 pt-4">
-                <Button 
-                  onClick={submitPengajuanIzinKelas}
-                  disabled={!formIzinKelas.jadwal_id || !formIzinKelas.tanggal_izin || formIzinKelas.siswa_izin.length === 0 || submitting}
-                  className="bg-green-600 hover:bg-green-700"
-                >
-                  {submitting ? (
-                    <>
-                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                      Mengirim...
-                    </>
-                  ) : (
-                    <>
-                      <Send className="w-4 h-4 mr-2" />
-                      Kirim Pengajuan Kelas
-                    </>
-                  )}
-                </Button>
-                <Button 
-                  variant="outline" 
-                  onClick={() => {
-                    setShowFormIzinKelas(false);
-                    setFormIzinKelas({
-                      jadwal_id: '',
-                      tanggal_izin: '',
-                      siswa_izin: []
-                    });
-                  }}
-                >
-                  Batal
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        )}
-
-        {/* Daftar Pengajuan Izin */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <FileText className="w-5 h-5" />
-                Riwayat Pengajuan Izin Kelas
-              </div>
-              <div className="text-right">
-                <div className="text-sm text-gray-600 font-medium">
-                  {pengajuanIzin.length} pengajuan
-                </div>
-                <div className="text-xs text-gray-500">
-                  Halaman {pengajuanIzinPage} dari {Math.ceil(pengajuanIzin.length / itemsPerPage)}
-                </div>
-              </div>
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {pengajuanIzin.length === 0 ? (
-              <div className="text-center py-12">
-                <FileText className="w-16 h-16 mx-auto text-gray-400 mb-4" />
-                <h3 className="text-xl font-semibold text-gray-900 mb-2">Belum Ada Pengajuan</h3>
-                <p className="text-gray-600">Kelas belum memiliki riwayat pengajuan izin</p>
-              </div>
-            ) : (
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Tanggal Pengajuan</TableHead>
-                      <TableHead>Tanggal Izin</TableHead>
-                      <TableHead>Jadwal</TableHead>
-                      <TableHead>Siswa Izin</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>Keterangan</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {pengajuanIzin
-                      .slice((pengajuanIzinPage - 1) * itemsPerPage, pengajuanIzinPage * itemsPerPage)
-                      .map((izin) => (
-                      <TableRow key={izin.id_pengajuan}>
-                        <TableCell>
-                          {new Date(izin.tanggal_pengajuan).toLocaleDateString('id-ID')}
-                        </TableCell>
-                        <TableCell>
-                          {new Date(izin.tanggal_izin).toLocaleDateString('id-ID')}
-                        </TableCell>
-                        <TableCell>
-                          <div className="space-y-1">
-                            <span className="font-medium">{izin.nama_mapel}</span>
-                            <div className="text-sm text-gray-600">
-                              {izin.nama_guru} • {izin.jam_mulai}-{izin.jam_selesai}
-                            </div>
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          {izin.siswa_izin && izin.siswa_izin.length > 0 ? (
-                            <div className="space-y-1">
-                              <div className="font-medium text-sm">
-                                {izin.total_siswa_izin || izin.siswa_izin.length} siswa
-                              </div>
-                              <div className="text-xs text-gray-600 max-w-xs">
-                                {izin.siswa_izin.slice(0, 3).map((s, idx) => (
-                                  <div key={`${s.nama}-${idx}`}>
-                                    {s.nama} ({s.jenis_izin})
-                                  </div>
-                                ))}
-                                {izin.siswa_izin.length > 3 && (
-                                  <div 
-                                    className="text-blue-600 cursor-pointer hover:text-blue-800 hover:underline"
-                                    onClick={() => toggleRowExpansion(izin.id_pengajuan)}
-                                  >
-                                    +{izin.siswa_izin.length - 3} lainnya
-                                  </div>
-                                )}
-                              </div>
-                              {expandedRows.has(izin.id_pengajuan) && izin.siswa_izin.length > 3 && (
-                                <div className="text-xs text-gray-600 max-w-xs mt-2 p-2 bg-gray-50 rounded border">
-                                  {izin.siswa_izin.slice(3).map((s, idx) => (
-                                    <div key={`${s.nama}-${idx + 3}`} className="mb-1">
-                                      {s.nama} ({s.jenis_izin})
-                                    </div>
-                                  ))}
-                                  <div 
-                                    className="text-blue-600 cursor-pointer hover:text-blue-800 hover:underline mt-1"
-                                    onClick={() => toggleRowExpansion(izin.id_pengajuan)}
-                                  >
-                                    Tutup
-                                  </div>
-                                </div>
-                              )}
-                            </div>
-                          ) : (
-                            <Badge variant="outline" className={
-                              izin.jenis_izin === 'sakit' ? 'bg-red-50 text-red-700' :
-                              izin.jenis_izin === 'izin' ? 'bg-blue-50 text-blue-700' :
-                              izin.jenis_izin === 'dispen' ? 'bg-purple-50 text-purple-700' :
-                              'bg-gray-50 text-gray-700'
-                            }>
-                              {izin.jenis_izin.charAt(0).toUpperCase() + izin.jenis_izin.slice(1)}
-                            </Badge>
-                          )}
-                        </TableCell>
-                        <TableCell>
-                          <Badge className={
-                            izin.status === 'disetujui' ? 'bg-green-100 text-green-800' :
-                            izin.status === 'ditolak' ? 'bg-red-100 text-red-800' :
-                            'bg-yellow-100 text-yellow-800'
-                          }>
-                            {izin.status === 'disetujui' ? 'Disetujui' :
-                             izin.status === 'ditolak' ? 'Ditolak' : 'Menunggu'}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>
-                          <div className="space-y-1 max-w-sm">
-                            {izin.siswa_izin && izin.siswa_izin.length > 0 ? (
-                              <div className="text-sm space-y-1">
-                                {izin.siswa_izin.slice(0, 2).map((s, idx) => (
-                                  <div key={`${s.nama}-${idx}`} className="text-xs bg-gray-50 p-1 rounded break-words">
-                                    <strong>{s.nama}:</strong> {s.alasan}
-                                  </div>
-                                ))}
-                                {izin.siswa_izin.length > 2 && (
-                                  <div 
-                                    className="text-xs text-blue-600 cursor-pointer hover:text-blue-800 hover:underline"
-                                    onClick={() => toggleRowExpansion(izin.id_pengajuan)}
-                                  >
-                                    +{izin.siswa_izin.length - 2} alasan lainnya
-                                  </div>
-                                )}
-                                {expandedRows.has(izin.id_pengajuan) && izin.siswa_izin.length > 2 && (
-                                  <div className="text-xs space-y-1 mt-2 p-2 bg-gray-50 rounded border">
-                                    {izin.siswa_izin.slice(2).map((s, idx) => (
-                                      <div key={`${s.nama}-${idx + 2}`} className="bg-white p-1 rounded break-words">
-                                        <strong>{s.nama}:</strong> {s.alasan}
-                                      </div>
-                                    ))}
-                                    <div 
-                                      className="text-blue-600 cursor-pointer hover:text-blue-800 hover:underline mt-1"
-                                      onClick={() => toggleRowExpansion(izin.id_pengajuan)}
-                                    >
-                                      Tutup
-                                    </div>
-                                  </div>
-                                )}
-                              </div>
-                            ) : (
-                              <div className="text-sm break-words">{izin.alasan}</div>
-                            )}
-                            {izin.keterangan_guru && (
-                              <div className="text-xs text-gray-600 bg-gray-50 p-2 rounded break-words">
-                                <strong>Respon Guru:</strong> {izin.keterangan_guru}
-                              </div>
-                            )}
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-                
-                {/* Pagination untuk Pengajuan Izin */}
-                <Pagination
-                  currentPage={pengajuanIzinPage}
-                  totalPages={Math.ceil(pengajuanIzin.length / itemsPerPage)}
-                  onPageChange={setPengajuanIzinPage}
-                />
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      </div>
-    );
-  };
 
   // Render Banding Absen Content
   // Render Banding Absen Content untuk Kelas
@@ -2420,7 +1726,7 @@ const StudentDashboardComponent = ({ userData, onLogout }: StudentDashboardProps
                       });
                       setAttendanceRecords([]); // Reset attendance records
                       if (tanggal) {
-                        loadJadwalByDate(tanggal);
+                        // Load jadwal by date functionality removed
                       } else {
                         setJadwalBerdasarkanTanggal([]);
                       }
