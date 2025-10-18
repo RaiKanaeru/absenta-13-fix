@@ -2298,6 +2298,7 @@ const TeacherReportsView = ({ user }: { user: TeacherDashboardProps['userData'] 
 
 // Banding Absen View for Teachers - to process student attendance appeals
 const BandingAbsenView = ({ user }: { user: TeacherDashboardProps['userData'] }) => {
+// Banding Absen View for Teachers - to process student attendance appeals
   const [bandingList, setBandingList] = useState<BandingAbsenTeacher[]>([]);
   const [loading, setLoading] = useState(true);
   const [filterPending, setFilterPending] = useState(false);
@@ -2330,10 +2331,10 @@ const BandingAbsenView = ({ user }: { user: TeacherDashboardProps['userData'] })
         }
       } catch (error) {
         console.error('Error fetching banding absen:', error);
-        toast({ 
-          title: "Error", 
-          description: "Gagal memuat data banding absen", 
-          variant: "destructive" 
+        toast({
+          title: "Error",
+          description: "Gagal memuat data banding absen",
+          variant: "destructive"
         });
       } finally {
         setLoading(false);
@@ -2352,23 +2353,24 @@ const BandingAbsenView = ({ user }: { user: TeacherDashboardProps['userData'] })
     setCurrentPage(page);
   };
 
-  const handleApprovePengajuan = async (pengajuanId: number, status: 'disetujui' | 'ditolak', catatan: string = '') => {
+  const handleApproveBanding = async (bandingId: number, status: 'disetujui' | 'ditolak', catatan: string = '') => {
     try {
-      await apiCall(`/api/banding-absen/${pengajuanId}/approve`, {
+      await apiCall(`/api/banding-absen/${bandingId}/approve`, {
         method: 'PUT',
         body: JSON.stringify({ 
-          status_persetujuan: status, 
+          status_banding: status, 
           catatan_guru: catatan,
-          disetujui_oleh: user.guru_id || user.id
+          diproses_oleh: user.guru_id || user.id
         }),
       });
-
-      toast({ 
-        title: "Berhasil!", 
-        description: `Pengajuan izin berhasil ${status}` 
+      
+      toast({
+        title: "Berhasil",
+        description: `Banding absen ${status === 'disetujui' ? 'disetujui' : 'ditolak'}`,
+        variant: "default"
       });
       
-      // Refresh the list by refetching data
+      // Refresh the list
       const params = new URLSearchParams({
         page: currentPage.toString(),
         limit: limit.toString(),
@@ -2396,54 +2398,25 @@ const BandingAbsenView = ({ user }: { user: TeacherDashboardProps['userData'] })
   return (
     <Card>
       <CardHeader>
-        <div className="flex flex-col gap-4">
-          <div className="flex items-center justify-between">
-            <CardTitle className="flex items-center gap-2">
-              <FileText className="w-5 h-5" />
-              Pengajuan Izin Siswa
-            </CardTitle>
-            <div className="text-sm text-gray-600">
-              Halaman {currentPage} dari {totalPages}
-            </div>
+        <CardTitle className="flex items-center gap-2">
+          <MessageCircle className="w-5 h-5" />
+          Banding Absen Siswa
+        </CardTitle>
+        <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              id="filter-pending"
+              checked={filterPending}
+              onChange={handleFilterToggle}
+              className="rounded"
+            />
+            <label htmlFor="filter-pending" className="text-sm">
+              Hanya yang belum diproses
+            </label>
           </div>
-          
-          {/* Filter Section */}
-          <div className="flex items-center justify-between bg-gray-50 p-3 rounded-lg">
-            <div className="flex items-center gap-4">
-              <div className="flex items-center gap-2">
-                <div className="w-3 h-3 bg-blue-500 rounded-full"></div>
-                <span className="text-sm font-medium">Total: {totalAll}</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <div className="w-3 h-3 bg-orange-500 rounded-full"></div>
-                <span className="text-sm font-medium">Belum di-acc: {totalPending}</span>
-              </div>
-              {filterPending && (
-                <div className="flex items-center gap-2">
-                  <div className="w-3 h-3 bg-green-500 rounded-full"></div>
-                  <span className="text-sm font-medium">Menampilkan: Belum di-acc</span>
-                </div>
-              )}
-            </div>
-            
-            <Button
-              variant={filterPending ? "default" : "outline"}
-              size="sm"
-              onClick={handleFilterToggle}
-              className={filterPending ? "bg-orange-600 hover:bg-orange-700 text-white" : "border-orange-300 text-orange-600 hover:bg-orange-50"}
-            >
-              {filterPending ? (
-                <>
-                  <Eye className="w-4 h-4 mr-2" />
-                  Tampilkan Semua
-                </>
-              ) : (
-                <>
-                  <Filter className="w-4 h-4 mr-2" />
-                  Filter Belum di-acc ({totalPending})
-                </>
-              )}
-            </Button>
+          <div className="text-sm text-gray-600">
+            {filterPending ? `${totalPending} banding` : `${totalAll} banding`}
           </div>
         </div>
       </CardHeader>
@@ -2481,175 +2454,81 @@ const BandingAbsenView = ({ user }: { user: TeacherDashboardProps['userData'] })
                       {formatDateTime24(banding.tanggal_pengajuan, true)}
                     </TableCell>
                     <TableCell>
+                      <div>
+                        <div className="font-medium">{banding.nama_siswa}</div>
+                        <div className="text-sm text-gray-500">{banding.nis}</div>
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant="outline">{banding.nama_kelas}</Badge>
+                    </TableCell>
+                    <TableCell>
                       <div className="space-y-1">
-                        <div className="text-sm font-medium">
-                          {new Date(banding.tanggal_absen).toLocaleDateString('id-ID')}
+                        <div className="text-sm">
+                          <span className="font-medium">Asli:</span> 
+                          <Badge 
+                            variant={banding.status_asli === 'hadir' ? 'default' : 'destructive'}
+                            className="ml-1"
+                          >
+                            {banding.status_asli}
+                          </Badge>
                         </div>
-                        <div className="text-xs text-gray-500">
-                          Selesai: {new Date(banding.tanggal_absen).toLocaleDateString('id-ID')}
+                        <div className="text-sm">
+                          <span className="font-medium">Diajukan:</span> 
+                          <Badge 
+                            variant={banding.status_diajukan === 'hadir' ? 'default' : 'secondary'}
+                            className="ml-1"
+                          >
+                            {banding.status_diajukan}
+                          </Badge>
                         </div>
                       </div>
                     </TableCell>
                     <TableCell>
-                      <div className="space-y-1">
-                        <span className="font-medium">{(pengajuan as {nama_mapel?: string}).nama_mapel || 'Izin Umum'}</span>
-                        <div className="text-sm text-gray-600">
-                          {(pengajuan as {nama_guru?: string, jam_mulai?: string, jam_selesai?: string}).nama_guru || 'Menunggu Persetujuan'} • {(pengajuan as {jam_mulai?: string, jam_selesai?: string}).jam_mulai || 'Izin Harian'}-{(pengajuan as {jam_mulai?: string, jam_selesai?: string}).jam_selesai || 'Izin Harian'}
-                        </div>
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <div className="space-y-1">
-                        {(pengajuan as {siswa_izin?: Array<{nama: string, jenis_izin: string}>, total_siswa_izin?: number}).siswa_izin && (pengajuan as {siswa_izin?: Array<{nama: string, jenis_izin: string}>}).siswa_izin.length > 0 ? (
-                          <div className="space-y-1">
-                            <div className="font-medium text-sm">
-                              {(pengajuan as {total_siswa_izin?: number, siswa_izin?: Array<{nama: string, jenis_izin: string}>}).total_siswa_izin || (pengajuan as {siswa_izin?: Array<{nama: string, jenis_izin: string}>}).siswa_izin.length} siswa
-                            </div>
-                            <div className="text-xs text-gray-600 max-w-xs">
-                              {(pengajuan as {siswa_izin: Array<{nama: string, jenis_izin: string}>}).siswa_izin.slice(0, 3).map((s: {nama: string, jenis_izin: string}, idx: number) => (
-                                <div key={idx}>
-                                  {s.nama} ({s.jenis_izin})
-                                </div>
-                              ))}
-                              {(pengajuan as {siswa_izin?: Array<{nama: string, jenis_izin: string}>}).siswa_izin.length > 3 && (
-                                <div className="text-blue-600 cursor-pointer hover:text-blue-800 hover:underline">
-                                  +{(pengajuan as {siswa_izin?: Array<{nama: string, jenis_izin: string}>}).siswa_izin.length - 3} lainnya
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                        ) : (
-                          <div className="space-y-1">
-                            <div className="font-medium text-sm text-gray-700">
-                              {banding.nama_siswa}
-                            </div>
-                            <div className="text-xs text-gray-600">
-                              NIS: {banding.nis} - {banding.nama_kelas}
-                            </div>
-                            <Badge variant="outline" className={
-                              banding.status_diajukan === 'sakit' ? 'bg-red-50 text-red-700' :
-                              banding.status_diajukan === 'izin' ? 'bg-blue-50 text-blue-700' :
-                              banding.status_diajukan === 'dispen' ? 'bg-purple-50 text-purple-700' :
-                              'bg-gray-50 text-gray-700'
-                            }>
-                              {banding.status_diajukan.charAt(0).toUpperCase() + banding.status_diajukan.slice(1)}
-                            </Badge>
-                          </div>
+                      <div className="max-w-xs">
+                        <p className="text-sm">{banding.alasan_banding}</p>
+                        {banding.bukti_pendukung && (
+                          <a 
+                            href={banding.bukti_pendukung} 
+                            target="_blank" 
+                            rel="noopener noreferrer"
+                            className="text-blue-600 hover:underline text-xs mt-1 inline-block"
+                          >
+                            Lihat Bukti
+                          </a>
                         )}
                       </div>
                     </TableCell>
                     <TableCell>
-                      <Badge className={
-                        banding.status_banding === 'disetujui' ? 'bg-green-100 text-green-800' :
-                        banding.status_banding === 'ditolak' ? 'bg-red-100 text-red-800' :
-                        'bg-yellow-100 text-yellow-800'
-                      }>
+                      <Badge 
+                        variant={
+                          banding.status_banding === 'pending' ? 'secondary' :
+                          banding.status_banding === 'disetujui' ? 'default' : 'destructive'
+                        }
+                      >
                         {banding.status_banding === 'pending' ? 'Menunggu' :
                          banding.status_banding === 'disetujui' ? 'Disetujui' : 'Ditolak'}
                       </Badge>
                     </TableCell>
                     <TableCell>
-                      <div className="space-y-1 max-w-sm">
-                        {(pengajuan as {siswa_izin?: Array<{nama: string, alasan: string}>}).siswa_izin && (pengajuan as {siswa_izin?: Array<{nama: string, alasan: string}>}).siswa_izin.length > 0 ? (
-                          <div className="text-sm space-y-1">
-                            {(pengajuan as {siswa_izin: Array<{nama: string, alasan: string}>}).siswa_izin.slice(0, 2).map((s: {nama: string, alasan: string}, idx: number) => (
-                              <div key={idx} className="text-xs bg-gray-50 p-1 rounded break-words">
-                                <strong>{s.nama}:</strong> {s.alasan}
-                              </div>
-                            ))}
-                            {(pengajuan as {siswa_izin?: Array<{nama: string, alasan: string}>}).siswa_izin.length > 2 && (
-                              <div className="text-xs text-blue-600 cursor-pointer hover:text-blue-800 hover:underline">
-                                +{(pengajuan as {siswa_izin?: Array<{nama: string, alasan: string}>}).siswa_izin.length - 2} alasan lainnya
-                              </div>
-                            )}
-                          </div>
-                        ) : (
-                          <div className="text-sm break-words">{banding.alasan_banding}</div>
-                        )}
-                        {banding.catatan_guru && (
-                          <div className="text-xs text-gray-600 bg-gray-50 p-2 rounded break-words">
-                            <strong>Respon Guru:</strong> {banding.catatan_guru}
-                          </div>
-                        )}
+                      <div className="flex gap-2">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => handleApproveBanding(banding.id_banding, 'disetujui')}
+                          disabled={banding.status_banding !== 'pending'}
+                        >
+                          <CheckCircle className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => handleApproveBanding(banding.id_banding, 'ditolak')}
+                          disabled={banding.status_banding !== 'pending'}
+                        >
+                          <XCircle className="h-4 w-4" />
+                        </Button>
                       </div>
-                    </TableCell>
-                    <TableCell>
-                      {banding.status_banding === 'pending' && (
-                        <div className="flex gap-2">
-                          <Dialog>
-                            <DialogTrigger asChild>
-                              <Button size="sm" className="bg-green-600 hover:bg-green-700">
-                                <CheckCircle className="w-4 h-4 mr-1" />
-                                Setujui
-                              </Button>
-                            </DialogTrigger>
-                            <DialogContent>
-                              <DialogHeader>
-                                <DialogTitle>Setujui Pengajuan Izin</DialogTitle>
-                              </DialogHeader>
-                              <div className="space-y-4">
-                                <div>
-                                  <p className="text-sm text-gray-600 mb-2">Pengajuan dari: <strong>{banding.nama_siswa}</strong></p>
-                                  <p className="text-sm text-gray-600">Jenis: {banding.status_diajukan}</p>
-                                  <p className="text-sm text-gray-600">Periode: {new Date(banding.tanggal_absen).toLocaleDateString('id-ID')} - {new Date(banding.tanggal_absen).toLocaleDateString('id-ID')}</p>
-                                </div>
-                                <Textarea 
-                                  placeholder="Catatan persetujuan (opsional)" 
-                                  id={`approve-note-${banding.id_banding}`}
-                                />
-                                <Button 
-                                  onClick={() => {
-                                    const textarea = document.getElementById(`approve-note-${banding.id_banding}`) as HTMLTextAreaElement;
-                                    handleApprovePengajuan(banding.id_banding, 'disetujui', textarea.value);
-                                  }}
-                                  className="w-full bg-green-600 hover:bg-green-700"
-                                >
-                                  Setujui Pengajuan Izin
-                                </Button>
-                              </div>
-                            </DialogContent>
-                          </Dialog>
-
-                          <Dialog>
-                            <DialogTrigger asChild>
-                              <Button size="sm" variant="destructive">
-                                <X className="w-4 h-4 mr-1" />
-                                Tolak
-                              </Button>
-                            </DialogTrigger>
-                            <DialogContent>
-                              <DialogHeader>
-                                <DialogTitle>Tolak Pengajuan Izin</DialogTitle>
-                              </DialogHeader>
-                              <div className="space-y-4">
-                                <div>
-                                  <p className="text-sm text-gray-600 mb-2">Pengajuan dari: <strong>{banding.nama_siswa}</strong></p>
-                                  <p className="text-sm text-gray-600">Jenis: {banding.status_diajukan}</p>
-                                </div>
-                                <Textarea 
-                                  placeholder="Alasan penolakan (wajib)" 
-                                  id={`reject-note-${banding.id_banding}`}
-                                  required
-                                />
-                                <Button 
-                                  onClick={() => {
-                                    const textarea = document.getElementById(`reject-note-${banding.id_banding}`) as HTMLTextAreaElement;
-                                    if (textarea.value.trim()) {
-                                      handleApprovePengajuan(banding.id_banding, 'ditolak', textarea.value);
-                                    } else {
-                                      toast({ title: "Error", description: "Alasan penolakan harus diisi", variant: "destructive" });
-                                    }
-                                  }}
-                                  variant="destructive"
-                                  className="w-full"
-                                >
-                                  Tolak Pengajuan Izin
-                                </Button>
-                              </div>
-                            </DialogContent>
-                          </Dialog>
-                        </div>
-                      )}
                     </TableCell>
                   </TableRow>
                 ))}
@@ -2665,7 +2544,7 @@ const BandingAbsenView = ({ user }: { user: TeacherDashboardProps['userData'] })
               Menampilkan {bandingList.length} dari {filterPending ? totalPending : totalAll} banding
               {filterPending && (
                 <span className="ml-2 px-2 py-1 bg-orange-100 text-orange-800 rounded-full text-xs">
-                  Filter: Belum di-acc
+                  Filter: Belum diproses
                 </span>
               )}
             </div>
@@ -2676,36 +2555,12 @@ const BandingAbsenView = ({ user }: { user: TeacherDashboardProps['userData'] })
                 onClick={() => handlePageChange(currentPage - 1)}
                 disabled={currentPage === 1}
               >
-                <ChevronLeft className="w-4 h-4" />
+                <ChevronLeft className="h-4 w-4" />
                 Sebelumnya
               </Button>
-              
-              {/* Page numbers */}
-              {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
-                let pageNum;
-                if (totalPages <= 5) {
-                  pageNum = i + 1;
-                } else if (currentPage <= 3) {
-                  pageNum = i + 1;
-                } else if (currentPage >= totalPages - 2) {
-                  pageNum = totalPages - 4 + i;
-                } else {
-                  pageNum = currentPage - 2 + i;
-                }
-                
-                return (
-                  <Button
-                    key={pageNum}
-                    variant={currentPage === pageNum ? "default" : "outline"}
-                    size="sm"
-                    onClick={() => handlePageChange(pageNum)}
-                    className={currentPage === pageNum ? "bg-blue-600 hover:bg-blue-700" : ""}
-                  >
-                    {pageNum}
-                  </Button>
-                );
-              })}
-              
+              <span className="text-sm text-gray-600">
+                Halaman {currentPage} dari {totalPages}
+              </span>
               <Button
                 variant="outline"
                 size="sm"
@@ -2713,7 +2568,7 @@ const BandingAbsenView = ({ user }: { user: TeacherDashboardProps['userData'] })
                 disabled={currentPage === totalPages}
               >
                 Selanjutnya
-                <ChevronRight className="w-4 h-4" />
+                <ChevronRight className="h-4 w-4" />
               </Button>
             </div>
           </div>
@@ -2722,7 +2577,6 @@ const BandingAbsenView = ({ user }: { user: TeacherDashboardProps['userData'] })
     </Card>
   );
 };
-
 // History View
 const HistoryView = ({ user }: { user: TeacherDashboardProps['userData'] }) => {
   const [historyData, setHistoryData] = useState<HistoryData>({});
