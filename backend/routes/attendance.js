@@ -10,16 +10,16 @@ const router = express.Router();
 router.use(authenticateToken);
 router.use(apiLimiter);
 
-// Submit attendance (for teachers and KETOS)
-router.post('/submit', requireRole(['guru', 'admin', 'KETOS']), async (req, res) => {
+// Submit attendance (for teachers and perwakilan)
+router.post('/submit', requireRole(['guru', 'admin', 'perwakilan']), async (req, res) => {
   try {
     const { jadwal_id, siswa_id, tanggal, status, keterangan } = req.body;
 
-    // RBAC Validation: KETOS tidak boleh input DISPEN
-    if (req.user.role === 'KETOS' && status === 'DISPEN') {
+    // RBAC Validation: Perwakilan tidak boleh input DISPEN
+    if (req.user.role === 'perwakilan' && status === 'DISPEN') {
       return res.status(403).json({
         success: false,
-        error: 'KETOS tidak diperbolehkan menginput status DISPEN. Hanya guru dan admin yang boleh.'
+        error: 'Perwakilan siswa tidak diperbolehkan menginput status DISPEN. Hanya guru dan admin yang boleh.'
       });
     }
 

@@ -9374,7 +9374,8 @@ ALTER TABLE `siswa`
   ADD UNIQUE KEY `id_siswa_UNIQUE` (`id_siswa`),
   ADD UNIQUE KEY `nis_UNIQUE` (`nis`),
   ADD UNIQUE KEY `idx_siswa_nis` (`nis`),
-  ADD UNIQUE KEY `idx_siswa_user_id` (`user_id`),
+  -- ADD UNIQUE KEY `idx_siswa_user_id` (`user_id`),  -- REMOVED: Allow multi-student per representative account
+  ADD KEY `idx_siswa_user_id` (`user_id`),  -- Changed from UNIQUE to regular index
   ADD KEY `fk_siswa_users_idx` (`user_id`),
   ADD KEY `fk_siswa_kelas_idx` (`kelas_id`),
   ADD KEY `idx_siswa_kelas_id` (`kelas_id`),
