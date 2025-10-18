@@ -1590,6 +1590,108 @@ app.post('/api/attendance/submit', authenticateToken, requireRole(['guru', 'admi
 });
 
 // ================================================
+// ATTENDANCE RECAP ENDPOINTS - Daily & Range Summaries
+// ================================================
+
+// Get daily attendance recap for a class
+app.post('/api/attendance/daily-summary', authenticateToken, requireRole(['guru', 'admin', 'perwakilan', 'ketos']), async (req, res) => {
+    try {
+        const { classId, date } = req.body;
+        
+        if (!classId || !date) {
+            return res.status(400).json({ 
+                success: false,
+                error: 'classId dan date harus diisi' 
+            });
+        }
+
+        console.log(`📊 Getting daily summary for class ${classId} on ${date}`);
+        
+        // Get day of week from date
+        const dateObj = new Date(date);
+        const dayOfWeek = dateObj.getDay(); // 0=Sunday, 1=Monday, ..., 6=Saturday
+        
+        // Convert to our format (skip Sunday)
+        if (dayOfWeek === 0) {
+            return res.json({
+                success: true,
+                message: 'No classes on Sunday',
+                data: {
+                    date,
+                    class_id: classId,
+                    total_students: 0,
+                    hadir_count: 0,
+                    tidak_hadir_count: 0,
+                    students: []
+                }
+            });
+        }
+        
+        const dayNum = dayOfWeek; // 1=Monday, ..., 6=Saturday
+        
+        // Import attendanceAggregation dynamically
+        const { getAttendanceSummary } = await import('./backend/services/attendanceAggregation.js');
+        
+        const summary = await getAttendanceSummary(classId, date, dayNum);
+        
+        console.log(`✅ Daily summary generated: ${summary.hadir_count}/${summary.total_students} hadir`);
+        
+        res.json({
+            success: true,
+            data: summary
+        });
+        
+    } catch (error) {
+        console.error('❌ Error getting daily summary:', error);
+        res.status(500).json({ 
+            success: false,
+            error: 'Internal server error: ' + error.message 
+        });
+    }
+});
+
+// Get attendance recap for a date range
+app.post('/api/attendance/range-summary', authenticateToken, requireRole(['guru', 'admin', 'perwakilan', 'ketos']), async (req, res) => {
+    try {
+        const { classId, startDate, endDate } = req.body;
+        
+        if (!classId || !startDate || !endDate) {
+            return res.status(400).json({ 
+                success: false,
+                error: 'classId, startDate, dan endDate harus diisi' 
+            });
+        }
+
+        console.log(`📊 Getting range summary for class ${classId} from ${startDate} to ${endDate}`);
+        
+        // Import attendanceAggregation dynamically
+        const { getAttendanceRangeSummary } = await import('./backend/services/attendanceAggregation.js');
+        
+        const summaries = await getAttendanceRangeSummary(classId, startDate, endDate);
+        
+        console.log(`✅ Range summary generated: ${summaries.length} days`);
+        
+        res.json({
+            success: true,
+            data: {
+                class_id: classId,
+                start_date: startDate,
+                end_date: endDate,
+                total_days: summaries.length,
+                summaries: summaries
+            }
+        });
+        
+    } catch (error) {
+        console.error('❌ Error getting range summary:', error);
+        res.status(500).json({ 
+            success: false,
+            error: 'Internal server error: ' + error.message 
+        });
+    }
+});
+
+// ================================================
 // REPORTS ENDPOINTS - Teacher Attendance Reports
 // ================================================
 

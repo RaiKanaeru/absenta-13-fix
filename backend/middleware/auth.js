@@ -36,12 +36,21 @@ export const authenticateToken = (req, res, next) => {
   }
 };
 
-// Role-based authorization
+// Role-based authorization with case-insensitive role checking
 export const requireRole = (roles) => {
   return (req, res, next) => {
-    if (!roles.includes(req.user.role)) {
+    // Normalize roles to lowercase for comparison
+    const normalizedRoles = roles.map(r => r.toLowerCase());
+    const userRole = req.user.role?.toLowerCase();
+    
+    console.log(`🔍 RBAC Check - Required: ${roles.join(', ')} | User role: ${req.user.role} | Match: ${normalizedRoles.includes(userRole)}`);
+    
+    if (!normalizedRoles.includes(userRole)) {
+      console.log(`❌ RBAC: Access denied for role ${req.user.role}`);
       return res.status(403).json({ error: 'Forbidden' });
     }
+    
+    console.log(`✅ RBAC: Access granted for role ${req.user.role}`);
     next();
   };
 };

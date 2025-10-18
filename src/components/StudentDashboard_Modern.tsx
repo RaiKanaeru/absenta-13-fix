@@ -3178,14 +3178,7 @@ const StudentDashboardComponent = ({ userData, onLogout }: StudentDashboardProps
             <Calendar className="h-4 w-4" />
             <span className="ml-2">Riwayat</span>
           </Button>
-          <Button
-            variant={activeTab === 'pengajuan-izin' ? "default" : "ghost"}
-            className={`w-full justify-start`}
-            onClick={() => {setActiveTab('pengajuan-izin'); setSidebarOpen(false);}}
-          >
-            <FileText className="h-4 w-4" />
-            <span className="ml-2">Pengajuan Izin Kelas</span>
-          </Button>
+          {/* Pengajuan Izin feature removed per business requirements */}
           <Button
             variant={activeTab === 'banding-absen' ? "default" : "ghost"}
             className={`w-full justify-start`}
@@ -3290,7 +3283,7 @@ const StudentDashboardComponent = ({ userData, onLogout }: StudentDashboardProps
           {/* Content */}
           {activeTab === 'kehadiran' && renderKehadiranContent()}
           {activeTab === 'riwayat' && renderRiwayatContent()}
-          {activeTab === 'pengajuan-izin' && renderPengajuanIzinContent()}
+          {/* Pengajuan Izin feature removed per business requirements */}
           {activeTab === 'banding-absen' && renderBandingAbsenContent()}
         </div>
       </div>

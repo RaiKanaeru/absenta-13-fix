@@ -3919,7 +3919,7 @@ const HistoryView = ({ user }: { user: TeacherDashboardProps['userData'] }) => {
 
 // Main TeacherDashboard Component
 export const TeacherDashboard = ({ userData, onLogout }: TeacherDashboardProps) => {
-  const [activeView, setActiveView] = useState<'schedule' | 'history' | 'pengajuan-izin' | 'banding-absen' | 'reports'>('schedule');
+  const [activeView, setActiveView] = useState<'schedule' | 'history' | 'banding-absen' | 'reports'>('schedule');
   const [activeReportView, setActiveReportView] = useState<string | null>(null);
   const [activeSchedule, setActiveSchedule] = useState<Schedule | null>(null);
   const [schedules, setSchedules] = useState<Schedule[]>([]);
@@ -4076,14 +4076,7 @@ export const TeacherDashboard = ({ userData, onLogout }: TeacherDashboardProps) 
             <Clock className="h-4 w-4" />
             {(sidebarOpen || window.innerWidth >= 1024) && <span className="ml-2">Jadwal Hari Ini</span>}
           </Button>
-          <Button
-            variant={activeView === 'pengajuan-izin' ? "default" : "ghost"}
-            className={`w-full justify-start ${sidebarOpen || window.innerWidth >= 1024 ? '' : 'px-2'}`}
-            onClick={() => {setActiveView('pengajuan-izin'); setSidebarOpen(false);}}
-          >
-            <FileText className="h-4 w-4" />
-            {(sidebarOpen || window.innerWidth >= 1024) && <span className="ml-2">Pengajuan Izin</span>}
-          </Button>
+          {/* Pengajuan Izin feature removed per business requirements */}
           <Button
             variant={activeView === 'banding-absen' ? "default" : "ghost"}
             className={`w-full justify-start ${sidebarOpen || window.innerWidth >= 1024 ? '' : 'px-2'}`}
@@ -4204,8 +4197,6 @@ export const TeacherDashboard = ({ userData, onLogout }: TeacherDashboardProps) 
               onSelectSchedule={setActiveSchedule} 
               isLoading={isLoading}
             />
-          ) : activeView === 'pengajuan-izin' ? (
-            <PengajuanIzinView user={user} />
           ) : activeView === 'banding-absen' ? (
             <BandingAbsenView user={user} />
           ) : activeView === 'reports' ? (

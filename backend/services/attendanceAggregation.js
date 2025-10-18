@@ -65,17 +65,54 @@ export function isHadirTercatat(status) {
  * @param {number} hari - Day of week (1-6)
  * @returns {Promise<Array>} - Array of {student_id, final_status}
  */
+/**
+ * Map day number (1-6) to day name
+ * @param {number} dayNum - Day number (1=Senin, 2=Selasa, ..., 6=Sabtu)
+ * @returns {string} - Day name
+ */
+function mapDayNumberToName(dayNum) {
+  const dayMap = {
+    1: 'Senin',
+    2: 'Selasa',
+    3: 'Rabu',
+    4: 'Kamis',
+    5: 'Jumat',
+    6: 'Sabtu'
+  };
+  return dayMap[dayNum] || null;
+}
+
+/**
+ * Map day name to day number
+ * @param {string} dayName - Day name (Senin, Selasa, etc.)
+ * @returns {number} - Day number (1-6)
+ */
+function mapDayNameToNumber(dayName) {
+  const dayMap = {
+    'Senin': 1,
+    'Selasa': 2,
+    'Rabu': 3,
+    'Kamis': 4,
+    'Jumat': 5,
+    'Sabtu': 6
+  };
+  return dayMap[dayName] || null;
+}
+
 export async function computeDailyStatusForClass(classId, dateISO, hari) {
   try {
-    console.log(`🔄 Computing daily status for class ${classId}, date ${dateISO}, hari ${hari}`);
+    // Convert hari to day name if it's a number
+    const hariParam = typeof hari === 'number' ? mapDayNumberToName(hari) : hari;
+    
+    console.log(`🔄 Computing daily status for class ${classId}, date ${dateISO}, hari ${hariParam} (original: ${hari})`);
     
     // Get scheduled slots for the class on this day
     const [slots] = await db.execute(`
       SELECT id_jadwal as id, jam_ke, jam_mulai as start_time, jam_selesai as end_time
       FROM jadwal 
-      WHERE kelas_id = ? AND hari = ?
+      WHERE kelas_id = ? AND hari = ? AND status = 'aktif'
       ORDER BY jam_ke ASC
-    `, [classId, hari]);
+    `, [classId, hariParam]);
     
     if (slots.length === 0) {
       console.log(`⚠️  No scheduled slots found for class ${classId} on day ${hari}`);
@@ -215,28 +252,45 @@ export async function getAttendanceRangeSummary(classId, startDate, endDate) {
   try {
     console.log(`📅 Getting attendance range for class ${classId} from ${startDate} to ${endDate}`);
     
-    // Get all scheduled days in the range
-    const [scheduledDays] = await db.execute(`
-      SELECT DISTINCT hari, tanggal
-      FROM jadwal_pelajaran j
-      CROSS JOIN (
-        SELECT DATE_ADD(?, INTERVAL seq.seq DAY) as tanggal
-        FROM (
-          SELECT 0 as seq UNION SELECT 1 UNION SELECT 2 UNION SELECT 3 UNION SELECT 4 UNION SELECT 5 UNION SELECT 6 UNION SELECT 7 UNION SELECT 8 UNION SELECT 9 UNION SELECT 10 UNION SELECT 11 UNION SELECT 12 UNION SELECT 13 UNION SELECT 14 UNION SELECT 15 UNION SELECT 16 UNION SELECT 17 UNION SELECT 18 UNION SELECT 19 UNION SELECT 20 UNION SELECT 21 UNION SELECT 22 UNION SELECT 23 UNION SELECT 24 UNION SELECT 25 UNION SELECT 26 UNION SELECT 27 UNION SELECT 28 UNION SELECT 29 UNION SELECT 30
-        ) seq
-        WHERE DATE_ADD(?, INTERVAL seq.seq DAY) <= ?
-      ) dates
-      WHERE j.class_id = ? 
-        AND j.hari = DAYOFWEEK(dates.tanggal) - 1
-        AND j.is_active = 1
-        AND dates.tanggal BETWEEN ? AND ?
-      ORDER BY tanggal, hari
-    `, [startDate, startDate, endDate, classId, startDate, endDate]);
+    // Get all dates in the range
+    const dates = [];
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+    
+    for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+      const dateStr = d.toISOString().split('T')[0];
+      const dayOfWeek = d.getDay(); // 0=Sunday, 1=Monday, ..., 6=Saturday
+      
+      // Convert JavaScript day (0-6) to our format (1-6, where 1=Monday)
+      let dayNum;
+      if (dayOfWeek === 0) {
+        // Skip Sunday (not in schedule)
+        continue;
+      } else {
+        dayNum = dayOfWeek; // 1=Monday, 2=Tuesday, ..., 6=Saturday
+      }
+      
+      const dayName = mapDayNumberToName(dayNum);
+      if (!dayName) continue;
+      
+      // Check if there are scheduled classes for this day
+      const [scheduleCheck] = await db.execute(`
+        SELECT COUNT(*) as count
+        FROM jadwal
+        WHERE kelas_id = ? AND hari = ? AND status = 'aktif'
+      `, [classId, dayName]);
+      
+      if (scheduleCheck[0].count > 0) {
+        dates.push({ tanggal: dateStr, hari: dayName, dayNum: dayNum });
+      }
+    }
+    
+    console.log(`📊 Found ${dates.length} scheduled days in range`);
     
     const summaries = [];
     
-    for (const day of scheduledDays) {
-      const summary = await getAttendanceSummary(classId, day.tanggal, day.hari);
+    for (const day of dates) {
+      const summary = await getAttendanceSummary(classId, day.tanggal, day.dayNum);
       summaries.push(summary);
     }
     
