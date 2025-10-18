@@ -436,9 +436,12 @@ const StudentDashboardComponent = ({ userData, onLogout }: StudentDashboardProps
   // Get siswa perwakilan info
   useEffect(() => {
     const abortController = new AbortController();
+    let isMounted = true;
     
     const getSiswaInfo = async () => {
       try {
+        if (!isMounted) return;
+        
         setLoadingRef.current('initial', true);
         setError(null);
         
@@ -447,11 +450,11 @@ const StudentDashboardComponent = ({ userData, onLogout }: StudentDashboardProps
           signal: abortController.signal
         });
         
-        if (result.success) {
+        if (result.success && isMounted) {
           // The API returns data directly, not wrapped in a data property
           const siswaData = result.data || result;
           
-          if (siswaData) {
+          if (siswaData && isMounted) {
           // Batch state updates to prevent multiple re-renders
             setSiswaId(siswaData.id_siswa);
             setKelasInfo(siswaData.nama_kelas);
@@ -472,14 +475,14 @@ const StudentDashboardComponent = ({ userData, onLogout }: StudentDashboardProps
             return prevData;
           });
           }
-        } else {
+        } else if (isMounted) {
           let errorMessage = result.message || 'Gagal memuat informasi siswa';
           
           if (result.error === 'Unauthorized') {
             errorMessage = 'Sesi login Anda telah berakhir. Silakan login kembali.';
             // Redirect to login after showing error
             setTimeout(() => {
-              onLogout();
+              if (isMounted) onLogout();
             }, 2000);
           } else if (result.error === 'Forbidden') {
             errorMessage = 'Akses ditolak. Anda tidak memiliki izin untuk mengakses halaman ini.';
@@ -493,8 +496,8 @@ const StudentDashboardComponent = ({ userData, onLogout }: StudentDashboardProps
           console.error('StudentDashboard: API error:', result.error, errorMessage);
         }
       } catch (error) {
-        if (error.name === 'AbortError') {
-          return; // Request was cancelled, don't show error
+        if (error.name === 'AbortError' || !isMounted) {
+          return; // Request was cancelled or component unmounted, don't show error
         }
         
         console.error('StudentDashboard: Network error getting siswa info:', error);
@@ -507,15 +510,20 @@ const StudentDashboardComponent = ({ userData, onLogout }: StudentDashboardProps
           errorMessage += 'Silakan periksa koneksi internet Anda dan coba lagi.';
         }
         
-        setError(errorMessage);
+        if (isMounted) {
+          setError(errorMessage);
+        }
       } finally {
-        setLoadingRef.current('initial', false);
+        if (isMounted) {
+          setLoadingRef.current('initial', false);
+        }
       }
     };
 
     getSiswaInfo();
     
     return () => {
+      isMounted = false;
       abortController.abort();
     };
   }, [onLogout]);

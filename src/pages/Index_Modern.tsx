@@ -112,15 +112,15 @@ const Index = () => {
                   ...profileInfo,
                   // Map field names for compatibility based on role
                   ...(normalizedUserData.role === 'siswa' && {
-                    siswa_id: profileInfo.id_siswa,
+                    siswa_id: profileInfo.id_siswa || profileInfo.siswa_id,
                     nis: profileInfo.nis,
-                    kelas: profileInfo.nama_kelas,
+                    kelas: profileInfo.nama_kelas || profileInfo.kelas,
                     kelas_id: profileInfo.kelas_id
                   }),
                   ...(normalizedUserData.role === 'guru' && {
                     guru_id: profileInfo.guru_id || profileInfo.id, // Use guru_id if available, fallback to id
                     nip: profileInfo.nip,
-                    mapel: profileInfo.mata_pelajaran
+                    mapel: profileInfo.mata_pelajaran || profileInfo.mapel
                   })
                 };
                 // ✅ FIX: Data sudah dinormalisasi, langsung set
