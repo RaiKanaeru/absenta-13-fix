@@ -73,14 +73,15 @@ const Index = () => {
       if (result.success && result.data && result.data.user) {
           console.log('✅ Existing auth found, user:', result.data.user);
           
-          // Set user data immediately
-          setUserData(normalizeUserData(result.data.user));
+          // Set user data immediately with normalized role
+          const normalizedUserData = normalizeUserData(result.data.user);
+          setUserData(normalizedUserData);
           setCurrentState('dashboard');
           
-          // Load latest profile data based on role
+          // Load latest profile data based on normalized role
           try {
             let profileData;
-            switch (result.data.user.role) {
+            switch (normalizedUserData.role) {
               case 'admin':
                 profileData = await api.get('/api/admin/info');
                 break;
