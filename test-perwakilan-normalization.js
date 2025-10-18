@@ -36,7 +36,7 @@ console.log('\n1. Testing legacy attendance route...');
 
 // Test 2: Check frontend cleanup
 console.log('\n2. Testing frontend cleanup...');
-const fs = require('fs');
+import fs from 'fs';
 const teacherDashboardContent = fs.readFileSync('src/components/TeacherDashboard_Modern.tsx', 'utf8');
 const pengajuanMatches = teacherDashboardContent.match(/pengajuan-izin|PengajuanIzin/gi);
 console.log(`Found ${pengajuanMatches ? pengajuanMatches.length : 0} pengajuan izin references`);
