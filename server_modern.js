@@ -2059,7 +2059,7 @@ app.get('/api/schedule/:id/students', authenticateToken, requireRole(['guru', 'a
 // Submit attendance for a schedule
 app.post('/api/attendance/submit', authenticateToken, requireRole(['guru', 'admin']), async (req, res) => {
     try {
-        const { scheduleId, attendance, notes, guruId } = req.body;
+        const { scheduleId, attendance, notes, guruId, ada_tugas, terlambat } = req.body;
         
         if (!scheduleId || !attendance || !guruId) {
             return res.status(400).json({ error: 'Data absensi tidak lengkap' });
@@ -2096,6 +2096,8 @@ app.post('/api/attendance/submit', authenticateToken, requireRole(['guru', 'admi
 
         for (const [studentId, status] of attendanceEntries) {
             const note = notes[studentId] || '';
+            const studentAdaTugas = ada_tugas ? ada_tugas[studentId] : false; // ✅ BARU
+            const studentTerlambat = terlambat ? terlambat[studentId] : false; // ✅ BARU
             
             // Validate status
             const validStatuses = ['Hadir', 'Izin', 'Sakit', 'Alpa', 'Dispen'];
@@ -2106,7 +2108,7 @@ app.post('/api/attendance/submit', authenticateToken, requireRole(['guru', 'admi
                 });
             }
             
-            console.log(`👤 Processing student ${studentId}: status="${status}", note="${note}"`);
+            console.log(`👤 Processing student ${studentId}: status="${status}", note="${note}", ada_tugas=${studentAdaTugas}, terlambat=${studentTerlambat}`);
             
             // Check if attendance already exists for today
             const [existingAttendance] = await db.execute(
@@ -2119,20 +2121,20 @@ app.post('/api/attendance/submit', authenticateToken, requireRole(['guru', 'admi
                 const currentStatus = existingAttendance[0].current_status;
                 console.log(`🔄 Updating existing attendance ID ${existingId} from "${currentStatus}" to "${status}"`);
                 
-                // Update existing attendance
+                // ✅ UPDATE: Tambah field ada_tugas dan terlambat
                 const [updateResult] = await db.execute(
-                    'UPDATE absensi_siswa SET status = ?, keterangan = ?, waktu_absen = ? WHERE id = ?',
-                    [status, note, `${currentDate} ${currentTime}`, existingId]
+                    'UPDATE absensi_siswa SET status = ?, keterangan = ?, ada_tugas = ?, terlambat = ?, waktu_absen = ? WHERE id = ?',
+                    [status, note, studentAdaTugas, studentTerlambat, `${currentDate} ${currentTime}`, existingId]
                 );
                 
                 console.log(`✅ Updated attendance for student ${studentId}: ${updateResult.affectedRows} rows affected`);
             } else {
                 console.log(`➕ Inserting new attendance for student ${studentId}`);
                 
-                // Insert new attendance
+                // ✅ INSERT: Tambah field ada_tugas dan terlambat
                 const [insertResult] = await db.execute(
-                    'INSERT INTO absensi_siswa (siswa_id, jadwal_id, tanggal, status, keterangan, waktu_absen, guru_id) VALUES (?, ?, ?, ?, ?, ?, ?)',
-                    [studentId, scheduleId, currentDate, status, note, `${currentDate} ${currentTime}`, guruId]
+                    'INSERT INTO absensi_siswa (siswa_id, jadwal_id, tanggal, status, keterangan, guru_id, ada_tugas, terlambat, waktu_absen) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                    [studentId, scheduleId, currentDate, status, note, guruId, studentAdaTugas, studentTerlambat, `${currentDate} ${currentTime}`]
                 );
                 
                 console.log(`✅ Inserted new attendance for student ${studentId}: ID ${insertResult.insertId}`);
@@ -5778,63 +5780,147 @@ app.post('/api/siswa/:siswaId/banding-absen', authenticateToken, requireRole(['s
     }
 });
 
-// Submit banding absen kelas
+// Submit banding absen kelas - SINGLE STUDENT ONLY
 app.post('/api/siswa/:siswaId/banding-absen-kelas', authenticateToken, requireRole(['siswa']), async (req, res) => {
     try {
         const { siswaId } = req.params;
-        const { jadwal_id, tanggal_absen, siswa_banding } = req.body;
-        console.log('📝 Submitting banding absen kelas:', { siswaId, jadwal_id, tanggal_absen, siswaCount: siswa_banding.length });
+        const { jadwal_id, tanggal_absen, siswa_banding, kelas_id } = req.body;
+        console.log('📝 Submitting banding absen kelas (single-student):', { siswaId, jadwal_id, tanggal_absen });
 
-        // Validation
-        if (!jadwal_id || !tanggal_absen || !siswa_banding || siswa_banding.length === 0) {
-            return res.status(400).json({ error: 'Semua field wajib diisi dan minimal 1 siswa harus dipilih' });
+        // ✅ VALIDASI: Hanya 1 siswa per pengajuan
+        if (Array.isArray(siswa_banding)) {
+            return res.status(400).json({
+                success: false,
+                error: 'Sistem hanya menerima 1 siswa per pengajuan banding'
+            });
         }
 
-        // Validate all students have required fields
-        for (const siswa of siswa_banding) {
-            if (!siswa.nama || !siswa.status_asli || !siswa.status_diajukan || !siswa.alasan_banding) {
-                return res.status(400).json({ error: 'Semua siswa harus memiliki nama, status asli, status diajukan, dan alasan banding' });
-            }
+        // ✅ VALIDASI: Field required
+        if (!jadwal_id || !tanggal_absen || !siswa_banding || !kelas_id) {
+            return res.status(400).json({
+                success: false,
+                error: 'Field jadwal_id, tanggal_absen, siswa_banding, dan kelas_id wajib diisi'
+            });
         }
 
-        // Get siswa perwakilan's class
-        const [kelasData] = await db.execute(
-            'SELECT kelas_id FROM siswa WHERE id_siswa = ?',
-            [siswaId]
-        );
-
-        if (kelasData.length === 0) {
-            return res.status(404).json({ error: 'Siswa perwakilan tidak ditemukan' });
+        // ✅ VALIDASI: Data siswa lengkap
+        if (!siswa_banding.nama || !siswa_banding.status_asli || !siswa_banding.status_diajukan || !siswa_banding.alasan) {
+            return res.status(400).json({
+                success: false,
+                error: 'Data siswa tidak lengkap (nama, status_asli, status_diajukan, alasan)'
+            });
         }
-
-        const kelasId = kelasData[0].kelas_id;
 
         // Insert main banding absen record
         const [bandingResult] = await db.execute(
             `INSERT INTO pengajuan_banding_absen (siswa_id, jadwal_id, tanggal_absen, status_asli, status_diajukan, alasan_banding, tanggal_pengajuan, status_banding, kelas_id, jenis_banding)
              VALUES (?, ?, ?, 'kelas', 'kelas', 'Pengajuan banding absen untuk kelas', NOW(), 'pending', ?, 'kelas')`,
-            [siswaId, jadwal_id, tanggal_absen, kelasId]
+            [siswaId, jadwal_id, tanggal_absen, kelas_id]
         );
 
         const bandingId = bandingResult.insertId;
 
-        // Insert individual student records
-        for (const siswa of siswa_banding) {
-            await db.execute(
-                `INSERT INTO banding_absen_detail (banding_id, nama_siswa, status_asli, status_diajukan, alasan_banding, bukti_pendukung)
-                 VALUES (?, ?, ?, ?, ?, ?)`,
-                [bandingId, siswa.nama, siswa.status_asli, siswa.status_diajukan, siswa.alasan_banding, siswa.bukti_pendukung || null]
-            );
-        }
+        // ✅ INSERT: Hanya 1 row
+        await db.execute(
+            `INSERT INTO banding_absen_detail (banding_id, nama_siswa, status_asli, status_diajukan, alasan_banding, bukti_pendukung)
+             VALUES (?, ?, ?, ?, ?, ?)`,
+            [
+                bandingId, 
+                siswa_banding.nama,
+                siswa_banding.status_asli,
+                siswa_banding.status_diajukan,
+                siswa_banding.alasan,
+                siswa_banding.bukti || null
+            ]
+        );
 
-        console.log('✅ Banding absen kelas submitted successfully');
-        res.json({ 
-            message: `Pengajuan banding absen untuk ${siswa_banding.length} siswa berhasil dikirim`,
-            id: bandingId 
+        console.log('✅ Banding absen kelas berhasil diajukan untuk 1 siswa');
+        
+        res.json({
+            success: true,
+            message: 'Banding absen kelas berhasil diajukan',
+            data: { id_banding: bandingId }
         });
     } catch (error) {
-        console.error('❌ Error submitting banding absen kelas:', error);
-        res.status(500).json({ error: 'Internal server error' });
+        console.error('❌ Error banding absen kelas:', error);
+        res.status(500).json({ 
+            success: false, 
+            error: 'Gagal mengajukan banding absen kelas' 
+        });
+    }
+});
+
+// ✅ ENDPOINT BARU: Pengajuan izin 1 siswa per request
+app.post('/api/siswa/:siswaId/pengajuan-izin', authenticateToken, requireRole(['siswa']), async (req, res) => {
+    try {
+        const { siswaId } = req.params;
+        const { 
+            jadwal_id, 
+            tanggal_izin,
+            tanggal_mulai,
+            tanggal_selesai,
+            jam_ke,
+            alasan_izin,
+            jenis_izin = 'sakit',
+            bukti_pendukung,
+            kelas_id
+        } = req.body;
+
+        // ✅ VALIDASI: Field required
+        if (!jadwal_id || !tanggal_izin || !alasan_izin || !kelas_id) {
+            return res.status(400).json({
+                success: false,
+                error: 'Field jadwal_id, tanggal_izin, alasan_izin, dan kelas_id wajib diisi'
+            });
+        }
+
+        // ✅ CEK DUPLIKASI: Izin untuk jadwal + tanggal sama
+        const [existing] = await db.execute(
+            `SELECT id_izin FROM pengajuan_izin_siswa 
+             WHERE siswa_id = ? AND jadwal_id = ? AND tanggal_izin = ?`,
+            [siswaId, jadwal_id, tanggal_izin]
+        );
+
+        if (existing.length > 0) {
+            return res.status(400).json({
+                success: false,
+                error: 'Anda sudah mengajukan izin untuk jadwal dan tanggal ini'
+            });
+        }
+
+        // ✅ INSERT: 1 row saja
+        const [result] = await db.execute(
+            `INSERT INTO pengajuan_izin_siswa 
+             (siswa_id, jadwal_id, tanggal_izin, tanggal_mulai, tanggal_selesai, 
+              jam_ke, alasan_izin, jenis_izin, bukti_pendukung, kelas_id)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [
+                siswaId, 
+                jadwal_id, 
+                tanggal_izin,
+                tanggal_mulai || tanggal_izin,
+                tanggal_selesai || tanggal_izin,
+                jam_ke,
+                alasan_izin,
+                jenis_izin,
+                bukti_pendukung,
+                kelas_id
+            ]
+        );
+
+        console.log(`✅ Pengajuan izin berhasil diajukan: ${result.insertId}`);
+        
+        res.json({
+            success: true,
+            message: 'Pengajuan izin berhasil diajukan',
+            data: { id_izin: result.insertId }
+        });
+    } catch (error) {
+        console.error('❌ Error pengajuan izin:', error);
+        res.status(500).json({ 
+            success: false, 
+            error: 'Gagal mengajukan izin' 
+        });
     }
 });
 
