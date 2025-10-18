@@ -511,11 +511,11 @@ const StudentDashboardComponent = ({ userData, onLogout }: StudentDashboardProps
         }
         
         if (isMounted) {
-          setError(errorMessage);
+        setError(errorMessage);
         }
       } finally {
         if (isMounted) {
-          setLoadingRef.current('initial', false);
+        setLoadingRef.current('initial', false);
         }
       }
     };
@@ -604,80 +604,73 @@ const StudentDashboardComponent = ({ userData, onLogout }: StudentDashboardProps
     }
   }, [siswaId, isLoading]);
 
+  // Load jadwal by date for edit mode
+  const loadJadwalByDate = useCallback(async (tanggal: string) => {
+    if (!siswaId || isLoading('jadwal')) return;
 
-  // loadJadwalBandingByDate - REMOVED (tidak digunakan lagi)
-  // const loadJadwalBandingByDate = useCallback(async (tanggal: string) => {
-  //   if (!siswaId || isLoading('jadwal')) return;
-
-  //   setLoadingRef.current('jadwal', true);
-  //   try {
-  //     const token = localStorage.getItem('token');
-  //     const cleanToken = token ? token.replace(/['"]/g, '') : '';
+    setLoadingRef.current('jadwal', true);
+    try {
+      const token = localStorage.getItem('token');
+      const cleanToken = token ? token.replace(/['"]/g, '') : '';
       
-  //     const response = await fetch(`/api/siswa/${siswaId}/jadwal-rentang?tanggal=${tanggal}`, {
-  //       headers: {
-  //         'Authorization': `Bearer ${cleanToken}`
-  //       },
-  //       credentials: 'include'
-  //     });
+      const response = await fetch(`/api/siswa/${siswaId}/jadwal-rentang?tanggal=${tanggal}`, {
+        headers: {
+          'Authorization': `Bearer ${cleanToken}`
+        },
+        credentials: 'include'
+      });
 
-  //     if (response.ok) {
-  //       const result = await response.json();
+      if (response.ok) {
+        const result = await response.json();
         
-  //       if (result.success && result.data) {
-  //         setJadwalBerdasarkanTanggal(result.data);
+        if (result.success && result.data) {
+          setJadwalBerdasarkanTanggal(result.data);
           
-  //         // Initialize kehadiranData for banding mode
-  //         const initialKehadiran: KehadiranData = {};
-  //         result.data.forEach((jadwal: JadwalHariIni) => {
-  //           if (jadwal.status_kehadiran && jadwal.status_kehadiran !== 'belum_diambil') {
-  //             initialKehadiran[jadwal.id_jadwal] = {
-  //               status: jadwal.status_kehadiran,
-  //               keterangan: jadwal.keterangan || ''
-  //             };
-  //           } else {
-  //             // Default to 'Hadir' for new entries, but allow user to change
-  //             initialKehadiran[jadwal.id_jadwal] = {
-  //               status: 'Hadir',
-  //               keterangan: ''
-  //             };
-  //           }
-  //         });
-  //         setKehadiranData(initialKehadiran);
-  //       } else {
-  //         setJadwalBerdasarkanTanggal([]);
-  //         setKehadiranData({});
-  //       }
-  //     } else {
-  //       // Check if response is JSON before trying to parse
-  //       const contentType = response.headers.get('content-type');
-  //       if (contentType && contentType.includes('application/json')) {
-  //         const errorData = await response.json();
-  //         toast({
-  //           title: "Error memuat jadwal",
-  //           description: errorData.error || 'Failed to load schedule',
-  //           variant: "destructive"
-  //         });
-  //       } else {
-  //         toast({
-  //           title: "Error memuat jadwal",
-  //           description: `HTTP ${response.status}: ${response.statusText}`,
-  //           variant: "destructive"
-  //         });
-  //       }
-  //       setJadwalBerdasarkanTanggal([]);
-  //     }
-  //   } catch (error) {
-  //     console.error('Error loading jadwal banding by date:', error);
-  //     toast({
-  //       title: "Error",
-  //       description: "Network error while loading schedule",
-  //       variant: "destructive"
-  //     });
-  //     setJadwalBerdasarkanTanggal([]);
-  //   } finally {
-  //     setLoadingRef.current('jadwal', false);
-  //   }
+          // Initialize kehadiranData for edit mode
+          const initialKehadiran: KehadiranData = {};
+          result.data.forEach((jadwal: JadwalHariIni) => {
+            initialKehadiran[jadwal.id_jadwal] = {
+              status: jadwal.status_kehadiran && jadwal.status_kehadiran !== 'belum_diambil' 
+                ? jadwal.status_kehadiran 
+                : 'Hadir',
+              keterangan: jadwal.keterangan || ''
+            };
+          });
+          setKehadiranData(initialKehadiran);
+        } else {
+          setJadwalBerdasarkanTanggal([]);
+          setKehadiranData({});
+        }
+      } else {
+        const contentType = response.headers.get('content-type');
+        if (contentType && contentType.includes('application/json')) {
+          const errorData = await response.json();
+          toast({
+            title: "Error memuat jadwal",
+            description: errorData.error || 'Failed to load schedule',
+            variant: "destructive"
+          });
+        } else {
+          toast({
+            title: "Error memuat jadwal",
+            description: `HTTP ${response.status}: ${response.statusText}`,
+            variant: "destructive"
+          });
+        }
+        setJadwalBerdasarkanTanggal([]);
+      }
+    } catch (error) {
+      console.error('Error loading jadwal by date:', error);
+      toast({
+        title: "Error",
+        description: "Network error while loading schedule",
+        variant: "destructive"
+      });
+      setJadwalBerdasarkanTanggal([]);
+    } finally {
+      setLoadingRef.current('jadwal', false);
+    }
+  }, [siswaId, isLoading]);
 
   // Load daftar siswa kelas
   const loadDaftarSiswa = useCallback(async () => {
@@ -924,6 +917,79 @@ const StudentDashboardComponent = ({ userData, onLogout }: StudentDashboardProps
     }
   }, [siswaId, kehadiranData, adaTugasData, selectedDate, isEditMode, loadJadwalHariIni, executeWithRetryRef, submitting]);
 
+  // Submit banding kelas
+  const submitBandingKelas = useCallback(async () => {
+    if (submitting) {
+      console.log('Submit already in progress');
+      return;
+    }
+
+    // Validation
+    if (!formBandingKelas.jadwal_id || !formBandingKelas.tanggal_absen) {
+      toast({ title: "Error", description: "Pilih jadwal dan tanggal terlebih dahulu", variant: "destructive" });
+      return;
+    }
+
+    if (!formBandingKelas.siswa_banding.nama || !formBandingKelas.siswa_banding.alasan.trim()) {
+      toast({ title: "Error", description: "Nama siswa dan alasan wajib diisi", variant: "destructive" });
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      const token = localStorage.getItem('token');
+      const cleanToken = token ? token.replace(/['"]/g, '') : '';
+
+      // Build single-student payload per backend contract
+      const payload = {
+        jadwal_id: parseInt(formBandingKelas.jadwal_id),
+        tanggal_absen: formBandingKelas.tanggal_absen,
+        siswa_banding: {
+          nama: formBandingKelas.siswa_banding.nama,
+          status_asli: formBandingKelas.siswa_banding.status_asli,
+          status_diajukan: formBandingKelas.siswa_banding.status_diajukan,
+          alasan_banding: formBandingKelas.siswa_banding.alasan
+        },
+        kelas_id: siswaId
+      };
+
+      const response = await fetch(`/api/siswa/${siswaId}/banding-absen-kelas`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${cleanToken}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(payload),
+        credentials: 'include'
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        toast({ title: "Berhasil", description: result.message || "Banding kelas berhasil diajukan" });
+        
+        // Reset form
+        setFormBandingKelas({
+          jadwal_id: '',
+          tanggal_absen: '',
+          siswa_banding: { nama: '', status_asli: 'alpa', status_diajukan: 'hadir', alasan: '' }
+        });
+        setShowFormBandingKelas(false);
+        
+        // Refresh data
+        if (loadBandingAbsenRef.current) loadBandingAbsenRef.current();
+        if (loadRiwayatDataRef.current) loadRiwayatDataRef.current();
+      } else {
+        const errorData = await response.json();
+        toast({ title: "Error", description: errorData.error || "Gagal mengajukan banding", variant: "destructive" });
+      }
+    } catch (error) {
+      console.error('Error submitting banding kelas:', error);
+      toast({ title: "Error", description: "Network error", variant: "destructive" });
+    } finally {
+      setSubmitting(false);
+    }
+  }, [formBandingKelas, submitting, siswaId]);
+
   const updateKehadiranStatus = useCallback((jadwalId: number, status: string) => {
     setKehadiranData(prev => ({
       ...prev,
@@ -962,7 +1028,17 @@ const StudentDashboardComponent = ({ userData, onLogout }: StudentDashboardProps
   // Handle date change
   const handleDateChange = useCallback((newDate: string) => {
     setSelectedDate(newDate);
-  }, []);
+    if (isEditMode) {
+      loadJadwalByDate(newDate);
+    }
+  }, [isEditMode, loadJadwalByDate]);
+
+  // Load jadwal when entering edit mode or date changes
+  useEffect(() => {
+    if (isEditMode && selectedDate !== today) {
+      loadJadwalByDate(selectedDate);
+    }
+  }, [isEditMode, selectedDate, today, loadJadwalByDate]);
 
   const getStatusBadgeColor = useCallback((status: string) => {
     switch (status.toLowerCase()) {
@@ -1747,7 +1823,7 @@ const StudentDashboardComponent = ({ userData, onLogout }: StudentDashboardProps
                       setFormBandingKelas({
                         jadwal_id: '',
                         tanggal_absen: tanggal,
-                        siswa_banding: []
+                        siswa_banding: { nama: '', status_asli: 'alpa', status_diajukan: 'hadir', alasan: '' }
                       });
                       setAttendanceRecords([]); // Reset attendance records
                       if (tanggal) {
@@ -1797,173 +1873,74 @@ const StudentDashboardComponent = ({ userData, onLogout }: StudentDashboardProps
                 </div>
               </div>
 
-              {/* Daftar Siswa untuk Banding Kelas */}
+              {/* Form Siswa untuk Banding Kelas (Single Student) */}
               {formBandingKelas.jadwal_id && (
                 <div className="border-t pt-4">
                   <div className="space-y-4">
-                    <div className="flex items-center justify-between">
-                      <h3 className="text-lg font-medium">Pilih Siswa untuk Banding</h3>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={() => {
-                          const newSiswa = {
-                            id: undefined as number | undefined,
-                            nama: '',
-                            status_asli: 'alpa' as const,
-                            status_diajukan: 'hadir' as const,
-                            alasan_banding: ''
-                          };
-                          // Cek apakah sudah ada siswa kosong (belum dipilih)
-                          const hasEmptySiswa = formBandingKelas.siswa_banding.some(siswa => !siswa.id);
-                          if (hasEmptySiswa) {
-                            toast({
-                              title: "Peringatan",
-                              description: "Selesaikan pemilihan siswa yang ada terlebih dahulu",
-                              variant: "destructive"
-                            });
-                            return;
-                          }
-                          // Cek apakah sudah mencapai maksimal 10 siswa
-                          if (formBandingKelas.siswa_banding.length >= 10) {
-                            toast({
-                              title: "Peringatan",
-                              description: "Maksimal 10 siswa per pengajuan",
-                              variant: "destructive"
-                            });
-                            return;
-                          }
-                          setFormBandingKelas({
-                            ...formBandingKelas,
-                            siswa_banding: [...formBandingKelas.siswa_banding, newSiswa]
-                          });
-                        }}
-                      >
-                        <Plus className="w-4 h-4 mr-2" />
-                        Tambah Siswa
-                      </Button>
-                    </div>
-
-                    {formBandingKelas.siswa_banding.map((siswa, index) => (
-                      <div key={`siswa-banding-${siswa.id || index}-${index}`} className="border rounded-lg p-4 space-y-3">
+                    <h3 className="text-lg font-medium">Data Siswa untuk Banding</h3>
+                    
+                    <div className="border rounded-lg p-4 space-y-3">
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                           <div>
-                            <Label htmlFor={`banding_siswa_nama_${index}`}>Nama Siswa *</Label>
+                          <Label htmlFor="banding_siswa_nama">Nama Siswa *</Label>
                             <select
-                              id={`banding_siswa_nama_${index}`}
+                            id="banding_siswa_nama"
                               className="w-full px-3 py-2 border border-gray-300 rounded-md"
-                              value={siswa.id || ''}
+                            value={formBandingKelas.siswa_banding.nama}
                               onChange={(e) => {
-                                const selectedId = parseInt(e.target.value);
-                                
-                                // Cek apakah siswa sudah dipilih di form lain
-                                if (selectedId) {
-                                  const isAlreadySelected = formBandingKelas.siswa_banding.some((s, i) => 
-                                    i !== index && s.id === selectedId
-                                  );
-                                  
-                                  if (isAlreadySelected) {
-                                    toast({
-                                      title: "Peringatan",
-                                      description: "Siswa ini sudah dipilih di form lain",
-                                      variant: "destructive"
-                                    });
-                                    return;
-                                  }
+                              const selectedSiswa = daftarSiswa.find(s => s.nama === e.target.value);
+                              const attendanceRecord = attendanceRecords.find(r => r.siswa_id === selectedSiswa?.id);
+                              
+                              setFormBandingKelas({
+                                ...formBandingKelas,
+                                siswa_banding: {
+                                  ...formBandingKelas.siswa_banding,
+                                  nama: e.target.value,
+                                  status_asli: (attendanceRecord?.status as 'hadir' | 'izin' | 'sakit' | 'alpa' | 'dispen') || 'alpa'
                                 }
-                                
-                                // Find attendance record
-                                const attendanceRecord = attendanceRecords.find(r => r.siswa_id === selectedId);
-                                const selectedSiswa = daftarSiswa.find(s => s.id === selectedId);
-                                
-                                // Check if student has attendance record
-                                if (attendanceRecord && !attendanceRecord.has_attendance) {
-                                  toast({
-                                    title: "Peringatan",
-                                    description: "Siswa ini belum diabsen oleh guru untuk jadwal ini",
-                                    variant: "destructive"
-                                  });
-                                }
-                                
-                                const updatedSiswa = [...formBandingKelas.siswa_banding];
-                                updatedSiswa[index] = {
-                                  ...siswa,
-                                  id: selectedId,
-                                  nama: selectedSiswa?.nama || '',
-                                  status_asli: (attendanceRecord?.status as 'hadir' | 'izin' | 'sakit' | 'alpa' | 'dispen') || 'alpa', // Auto-fill dari database
-                                  status_diajukan: 'hadir', // Default diajukan ke hadir
-                                  alasan_banding: ''
-                                };
-                                setFormBandingKelas({...formBandingKelas, siswa_banding: updatedSiswa});
+                              });
                               }}
                               required
                             >
                               <option value="">Pilih siswa...</option>
                               {daftarSiswa.map((s) => {
-                                const isSelected = formBandingKelas.siswa_banding.some((siswa, i) => 
-                                  i !== index && siswa.id === s.id
-                                );
                                 const attendanceRecord = attendanceRecords.find(r => r.siswa_id === s.id);
-                                const hasAttendance = attendanceRecord?.has_attendance || false;
-                                
                                 return (
-                                  <option 
-                                    key={s.id} 
-                                    value={s.id}
-                                    disabled={isSelected || !hasAttendance}
-                                    style={{ 
-                                      opacity: (isSelected || !hasAttendance) ? 0.5 : 1,
-                                      backgroundColor: (isSelected || !hasAttendance) ? '#f3f4f6' : 'white'
-                                    }}
-                                  >
-                                    {s.nama}
-                                    {isSelected ? ' (Sudah dipilih)' : ''}
-                                    {!hasAttendance && !isSelected ? ' (Belum diabsen)' : ''}
-                                    {hasAttendance && attendanceRecord?.status ? ` - ${attendanceRecord.status}` : ''}
+                                <option key={s.id} value={s.nama}>
+                                  {s.nama} {attendanceRecord ? `(${attendanceRecord.status})` : '(Belum ada catatan)'}
                                   </option>
                                 );
                               })}
                             </select>
                           </div>
 
-                          <div className="grid grid-cols-2 gap-2">
                             <div>
-                              <Label htmlFor={`banding_status_asli_${index}`}>
-                                Status Tercatat *
-                                <span className="text-xs text-gray-500 ml-2">(Otomatis dari sistem)</span>
-                              </Label>
-                              <select
-                                id={`banding_status_asli_${index}`}
-                                className="w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-100 cursor-not-allowed"
-                                value={siswa.status_asli}
-                                disabled
-                                required
-                              >
-                                <option value="">Pilih status...</option>
-                                <option value="hadir">Hadir</option>
-                                <option value="izin">Izin</option>
-                                <option value="sakit">Sakit</option>
-                                <option value="alpa">Alpa</option>
-                                <option value="dispen">Dispen</option>
-                              </select>
-                              {siswa.status_asli && (
-                                <p className="text-xs text-gray-600 mt-1">
-                                  Status ini diambil dari catatan guru
-                                </p>
-                              )}
+                          <Label htmlFor="banding_siswa_status_asli">Status Asli</Label>
+                          <input
+                            id="banding_siswa_status_asli"
+                            type="text"
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-100"
+                            value={formBandingKelas.siswa_banding.status_asli}
+                            readOnly
+                          />
+                        </div>
                             </div>
 
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                             <div>
-                              <Label htmlFor={`banding_status_diajukan_${index}`}>Status Diajukan *</Label>
+                          <Label htmlFor="banding_siswa_status_diajukan">Status Diajukan *</Label>
                               <select
-                                id={`banding_status_diajukan_${index}`}
+                            id="banding_siswa_status_diajukan"
                                 className="w-full px-3 py-2 border border-gray-300 rounded-md"
-                                value={siswa.status_diajukan}
+                            value={formBandingKelas.siswa_banding.status_diajukan}
                                 onChange={(e) => {
-                                  const updatedSiswa = [...formBandingKelas.siswa_banding];
-                                  updatedSiswa[index] = {...siswa, status_diajukan: e.target.value as 'hadir' | 'izin' | 'sakit' | 'alpa' | 'dispen'};
-                                  setFormBandingKelas({...formBandingKelas, siswa_banding: updatedSiswa});
+                              setFormBandingKelas({
+                                ...formBandingKelas,
+                                siswa_banding: {
+                                  ...formBandingKelas.siswa_banding,
+                                  status_diajukan: e.target.value as 'hadir' | 'izin' | 'sakit' | 'alpa' | 'dispen'
+                                }
+                              });
                                 }}
                                 required
                               >
@@ -1971,54 +1948,32 @@ const StudentDashboardComponent = ({ userData, onLogout }: StudentDashboardProps
                                 <option value="izin">Izin</option>
                                 <option value="sakit">Sakit</option>
                                 <option value="alpa">Alpa</option>
-                                <option value="dispen">Dispen</option>
+                            <option value="dispen">Dispensasi</option>
                               </select>
-                            </div>
                           </div>
                         </div>
 
                         <div>
-                          <Label htmlFor={`banding_alasan_${index}`}>Alasan Banding *</Label>
+                        <Label htmlFor="banding_siswa_alasan">Alasan Banding *</Label>
                           <textarea
-                            id={`banding_alasan_${index}`}
+                          id="banding_siswa_alasan"
                             className="w-full px-3 py-2 border border-gray-300 rounded-md"
-                            rows={2}
-                            value={siswa.alasan_banding}
+                          rows={3}
+                          value={formBandingKelas.siswa_banding.alasan}
                             onChange={(e) => {
-                              const updatedSiswa = [...formBandingKelas.siswa_banding];
-                              updatedSiswa[index] = {...siswa, alasan_banding: e.target.value};
-                              setFormBandingKelas({...formBandingKelas, siswa_banding: updatedSiswa});
+                            setFormBandingKelas({
+                              ...formBandingKelas,
+                              siswa_banding: {
+                                ...formBandingKelas.siswa_banding,
+                                alasan: e.target.value
+                              }
+                            });
                             }}
                             placeholder="Jelaskan alasan mengapa status absen perlu diubah..."
                             required
                           />
                         </div>
-
-                        <div className="flex justify-end">
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            onClick={() => {
-                              const updatedSiswa = formBandingKelas.siswa_banding.filter((_, i) => i !== index);
-                              setFormBandingKelas({...formBandingKelas, siswa_banding: updatedSiswa});
-                            }}
-                            className="text-red-600 hover:text-red-700"
-                          >
-                            <Trash2 className="w-4 h-4 mr-2" />
-                            Hapus
-                          </Button>
                         </div>
-                      </div>
-                    ))}
-
-                    {formBandingKelas.siswa_banding.length === 0 && (
-                      <div className="text-center py-8 text-gray-500">
-                        <Users className="w-12 h-12 mx-auto mb-2 text-gray-400" />
-                        <p>Belum ada siswa yang dipilih</p>
-                        <p className="text-sm">Klik "Tambah Siswa" untuk memilih siswa yang akan diajukan banding</p>
-                      </div>
-                    )}
                   </div>
                 </div>
               )}
@@ -2026,7 +1981,7 @@ const StudentDashboardComponent = ({ userData, onLogout }: StudentDashboardProps
               <div className="flex gap-2 pt-4">
                 <Button 
                   onClick={submitBandingKelas}
-                  disabled={!formBandingKelas.jadwal_id || !formBandingKelas.tanggal_absen || formBandingKelas.siswa_banding.length === 0 || submitting}
+                  disabled={!formBandingKelas.jadwal_id || !formBandingKelas.tanggal_absen || !formBandingKelas.siswa_banding.nama || submitting}
                   className="bg-purple-600 hover:bg-purple-700"
                 >
                   {submitting ? (
@@ -2048,7 +2003,7 @@ const StudentDashboardComponent = ({ userData, onLogout }: StudentDashboardProps
                     setFormBandingKelas({
                       jadwal_id: '',
                       tanggal_absen: '',
-                      siswa_banding: []
+                      siswa_banding: { nama: '', status_asli: 'alpa', status_diajukan: 'hadir', alasan: '' }
                     });
                   }}
                 >
