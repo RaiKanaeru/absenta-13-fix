@@ -2732,7 +2732,7 @@ const BandingAbsenView = ({ user }: { user: TeacherDashboardProps['userData'] })
   const [totalPages, setTotalPages] = useState(1);
   const [totalPending, setTotalPending] = useState(0);
   const [totalAll, setTotalAll] = useState(0);
-  const limit = 5;
+  const limit = 10; // Increased from 5 to 10 for better UX
 
   useEffect(() => {
     const fetchBandingAbsen = async () => {
@@ -2779,14 +2779,14 @@ const BandingAbsenView = ({ user }: { user: TeacherDashboardProps['userData'] })
     setCurrentPage(page);
   };
 
-  const handleBandingResponse = async (bandingId: number, status: 'disetujui' | 'ditolak', catatan: string = '') => {
+  const handleApproveBanding = async (bandingId: number, status: 'disetujui' | 'ditolak', catatan: string = '') => {
     try {
-      await apiCall(`/api/banding-absen/${bandingId}/respond`, {
+      await apiCall(`/api/banding-absen/${bandingId}/approve`, {
         method: 'PUT',
         body: JSON.stringify({ 
-          status_banding: status, 
+          status_persetujuan: status, 
           catatan_guru: catatan,
-          diproses_oleh: user.guru_id || user.id
+          disetujui_oleh: user.guru_id || user.id
         }),
       });
 
@@ -2811,7 +2811,7 @@ const BandingAbsenView = ({ user }: { user: TeacherDashboardProps['userData'] })
         setTotalAll(response.totalAll || 0);
       }
     } catch (error) {
-      console.error('Error responding to banding absen:', error);
+      console.error('Error updating banding absen:', error);
       toast({ 
         title: "Error", 
         description: (error as Error).message, 
@@ -2823,30 +2823,51 @@ const BandingAbsenView = ({ user }: { user: TeacherDashboardProps['userData'] })
   return (
     <Card>
       <CardHeader>
+        <div className="flex flex-col gap-4">
         <div className="flex items-center justify-between">
           <CardTitle className="flex items-center gap-2">
-            <MessageCircle className="w-5 h-5" />
-            Pengajuan Banding Absen
+              <FileText className="w-5 h-5" />
+              Banding Absen Siswa
           </CardTitle>
-          <div className="flex items-center gap-3">
             <div className="text-sm text-gray-600">
-              Total: {totalAll} | Belum di-acc: {totalPending}
+              Halaman {currentPage} dari {totalPages}
             </div>
+          </div>
+          
+          {/* Filter Section */}
+          <div className="flex items-center justify-between bg-gray-50 p-3 rounded-lg">
+            <div className="flex items-center gap-4">
+              <div className="flex items-center gap-2">
+                <div className="w-3 h-3 bg-blue-500 rounded-full"></div>
+                <span className="text-sm font-medium">Total: {totalAll}</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="w-3 h-3 bg-orange-500 rounded-full"></div>
+                <span className="text-sm font-medium">Belum di-acc: {totalPending}</span>
+              </div>
+              {filterPending && (
+                <div className="flex items-center gap-2">
+                  <div className="w-3 h-3 bg-green-500 rounded-full"></div>
+                  <span className="text-sm font-medium">Menampilkan: Belum di-acc</span>
+                </div>
+              )}
+            </div>
+            
             <Button
               variant={filterPending ? "default" : "outline"}
               size="sm"
               onClick={handleFilterToggle}
-              className={filterPending ? "bg-orange-600 hover:bg-orange-700" : ""}
+              className={filterPending ? "bg-orange-600 hover:bg-orange-700 text-white" : "border-orange-300 text-orange-600 hover:bg-orange-50"}
             >
               {filterPending ? (
                 <>
-                  <Eye className="w-4 h-4 mr-1" />
+                  <Eye className="w-4 h-4 mr-2" />
                   Tampilkan Semua
                 </>
               ) : (
                 <>
-                  <Filter className="w-4 h-4 mr-1" />
-                  Belum di-acc ({totalPending})
+                  <Filter className="w-4 h-4 mr-2" />
+                  Filter Belum di-acc ({totalPending})
                 </>
               )}
             </Button>
@@ -2862,78 +2883,93 @@ const BandingAbsenView = ({ user }: { user: TeacherDashboardProps['userData'] })
           </div>
         ) : bandingList.length === 0 ? (
           <div className="text-center py-12">
-            <MessageCircle className="w-12 h-12 mx-auto text-gray-400 mb-4" />
+            <FileText className="w-12 h-12 mx-auto text-gray-400 mb-4" />
             <h3 className="text-lg font-medium text-gray-900 mb-2">Tidak ada banding absen</h3>
-            <p className="text-gray-600">Belum ada pengajuan banding absen dari siswa yang perlu diproses</p>
+            <p className="text-gray-600">Belum ada banding absen dari siswa yang perlu diproses</p>
           </div>
         ) : (
-          <div className="space-y-4">
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Tanggal Banding</TableHead>
+                  <TableHead>Tanggal Absen</TableHead>
+                  <TableHead>Jadwal</TableHead>
+                  <TableHead>Siswa Banding</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Keterangan</TableHead>
+                  <TableHead>Aksi</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
             {bandingList.map((banding) => (
-              <div key={banding.id_banding} className="border rounded-lg p-4">
-                <div className="flex justify-between items-start mb-3">
-                  <div>
-                    <h4 className="font-medium">{banding.nama_siswa}</h4>
-                    <p className="text-sm text-gray-600">
-                      NIS: {banding.nis} - Kelas: {banding.nama_kelas}
-                    </p>
-                    <p className="text-xs text-gray-500">
-                      Diajukan: {formatDateTime24(banding.tanggal_pengajuan, true)}
-                    </p>
+                  <TableRow key={banding.id}>
+                    <TableCell>
+                      {formatDateTime24(banding.tanggal_banding, true)}
+                    </TableCell>
+                    <TableCell>
+                      <div className="space-y-1">
+                        <div className="text-sm font-medium">
+                          {new Date(banding.tanggal_absen).toLocaleDateString('id-ID')}
                   </div>
-                  <Badge 
-                    variant={
-                      banding.status_banding === 'disetujui' ? 'default' : 
-                      banding.status_banding === 'ditolak' ? 'destructive' : 'secondary'
-                    }
-                  >
-                    {banding.status_banding === 'pending' ? 'Menunggu Proses' :
-                     banding.status_banding === 'disetujui' ? 'Disetujui' : 'Ditolak'}
-                  </Badge>
+                        <div className="text-xs text-gray-500">
+                          Jam: {banding.jam_absen}
                 </div>
-                
-                <div className="space-y-2 mb-4">
-                  <div className="grid grid-cols-2 gap-4 text-sm">
-                    <div>
-                      <span className="font-medium">Tanggal Absen:</span>
-                      <p className="text-gray-600">{new Date(banding.tanggal_absen).toLocaleDateString('id-ID')}</p>
                     </div>
-                    <div>
-                      <span className="font-medium">Mata Pelajaran:</span>
-                      <p className="text-gray-600">{banding.nama_mapel}</p>
+                    </TableCell>
+                    <TableCell>
+                      <div className="space-y-1">
+                        <span className="font-medium">{banding.nama_mapel}</span>
+                        <div className="text-sm text-gray-600">
+                          {banding.nama_guru} • {banding.jam_mulai}-{banding.jam_selesai}
                     </div>
                   </div>
-                  <div className="grid grid-cols-2 gap-4 text-sm">
-                    <div>
-                      <span className="font-medium">Status Tercatat:</span>
-                      <Badge variant="outline" className="capitalize ml-2">
-                        {banding.status_asli}
-                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      <div className="space-y-1">
+                        <div className="font-medium text-sm">
+                          {banding.nama_siswa}
                     </div>
-                    <div>
-                      <span className="font-medium">Status Diajukan:</span>
-                      <Badge variant="outline" className="capitalize ml-2">
-                        {banding.status_diajukan}
+                        <div className="text-xs text-gray-600">
+                          NIS: {banding.nis}
+                        </div>
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <Badge className={
+                        banding.status === 'disetujui' ? 'bg-green-100 text-green-800' :
+                        banding.status === 'ditolak' ? 'bg-red-100 text-red-800' :
+                        'bg-yellow-100 text-yellow-800'
+                      }>
+                        {banding.status === 'disetujui' ? 'Disetujui' :
+                         banding.status === 'ditolak' ? 'Ditolak' : 'Menunggu'}
                       </Badge>
+                    </TableCell>
+                    <TableCell>
+                      <div className="space-y-1 max-w-sm">
+                        <div className="text-sm">
+                          <strong>Status Asli:</strong> {banding.status_asli}
                     </div>
+                        <div className="text-sm">
+                          <strong>Status Diajukan:</strong> {banding.status_diajukan}
                   </div>
-                  <div>
-                    <span className="font-medium">Alasan Banding:</span>
-                    <p className="text-gray-600">{banding.alasan_banding}</p>
+                        <div className="text-xs text-gray-600 break-words">
+                          <strong>Alasan:</strong> {banding.alasan_banding}
                   </div>
                   {banding.catatan_guru && (
-                    <div>
-                      <span className="font-medium">Catatan Guru:</span>
-                      <p className="text-gray-600">{banding.catatan_guru}</p>
+                          <div className="text-xs text-gray-600 bg-gray-50 p-2 rounded break-words">
+                            <strong>Respon Guru:</strong> {banding.catatan_guru}
                     </div>
                   )}
                 </div>
-
-                {banding.status_banding === 'pending' && (
+                    </TableCell>
+                    <TableCell>
+                      {banding.status === 'pending' && (
                   <div className="flex gap-2">
                     <Dialog>
                       <DialogTrigger asChild>
                         <Button size="sm" className="bg-green-600 hover:bg-green-700">
-                          <CheckCircle className="w-4 w-4 mr-1" />
+                                <CheckCircle className="w-4 h-4 mr-1" />
                           Setujui
                         </Button>
                       </DialogTrigger>
@@ -2944,17 +2980,17 @@ const BandingAbsenView = ({ user }: { user: TeacherDashboardProps['userData'] })
                         <div className="space-y-4">
                           <div>
                             <p className="text-sm text-gray-600 mb-2">Banding dari: <strong>{banding.nama_siswa}</strong></p>
-                            <p className="text-sm text-gray-600">Status: {banding.status_asli} → {banding.status_diajukan}</p>
                             <p className="text-sm text-gray-600">Tanggal: {new Date(banding.tanggal_absen).toLocaleDateString('id-ID')}</p>
+                                  <p className="text-sm text-gray-600">Status: {banding.status_asli} → {banding.status_diajukan}</p>
                           </div>
                           <Textarea 
                             placeholder="Catatan persetujuan (opsional)" 
-                            id={`approve-banding-${banding.id_banding}`}
+                                  id={`approve-note-${banding.id}`}
                           />
                           <Button 
                             onClick={() => {
-                              const textarea = document.getElementById(`approve-banding-${banding.id_banding}`) as HTMLTextAreaElement;
-                              handleBandingResponse(banding.id_banding, 'disetujui', textarea.value);
+                                    const textarea = document.getElementById(`approve-note-${banding.id}`) as HTMLTextAreaElement;
+                                    handleApproveBanding(banding.id, 'disetujui', textarea.value);
                             }}
                             className="w-full bg-green-600 hover:bg-green-700"
                           >
@@ -2978,18 +3014,18 @@ const BandingAbsenView = ({ user }: { user: TeacherDashboardProps['userData'] })
                         <div className="space-y-4">
                           <div>
                             <p className="text-sm text-gray-600 mb-2">Banding dari: <strong>{banding.nama_siswa}</strong></p>
-                            <p className="text-sm text-gray-600">Status: {banding.status_asli} → {banding.status_diajukan}</p>
+                                  <p className="text-sm text-gray-600">Tanggal: {new Date(banding.tanggal_absen).toLocaleDateString('id-ID')}</p>
                           </div>
                           <Textarea 
                             placeholder="Alasan penolakan (wajib)" 
-                            id={`reject-banding-${banding.id_banding}`}
+                                  id={`reject-note-${banding.id}`}
                             required
                           />
                           <Button 
                             onClick={() => {
-                              const textarea = document.getElementById(`reject-banding-${banding.id_banding}`) as HTMLTextAreaElement;
+                                    const textarea = document.getElementById(`reject-note-${banding.id}`) as HTMLTextAreaElement;
                               if (textarea.value.trim()) {
-                                handleBandingResponse(banding.id_banding, 'ditolak', textarea.value);
+                                      handleApproveBanding(banding.id, 'ditolak', textarea.value);
                               } else {
                                 toast({ title: "Error", description: "Alasan penolakan harus diisi", variant: "destructive" });
                               }
@@ -3004,23 +3040,22 @@ const BandingAbsenView = ({ user }: { user: TeacherDashboardProps['userData'] })
                     </Dialog>
                   </div>
                 )}
-              </div>
+                    </TableCell>
+                  </TableRow>
             ))}
-          </div>
-        )}
+              </TableBody>
+            </Table>
         
         {/* Pagination */}
-        {!loading && bandingList.length > 0 && totalPages > 1 && (
-          <div className="flex items-center justify-between mt-6 pt-4 border-t">
+            <div className="flex items-center justify-between mt-4">
             <div className="text-sm text-gray-600">
-              Halaman {currentPage} dari {totalPages} 
-              {filterPending ? ` (${totalPending} belum di-acc)` : ` (${totalAll} total)`}
+                Menampilkan {((currentPage - 1) * limit) + 1} sampai {Math.min(currentPage * limit, bandingList.length)} dari {bandingList.length} banding
             </div>
             <div className="flex items-center gap-2">
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => handlePageChange(currentPage - 1)}
+                  onClick={() => setCurrentPage(currentPage - 1)}
                 disabled={currentPage === 1}
               >
                 <ChevronLeft className="w-4 h-4" />
@@ -3045,8 +3080,8 @@ const BandingAbsenView = ({ user }: { user: TeacherDashboardProps['userData'] })
                     key={pageNum}
                     variant={currentPage === pageNum ? "default" : "outline"}
                     size="sm"
-                    onClick={() => handlePageChange(pageNum)}
-                    className={currentPage === pageNum ? "bg-blue-600 hover:bg-blue-700" : ""}
+                      onClick={() => setCurrentPage(pageNum)}
+                      className="w-8 h-8 p-0"
                   >
                     {pageNum}
                   </Button>
@@ -3056,7 +3091,7 @@ const BandingAbsenView = ({ user }: { user: TeacherDashboardProps['userData'] })
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => handlePageChange(currentPage + 1)}
+                  onClick={() => setCurrentPage(currentPage + 1)}
                 disabled={currentPage === totalPages}
               >
                 Selanjutnya
