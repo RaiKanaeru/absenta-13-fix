@@ -251,7 +251,9 @@ app.post('/api/logout', (req, res) => {
 app.get('/api/verify', authenticateToken, (req, res) => {
     res.json({ 
         success: true, 
-        user: req.user,
+        data: {
+            user: req.user
+        },
         message: 'Token is valid'
     });
 });

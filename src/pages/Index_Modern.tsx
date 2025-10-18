@@ -56,6 +56,8 @@ const Index = () => {
         return;
       }
       
+      console.log('🔑 Token found in localStorage, verifying...');
+      
       const result = await api.get('/api/verify');
       
       console.log('🔍 Auth check response:', result);
@@ -63,6 +65,10 @@ const Index = () => {
       // ✅ FIX: Check result.data instead of result directly
       if (result.success && result.data && result.data.user) {
           console.log('✅ Existing auth found, user:', result.data.user);
+          
+          // Set user data immediately
+          setUserData(normalizeUserData(result.data.user));
+          setCurrentState('dashboard');
           
           // Load latest profile data based on role
           try {
@@ -129,8 +135,6 @@ const Index = () => {
             setUserData(normalizeUserData(result.data.user));
           }
           
-          setCurrentState('dashboard');
-          
           // ✅ FIX: Safe access with optional chaining
           const userName = result.data.user?.nama || result.data.user?.username || 'User';
           
@@ -140,9 +144,15 @@ const Index = () => {
           });
       } else {
         console.log('ℹ️ No existing authentication found, result:', result);
+        // Clear invalid token and show login form
+        localStorage.removeItem('token');
+        setCurrentState('login');
       }
     } catch (error) {
-      console.log('ℹ️ No existing auth or error checking:', error);
+      console.error('❌ Error checking existing auth:', error);
+      // Clear invalid token and show login form
+      localStorage.removeItem('token');
+      setCurrentState('login');
     }
   }, [toast]);
 
