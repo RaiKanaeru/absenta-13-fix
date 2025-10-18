@@ -35,9 +35,26 @@ const Index = () => {
   const [error, setError] = useState<string | null>(null);
   const { toast } = useToast();
 
+  // Helper function to normalize user data with lowercase role
+  const normalizeUserData = (data: any): UserData | null => {
+    if (!data) return null;
+    return {
+      ...data,
+      role: data.role?.toLowerCase() // Ensure role is always lowercase
+    };
+  };
+
   const checkExistingAuth = useCallback(async () => {
     try {
       console.log('🔍 Checking existing authentication...');
+      
+      // Check if token exists in localStorage first
+      const token = localStorage.getItem('token');
+      if (!token) {
+        console.log('ℹ️ No token found, showing login form');
+        setCurrentState('login');
+        return;
+      }
       
       const result = await api.get('/api/verify');
       
@@ -92,15 +109,15 @@ const Index = () => {
                     mapel: profileInfo.mata_pelajaran
                   })
                 };
-                setUserData(updatedUserData);
+                setUserData(normalizeUserData(updatedUserData));
                 console.log('✅ Updated user data with latest profile:', updatedUserData);
               } else {
                 console.log('❌ Profile data not successful:', profileData);
-                setUserData(result.data.user);
+                setUserData(normalizeUserData(result.data.user));
               }
             } else {
               console.log('❌ Profile data not successful:', profileData);
-              setUserData(result.data.user);
+              setUserData(normalizeUserData(result.data.user));
             }
           } catch (profileError) {
             console.error('❌ Failed to load latest profile data:', profileError);
@@ -109,7 +126,7 @@ const Index = () => {
               stack: profileError.stack,
               name: profileError.name
             });
-            setUserData(result.data.user);
+            setUserData(normalizeUserData(result.data.user));
           }
           
           setCurrentState('dashboard');
@@ -144,26 +161,29 @@ const Index = () => {
 
       console.log('📡 Login response:', result);
 
-      if (result.success && result.data) {
-        // ✅ FIX: Validate data structure
-        if (!result.data.user) {
+      if (result.success) {
+        // ✅ FIX: Handle both response formats
+        const userData = result.data?.user || result.user;
+        const token = result.data?.token || result.token;
+        
+        if (!userData) {
           throw new Error('Invalid response structure: missing user data');
         }
         
-        console.log('✅ Login successful for user:', result.data.user.username);
+        console.log('✅ Login successful for user:', userData.username);
         
-        // ✅ FIX: Access user from result.data
-        setUserData(result.data.user);
+        // ✅ FIX: Access user from result and normalize role
+        setUserData(normalizeUserData(userData));
         setCurrentState('dashboard');
         setError(null);
         
         // Store token in localStorage for persistence
-        if (result.data.token) {
-          localStorage.setItem('token', result.data.token);
+        if (token) {
+          localStorage.setItem('token', token);
         }
         
         // ✅ FIX: Safe access with optional chaining
-        const userName = result.data.user?.nama || result.data.user?.username || 'User';
+        const userName = userData?.nama || userData?.username || 'User';
         
         toast({
           title: "Login Berhasil!",

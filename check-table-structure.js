@@ -1,100 +1,57 @@
-// Check Table Structure
-import 'dotenv/config';
+// Script untuk cek struktur tabel
 import mysql from 'mysql2/promise';
 
-const checkTableStructure = async () => {
-    let connection;
+async function checkTableStructure() {
+    console.log('🔍 Checking table structure...');
     
     try {
-        console.log('🔍 Checking table structures...\n');
-        
         // Connect to database
-        connection = await mysql.createConnection({
-            host: process.env.DB_HOST || 'localhost',
-            user: process.env.DB_USER || 'root',
-            password: process.env.DB_PASSWORD || '',
-            database: process.env.DB_NAME || 'absenta13'
+        const connection = await mysql.createConnection({
+            host: 'localhost',
+            user: 'root',
+            password: '',
+            database: 'absenta13'
         });
         
-        console.log('✅ Connected to database\n');
+        console.log('✅ Connected to database');
         
-        // 1. Check all tables
-        console.log('📋 ALL TABLES:');
-        const [tables] = await connection.execute(`
-            SELECT TABLE_NAME 
-            FROM INFORMATION_SCHEMA.TABLES 
-            WHERE TABLE_SCHEMA = 'absenta13'
-            ORDER BY TABLE_NAME
-        `);
-        
-        tables.forEach(table => {
-            console.log(`  - ${table.TABLE_NAME}`);
+        // Check users table structure
+        console.log('\n1. Checking users table structure...');
+        const [usersStructure] = await connection.execute('DESCRIBE users');
+        console.log('📊 Users table columns:');
+        usersStructure.forEach((col, index) => {
+            console.log(`${index + 1}. ${col.Field} (${col.Type})`);
         });
         
-        // 2. Check ruang_kelas structure
-        console.log('\n🏫 RUANG_KELAS TABLE STRUCTURE:');
-        const [ruangColumns] = await connection.execute(`
-            SELECT COLUMN_NAME, DATA_TYPE, IS_NULLABLE, COLUMN_DEFAULT
-            FROM INFORMATION_SCHEMA.COLUMNS 
-            WHERE TABLE_SCHEMA = 'absenta13' 
-            AND TABLE_NAME = 'ruang_kelas'
-            ORDER BY ORDINAL_POSITION
-        `);
+        // Check pengguna table structure
+        console.log('\n2. Checking pengguna table structure...');
+        const [penggunaStructure] = await connection.execute('DESCRIBE pengguna');
+        console.log('📊 Pengguna table columns:');
+        penggunaStructure.forEach((col, index) => {
+            console.log(`${index + 1}. ${col.Field} (${col.Type})`);
+        });
         
-        if (ruangColumns.length > 0) {
-            console.log('Columns found:');
-            ruangColumns.forEach(col => {
-                console.log(`  - ${col.COLUMN_NAME}: ${col.DATA_TYPE} (${col.IS_NULLABLE === 'YES' ? 'NULL' : 'NOT NULL'})`);
-            });
-        } else {
-            console.log('❌ ruang_kelas table does not exist');
-        }
+        // Check sample data from users table
+        console.log('\n3. Checking sample data from users table...');
+        const [usersData] = await connection.execute('SELECT * FROM users WHERE username LIKE "siswa%" LIMIT 3');
+        console.log('📊 Users table sample data:');
+        usersData.forEach((user, index) => {
+            console.log(`${index + 1}. ${JSON.stringify(user, null, 2)}`);
+        });
         
-        // 3. Check mapel structure
-        console.log('\n📚 MAPEL TABLE STRUCTURE:');
-        const [mapelColumns] = await connection.execute(`
-            SELECT COLUMN_NAME, DATA_TYPE, IS_NULLABLE, COLUMN_DEFAULT
-            FROM INFORMATION_SCHEMA.COLUMNS 
-            WHERE TABLE_SCHEMA = 'absenta13' 
-            AND TABLE_NAME = 'mapel'
-            ORDER BY ORDINAL_POSITION
-        `);
+        // Check sample data from pengguna table
+        console.log('\n4. Checking sample data from pengguna table...');
+        const [penggunaData] = await connection.execute('SELECT * FROM pengguna WHERE nama_pengguna LIKE "siswa%" LIMIT 3');
+        console.log('📊 Pengguna table sample data:');
+        penggunaData.forEach((user, index) => {
+            console.log(`${index + 1}. ${JSON.stringify(user, null, 2)}`);
+        });
         
-        if (mapelColumns.length > 0) {
-            console.log('Columns found:');
-            mapelColumns.forEach(col => {
-                console.log(`  - ${col.COLUMN_NAME}: ${col.DATA_TYPE} (${col.IS_NULLABLE === 'YES' ? 'NULL' : 'NOT NULL'})`);
-            });
-        } else {
-            console.log('❌ mapel table does not exist');
-        }
-        
-        // 4. Check jadwal table
-        console.log('\n📅 JADWAL TABLE STRUCTURE:');
-        const [jadwalColumns] = await connection.execute(`
-            SELECT COLUMN_NAME, DATA_TYPE, IS_NULLABLE, COLUMN_DEFAULT
-            FROM INFORMATION_SCHEMA.COLUMNS 
-            WHERE TABLE_SCHEMA = 'absenta13' 
-            AND TABLE_NAME = 'jadwal'
-            ORDER BY ORDINAL_POSITION
-        `);
-        
-        if (jadwalColumns.length > 0) {
-            console.log('Columns found:');
-            jadwalColumns.forEach(col => {
-                console.log(`  - ${col.COLUMN_NAME}: ${col.DATA_TYPE} (${col.IS_NULLABLE === 'YES' ? 'NULL' : 'NOT NULL'})`);
-            });
-        } else {
-            console.log('❌ jadwal table does not exist');
-        }
+        await connection.end();
         
     } catch (error) {
-        console.error('❌ Error checking table structure:', error.message);
-    } finally {
-        if (connection) {
-            await connection.end();
-        }
+        console.error('❌ Database check failed:', error.message);
     }
-};
+}
 
 checkTableStructure();

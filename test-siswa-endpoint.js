@@ -1,83 +1,70 @@
-// Test Siswa Endpoint
-import 'dotenv/config';
-import mysql from 'mysql2/promise';
+// Test script untuk endpoint siswa
+import fetch from 'node-fetch';
 
-const testSiswaEndpoint = async () => {
-    let connection;
+const API_BASE = 'http://localhost:3001';
+
+async function testSiswaEndpoint() {
+    console.log('🔍 Testing siswa endpoint...');
     
     try {
-        console.log('🧪 Testing siswa endpoint...');
-        
-        // Create database connection
-        connection = await mysql.createConnection({
-            host: process.env.DB_HOST || 'localhost',
-            user: process.env.DB_USER || 'root',
-            password: process.env.DB_PASSWORD || '',
-            database: process.env.DB_NAME || 'absenta13',
-            port: process.env.DB_PORT || 3306
+        // 1. Login first
+        console.log('\n1. Logging in...');
+        const loginResponse = await fetch(`${API_BASE}/api/login`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                username: 'admin',
+                password: 'admin123'
+            })
         });
         
-        console.log('✅ Connected to database');
+        const loginData = await loginResponse.json();
+        console.log('✅ Login successful:', loginData.success);
         
-        // Test the query used in siswa-perwakilan endpoint
-        const query = `
-            SELECT 
-                s.id,
-                s.id_siswa,
-                s.user_id,
-                s.username,
-                s.nis,
-                s.nama,
-                s.kelas_id,
-                k.nama_kelas,
-                k.tingkat,
-                s.jabatan,
-                s.jenis_kelamin,
-                s.email,
-                s.alamat,
-                s.telepon_orangtua,
-                s.telepon_siswa,
-                s.status,
-                u.username as account_username,
-                u.status as account_status
-            FROM siswa s
-            LEFT JOIN kelas k ON s.kelas_id = k.id_kelas
-            LEFT JOIN users u ON s.user_id = u.id
-            WHERE s.status IN ('aktif', 'tidak_aktif')
-            ORDER BY s.nama
-            LIMIT 5
-        `;
-        
-        const [rows] = await connection.execute(query);
-        console.log('📊 Query result:');
-        console.log(`Found ${rows.length} students`);
-        
-        if (rows.length > 0) {
-            console.log('Sample student data:');
-            console.log(JSON.stringify(rows[0], null, 2));
+        if (!loginData.success || !loginData.token) {
+            throw new Error('Login failed');
         }
         
-        // Test login
-        console.log('\n🔐 Testing login...');
-        const [loginRows] = await connection.execute(
-            'SELECT * FROM users WHERE username = ? AND status = "aktif"',
-            ['admin']
-        );
+        // 2. Test siswa endpoint
+        console.log('\n2. Testing /api/admin/siswa...');
+        const siswaResponse = await fetch(`${API_BASE}/api/admin/siswa`, {
+            headers: {
+                'Authorization': `Bearer ${loginData.token}`
+            }
+        });
         
-        if (loginRows.length > 0) {
-            console.log('✅ Admin user found:', loginRows[0].username, loginRows[0].role);
-        } else {
-            console.log('❌ Admin user not found');
+        const siswaData = await siswaResponse.json();
+        console.log('✅ Siswa endpoint response:', {
+            success: siswaData.success,
+            dataLength: siswaData.data?.length || 0,
+            error: siswaData.error
+        });
+        
+        if (siswaData.success && siswaData.data) {
+            console.log('📊 Sample siswa data:', siswaData.data[0]);
         }
+        
+        // 3. Test with search
+        console.log('\n3. Testing siswa endpoint with search...');
+        const searchResponse = await fetch(`${API_BASE}/api/admin/siswa?search=test`, {
+            headers: {
+                'Authorization': `Bearer ${loginData.token}`
+            }
+        });
+        
+        const searchData = await searchResponse.json();
+        console.log('✅ Search response:', {
+            success: searchData.success,
+            dataLength: searchData.data?.length || 0
+        });
+        
+        console.log('\n🎉 Siswa endpoint test completed successfully!');
         
     } catch (error) {
-        console.error('❌ Error testing:', error);
-    } finally {
-        if (connection) {
-            await connection.end();
-            console.log('\n🔌 Database connection closed');
-        }
+        console.error('❌ Test failed:', error.message);
     }
-};
+}
 
 testSiswaEndpoint();

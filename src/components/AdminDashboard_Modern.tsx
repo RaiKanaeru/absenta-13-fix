@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -20,10 +20,7 @@ import LoadBalancerView from "./LoadBalancerView";
 import MonitoringDashboard from "./MonitoringDashboard";
 import SchedulePreviewGrid from "./SchedulePreviewGrid";
 import SimpleRestoreView from "./SimpleRestoreView";
-import RealtimeGuruAttendance from "./RealtimeGuruAttendance";
 import RuangKelasManagement from "./RuangKelasManagement";
-import SecurityManagementView from "./admin/SecurityManagementView";
-import PerformanceMonitoringView from "./admin/PerformanceMonitoringView";
 import { printReport } from "../utils/printLayouts";
 import ExcelPreview from './ExcelPreview';
 // import ReportHeader from './ReportHeader';
@@ -42,7 +39,7 @@ import {
   Eye, Download, FileText, Edit, Trash2, Plus, Search, Filter, Settings, Bell, Menu, X,
   TrendingUp, BookPlus, Home, Clock, CheckCircle, XCircle, AlertCircle, AlertTriangle, MessageCircle, ClipboardList,
   Database, Archive, Activity, Server, Monitor, Shield, RefreshCw, ArrowUpCircle, User, FileText as FileTextIcon, Building,
-  Info, Loader2
+  Info, Loader2, MapPin
 } from "lucide-react";
 
 // Utility function for API calls with consistent error handling
@@ -236,15 +233,12 @@ const menuItems = [
   { id: 'add-subject', title: 'Mata Pelajaran', icon: BookOpen, description: 'Kelola mata pelajaran', gradient: 'from-red-500 to-red-700' },
   { id: 'add-class', title: 'Kelas', icon: Home, description: 'Kelola kelas', gradient: 'from-indigo-500 to-indigo-700' },
   { id: 'room-management', title: 'Ruang Kelas', icon: Building, description: 'Kelola ruang kelas dan alokasi', gradient: 'from-yellow-500 to-yellow-700' },
-    { id: 'security-management', title: 'Security Management', icon: Shield, description: 'Kelola keamanan sistem dan account lockout', gradient: 'from-red-500 to-red-700' },
-    { id: 'performance-monitoring', title: 'Performance Monitoring', icon: Activity, description: 'Monitor performa sistem dan database', gradient: 'from-purple-500 to-purple-700' },
   { id: 'add-schedule', title: 'Jadwal', icon: Calendar, description: 'Atur jadwal pelajaran', gradient: 'from-teal-500 to-teal-700' },
   { id: 'backup-management', title: 'Backup & Archive', icon: Database, description: 'Kelola backup dan arsip data', gradient: 'from-cyan-500 to-cyan-700' },
   { id: 'load-balancer', title: 'Load Balancer', icon: Activity, description: 'Monitoring performa sistem', gradient: 'from-emerald-500 to-emerald-700' },
   { id: 'monitoring', title: 'System Monitoring', icon: Monitor, description: 'Real-time monitoring & alerting', gradient: 'from-violet-500 to-violet-700' },
   { id: 'disaster-recovery', title: 'Restorasi Backup', icon: Shield, description: 'Restorasi dan pemulihan backup', gradient: 'from-amber-500 to-amber-700' },
   { id: 'letterhead-settings', title: 'Kop Laporan', icon: FileTextIcon, description: 'Kelola header/kop untuk semua laporan', gradient: 'from-slate-500 to-slate-700' },
-  { id: 'guru-attendance', title: 'Kehadiran Guru', icon: Clock, description: 'Monitoring kehadiran guru realtime', gradient: 'from-amber-500 to-amber-700' },
   { id: 'reports', title: 'Laporan', icon: BarChart3, description: 'Pemantau siswa & guru live', gradient: 'from-pink-500 to-pink-700' }
 ];
 
@@ -604,8 +598,8 @@ const ManageTeacherAccountsView = ({ onBack, onLogout }: { onBack: () => void; o
                       <SelectValue placeholder="Pilih jenis kelamin" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="L">Laki-laki</SelectItem>
-                      <SelectItem value="P">Perempuan</SelectItem>
+                      <SelectItem key="L" value="L">Laki-laki</SelectItem>
+                      <SelectItem key="P" value="P">Perempuan</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -616,7 +610,7 @@ const ManageTeacherAccountsView = ({ onBack, onLogout }: { onBack: () => void; o
                       <SelectValue placeholder="Pilih mata pelajaran" />
                     </SelectTrigger>
                     <SelectContent>
-                      {subjects.map((subject) => (
+                      {subjects.filter(s => s.id).map((subject) => (
                         <SelectItem key={subject.id} value={String(subject.id)}>
                           {subject.nama_mapel}
                         </SelectItem>
@@ -734,13 +728,14 @@ const ManageTeacherAccountsView = ({ onBack, onLogout }: { onBack: () => void; o
                       <TableCell>
                         <div className="flex items-center justify-center gap-2">
                           <Button
+                            key="edit-btn"
                             variant="outline"
                             size="sm"
                             onClick={() => handleEdit(teacher)}
                           >
                             <Edit className="w-4 h-4" />
                           </Button>
-                          <AlertDialog>
+                          <AlertDialog key="delete-dialog">
                             <AlertDialogTrigger asChild>
                               <Button variant="outline" size="sm" className="text-red-600 hover:text-red-700">
                                 <Trash2 className="w-4 h-4" />
@@ -801,7 +796,7 @@ const ManageStudentDataView = ({ onBack, onLogout }: { onBack: () => void; onLog
   const fetchStudentsData = useCallback(async () => {
     try {
       console.log('🔄 Fetching students data...');
-      const response = await apiCall('/api/admin/siswa-perwakilan', {}, onLogout);
+      const response = await apiCall('/api/admin/siswa', {}, onLogout);
       console.log('📊 Raw response:', response);
       
       // Handle nested response structure: response.data.data
@@ -851,7 +846,7 @@ const ManageStudentDataView = ({ onBack, onLogout }: { onBack: () => void; onLog
     setIsLoading(true);
 
     try {
-      const url = editingId ? `/api/admin/siswa-perwakilan/${editingId}` : '/api/admin/siswa-perwakilan';
+      const url = editingId ? `/api/admin/siswa/${editingId}` : '/api/admin/siswa';
       const method = editingId ? 'PUT' : 'POST';
       
       const submitData = {
@@ -913,7 +908,7 @@ const ManageStudentDataView = ({ onBack, onLogout }: { onBack: () => void; onLog
 
   const handleDelete = async (id: number, nama: string) => {
     try {
-      await apiCall(`/api/admin/siswa-perwakilan/${id}`, {
+      await apiCall(`/api/admin/siswa/${id}`, {
         method: 'DELETE',
       }, onLogout);
 
@@ -1017,8 +1012,8 @@ const ManageStudentDataView = ({ onBack, onLogout }: { onBack: () => void; onLog
                   <SelectValue placeholder="Pilih jenis kelamin" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="L">Laki-laki</SelectItem>
-                  <SelectItem value="P">Perempuan</SelectItem>
+                  <SelectItem key="L" value="L">Laki-laki</SelectItem>
+                  <SelectItem key="P" value="P">Perempuan</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -1184,13 +1179,14 @@ const ManageStudentDataView = ({ onBack, onLogout }: { onBack: () => void; onLog
                       <TableCell>
                         <div className="flex items-center justify-center gap-2">
                           <Button
+                            key="edit-btn"
                             variant="outline"
                             size="sm"
                             onClick={() => handleEdit(student)}
                           >
                             <Edit className="w-4 h-4" />
                           </Button>
-                          <AlertDialog>
+                          <AlertDialog key="delete-dialog">
                             <AlertDialogTrigger asChild>
                               <Button variant="outline" size="sm" className="text-red-600 hover:text-red-700">
                                 <Trash2 className="w-4 h-4" />
@@ -1515,8 +1511,8 @@ const ManageTeacherDataView = ({ onBack, onLogout }: { onBack: () => void; onLog
                   <SelectValue placeholder="Pilih jenis kelamin" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="L">Laki-laki</SelectItem>
-                  <SelectItem value="P">Perempuan</SelectItem>
+                  <SelectItem key="L" value="L">Laki-laki</SelectItem>
+                  <SelectItem key="P" value="P">Perempuan</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -1655,13 +1651,14 @@ const ManageTeacherDataView = ({ onBack, onLogout }: { onBack: () => void; onLog
                       <TableCell>
                         <div className="flex items-center justify-center gap-2">
                           <Button
+                            key="edit-btn"
                             variant="outline"
                             size="sm"
                             onClick={() => handleEdit(teacher)}
                           >
                             <Edit className="w-4 h-4" />
                           </Button>
-                          <AlertDialog>
+                          <AlertDialog key="delete-dialog">
                             <AlertDialogTrigger asChild>
                               <Button variant="outline" size="sm" className="text-red-600 hover:text-red-700">
                                 <Trash2 className="w-4 h-4" />
@@ -2002,13 +1999,14 @@ const ManageSubjectsView = ({ onBack, onLogout }: { onBack: () => void; onLogout
                       <TableCell>
                         <div className="flex items-center justify-center gap-2">
                           <Button
+                            key="edit-btn"
                             variant="outline"
                             size="sm"
                             onClick={() => handleEdit(subject)}
                           >
                             <Edit className="w-4 h-4" />
                           </Button>
-                          <AlertDialog>
+                          <AlertDialog key="delete-dialog">
                             <AlertDialogTrigger asChild>
                               <Button variant="outline" size="sm" className="text-red-600 hover:text-red-700">
                                 <Trash2 className="w-4 h-4" />
@@ -2338,13 +2336,14 @@ const ManageClassesView = ({ onBack, onLogout }: { onBack: () => void; onLogout:
                       <TableCell>
                         <div className="flex items-center justify-center gap-2">
                           <Button
+                            key="edit-btn"
                             variant="outline"
                             size="sm"
                             onClick={() => handleEdit(kelas)}
                           >
                             <Edit className="w-4 h-4" />
                           </Button>
-                          <AlertDialog>
+                          <AlertDialog key="delete-dialog">
                             <AlertDialogTrigger asChild>
                               <Button variant="outline" size="sm" className="text-red-600 hover:text-red-700">
                                 <Trash2 className="w-4 h-4" />
@@ -2410,7 +2409,7 @@ const ManageStudentsView = ({ onBack, onLogout }: { onBack: () => void; onLogout
   const fetchStudents = useCallback(async () => {
     try {
       console.log('🔄 Fetching students data...');
-      const response = await apiCall('/api/admin/siswa-perwakilan', {}, onLogout);
+      const response = await apiCall('/api/admin/siswa', {}, onLogout);
       console.log('📊 Raw response:', response);
       
       // Handle nested response structure: response.data.data
@@ -2441,7 +2440,7 @@ const ManageStudentsView = ({ onBack, onLogout }: { onBack: () => void; onLogout
 
   const fetchClasses = useCallback(async () => {
     try {
-      const response = await apiCall('/api/admin/classes', {}, onLogout);
+      const response = await apiCall('/api/admin/kelas', {}, onLogout);
       // Handle response format: { success: true, data: { success: true, data: [...] } }
       const classes = response.data || response;
       setClasses(Array.isArray(classes) ? classes : []);
@@ -2507,7 +2506,7 @@ const ManageStudentsView = ({ onBack, onLogout }: { onBack: () => void; onLogout
     setIsLoading(true);
 
     try {
-      const url = editingId ? `/api/admin/siswa-perwakilan/${editingId}` : '/api/admin/siswa-perwakilan';
+      const url = editingId ? `/api/admin/siswa/${editingId}` : '/api/admin/siswa';
       const method = editingId ? 'PUT' : 'POST';
       
       const submitData = {
@@ -2584,7 +2583,7 @@ const ManageStudentsView = ({ onBack, onLogout }: { onBack: () => void; onLogout
 
   const handleDelete = async (id: number, nama: string, nis: string) => {
     try {
-      await apiCall(`/api/admin/siswa-perwakilan/${id}`, {
+      await apiCall(`/api/admin/siswa/${id}`, {
         method: 'DELETE',
       }, onLogout);
 
@@ -2755,8 +2754,8 @@ const ManageStudentsView = ({ onBack, onLogout }: { onBack: () => void; onLogout
                       <SelectValue placeholder="Pilih jenis kelamin" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="L">Laki-laki</SelectItem>
-                      <SelectItem value="P">Perempuan</SelectItem>
+                      <SelectItem key="L" value="L">Laki-laki</SelectItem>
+                      <SelectItem key="P" value="P">Perempuan</SelectItem>
                     </SelectContent>
                   </Select>
                   {formErrors.jenis_kelamin && <p className="text-sm text-red-500 mt-1">{formErrors.jenis_kelamin}</p>}
@@ -2919,13 +2918,14 @@ const ManageStudentsView = ({ onBack, onLogout }: { onBack: () => void; onLogout
                       <TableCell>
                         <div className="flex items-center justify-center gap-2">
                           <Button
+                            key="edit-btn"
                             variant="outline"
                             size="sm"
                             onClick={() => handleEdit(student)}
                           >
                             <Edit className="w-4 h-4" />
                           </Button>
-                          <AlertDialog>
+                          <AlertDialog key="delete-dialog">
                             <AlertDialogTrigger asChild>
                               <Button variant="outline" size="sm" className="text-red-600 hover:text-red-700">
                                 <Trash2 className="w-4 h-4" />
@@ -3085,7 +3085,7 @@ const LiveSummaryView = ({ onLogout }: { onLogout: () => void }) => {
                         👨‍🏫 {kelas.nama_guru || kelas.guru}
                       </p>
                       {kelas.absensi_diambil !== undefined && (
-                        <div className="flex items-center gap-2">
+                        <div key={`attendance-${kelas.id}`} className="flex items-center gap-2">
                           {kelas.absensi_diambil > 0 ? (
                             <Badge className="bg-green-100 text-green-700">
                               <CheckCircle className="w-3 h-3 mr-1" />
@@ -3141,7 +3141,6 @@ const ManageSchedulesView = ({ onBack, onLogout }: { onBack: () => void; onLogou
   const [showConflicts, setShowConflicts] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
   const [showSchedulePreviewGrid, setShowSchedulePreviewGrid] = useState(false);
-  const [showRealtimeGuruAttendance, setShowRealtimeGuruAttendance] = useState(false);
   const [showRuangKelasManagement, setShowRuangKelasManagement] = useState(false);
   const [teachers, setTeachers] = useState<Teacher[]>([]);
   const [subjects, setSubjects] = useState<Subject[]>([]);
@@ -3152,6 +3151,9 @@ const ManageSchedulesView = ({ onBack, onLogout }: { onBack: () => void; onLogou
   const [consecutiveHours, setConsecutiveHours] = useState(1);
   const [showImport, setShowImport] = useState(false);
   const [showAdvancedImport, setShowAdvancedImport] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [filterDay, setFilterDay] = useState('all');
+  const [filterClass, setFilterClass] = useState('all');
   
   const [formData, setFormData] = useState({
     kelas_id: '',
@@ -3165,6 +3167,20 @@ const ManageSchedulesView = ({ onBack, onLogout }: { onBack: () => void; onLogou
   });
 
   const daysOfWeek = ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat'];
+
+  // Filter dan search functionality
+  const filteredSchedules = ensureArray<Schedule>(schedules).filter(schedule => {
+    const matchesSearch = !searchTerm || 
+      schedule.nama_kelas?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      schedule.nama_mapel?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      schedule.nama_guru?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      schedule.nama_ruang?.toLowerCase().includes(searchTerm.toLowerCase());
+    
+    const matchesDay = !filterDay || filterDay === 'all' || schedule.hari === filterDay;
+    const matchesClass = !filterClass || filterClass === 'all' || schedule.kelas_id?.toString() === filterClass;
+    
+    return matchesSearch && matchesDay && matchesClass;
+  });
 
   // Fetch all necessary data
   useEffect(() => {
@@ -3240,11 +3256,13 @@ const ManageSchedulesView = ({ onBack, onLogout }: { onBack: () => void; onLogou
 
   const fetchSubjects = async () => {
     try {
-      const data = await apiCall('/api/admin/subjects', {}, onLogout);
-      if (Array.isArray(data)) {
-        setSubjects(data);
+      const response = await apiCall('/api/admin/mapel', {}, onLogout);
+      if (response && response.success && Array.isArray(response.data)) {
+        setSubjects(response.data);
+      } else if (Array.isArray(response)) {
+        setSubjects(response);
       } else {
-        console.error('Invalid subjects response format:', data);
+        console.error('Invalid subjects response format:', response);
         setSubjects([]);
       }
     } catch (error) {
@@ -3255,7 +3273,7 @@ const ManageSchedulesView = ({ onBack, onLogout }: { onBack: () => void; onLogou
 
   const fetchClasses = async () => {
     try {
-      const response = await apiCall('/api/admin/classes', {}, onLogout);
+      const response = await apiCall('/api/admin/kelas', {}, onLogout);
       // Handle response format: { success: true, data: { success: true, data: [...] } }
       const classes = response.data || response;
       setClasses(Array.isArray(classes) ? classes : []);
@@ -3476,50 +3494,49 @@ const ManageSchedulesView = ({ onBack, onLogout }: { onBack: () => void; onLogou
     return <SchedulePreviewGrid onBack={() => setShowSchedulePreviewGrid(false)} />;
   }
 
-  if (showRealtimeGuruAttendance) {
-    return <RealtimeGuruAttendance onBack={() => setShowRealtimeGuruAttendance(false)} />;
-  }
 
   if (showRuangKelasManagement) {
     return <RuangKelasManagement onBack={() => setShowRuangKelasManagement(false)} />;
   }
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
+    <div className="min-h-screen bg-gray-50">
+      {/* Header dengan gradient background */}
+      <div className="bg-gradient-to-r from-blue-600 to-blue-800 text-white">
+        <div className="px-6 py-8">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
-          <Button variant="outline" size="icon" onClick={onBack}>
+              <Button variant="outline" size="icon" onClick={onBack} className="bg-white/10 border-white/20 text-white hover:bg-white/20">
             <ArrowLeft className="w-4 h-4" />
           </Button>
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">Kelola Jadwal</h1>
-            <p className="text-gray-600">Atur jadwal pelajaran untuk setiap kelas</p>
+                <h1 className="text-3xl font-bold">Kelola Jadwal</h1>
+                <p className="text-blue-100 mt-1">Atur jadwal pelajaran untuk setiap kelas dengan mudah</p>
           </div>
         </div>
         <div className="flex gap-2 flex-wrap">
-          <Button onClick={checkConflicts} disabled={isLoading} variant="outline">
+              <Button onClick={checkConflicts} disabled={isLoading} variant="outline" className="bg-white/10 border-white/20 text-white hover:bg-white/20">
             <AlertTriangle className="w-4 h-4 mr-2" />
             Cek Bentrok
           </Button>
-          <Button onClick={generatePreview} disabled={isLoading} variant="outline">
+              <Button onClick={generatePreview} disabled={isLoading} variant="outline" className="bg-white/10 border-white/20 text-white hover:bg-white/20">
             <Eye className="w-4 h-4 mr-2" />
             Preview Jadwal
           </Button>
-          <Button onClick={() => setShowRealtimeGuruAttendance(true)} variant="outline">
-            <Users className="w-4 h-4 mr-2" />
-            Tracking Guru
-          </Button>
-          <Button onClick={() => setShowAdvancedImport(true)} variant="outline">
+              <Button onClick={() => setShowAdvancedImport(true)} variant="outline" className="bg-white/10 border-white/20 text-white hover:bg-white/20">
             <FileText className="w-4 h-4 mr-2" />
             Import Advanced
           </Button>
-          <Button onClick={() => setShowImport(true)} variant="outline">
+              <Button onClick={() => setShowImport(true)} variant="outline" className="bg-white/10 border-white/20 text-white hover:bg-white/20">
             <Download className="w-4 h-4 mr-2" />
             Import Excel
           </Button>
+            </div>
+          </div>
         </div>
       </div>
+
+      <div className="px-6 py-6 space-y-6">
 
       {/* Conflicts Modal */}
       {showConflicts && (
@@ -3540,14 +3557,14 @@ const ManageSchedulesView = ({ onBack, onLogout }: { onBack: () => void; onLogou
             ) : (
               <div className="space-y-4">
                 {conflicts.map((conflict, index) => (
-                  <div key={`conflict-${conflict.id || conflict.type}-${index}`} className="border border-red-200 rounded-lg p-4 bg-red-50">
+                  <div key={`conflict-${conflict.type}-${index}`} className="border border-red-200 rounded-lg p-4 bg-red-50">
                     <div className="flex items-center gap-2 mb-2">
                       <AlertTriangle className="w-4 h-4 text-red-500" />
                       <span className="font-medium text-red-800">
                         Bentrok {conflict.type === 'guru' ? 'Guru' : 'Kelas'}
                       </span>
                       {conflict.severity && (
-                        <Badge variant="destructive" className="text-xs">
+                        <Badge key={`severity-${conflict.type}-${index}`} variant="destructive" className="text-xs">
                           {conflict.severity === 'high' ? 'Tinggi' : 'Rendah'}
                         </Badge>
                       )}
@@ -3639,21 +3656,43 @@ const ManageSchedulesView = ({ onBack, onLogout }: { onBack: () => void; onLogou
         </Card>
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Form */}
-        <Card className="p-6">
-          <h3 className="text-xl font-bold mb-4">
+        {/* Form Section dengan design yang lebih baik */}
+        <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+          {/* Form Card */}
+          <div className="xl:col-span-1">
+            <Card className="shadow-lg border-0 bg-white">
+              <CardHeader className="bg-gradient-to-r from-blue-50 to-indigo-50 border-b">
+                <CardTitle className="flex items-center gap-3 text-xl">
+                  <div className="p-2 bg-blue-100 rounded-lg">
+                    <Calendar className="w-5 h-5 text-blue-600" />
+                  </div>
+                  <div>
+                    <div className="font-bold text-gray-900">
             {editingId ? 'Edit Jadwal' : 'Tambah Jadwal'}
-          </h3>
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    </div>
+                    <div className="text-sm text-gray-600 font-normal">
+                      {editingId ? 'Perbarui informasi jadwal' : 'Buat jadwal pelajaran baru'}
+                    </div>
+                  </div>
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="p-6">
+                <form onSubmit={handleSubmit} className="space-y-6">
+                  {/* Kelas dan Mata Pelajaran */}
+                  <div className="space-y-4">
+                    <div className="flex items-center gap-2 mb-3">
+                      <div className="w-1 h-6 bg-blue-500 rounded-full"></div>
+                      <h4 className="font-semibold text-gray-800">Informasi Dasar</h4>
+                    </div>
+                    
+                    <div className="space-y-4">
               <div>
-                <Label>Kelas</Label>
+                        <Label className="text-sm font-medium text-gray-700">Kelas *</Label>
                 <Select 
                   value={formData.kelas_id} 
                   onValueChange={(value) => setFormData({...formData, kelas_id: value})}
                 >
-                  <SelectTrigger>
+                          <SelectTrigger className="mt-1">
                     <SelectValue placeholder="Pilih Kelas" />
                   </SelectTrigger>
                   <SelectContent>
@@ -3670,12 +3709,12 @@ const ManageSchedulesView = ({ onBack, onLogout }: { onBack: () => void; onLogou
               </div>
 
               <div>
-                <Label>Mata Pelajaran</Label>
+                        <Label className="text-sm font-medium text-gray-700">Mata Pelajaran *</Label>
                 <Select 
                   value={formData.mapel_id} 
                   onValueChange={(value) => setFormData({...formData, mapel_id: value})}
                 >
-                  <SelectTrigger>
+                          <SelectTrigger className="mt-1">
                     <SelectValue placeholder="Pilih Mata Pelajaran" />
                   </SelectTrigger>
                   <SelectContent>
@@ -3689,17 +3728,25 @@ const ManageSchedulesView = ({ onBack, onLogout }: { onBack: () => void; onLogou
                     })}
                   </SelectContent>
                 </Select>
+                      </div>
               </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* Guru dan Ruang */}
+                  <div className="space-y-4">
+                    <div className="flex items-center gap-2 mb-3">
+                      <div className="w-1 h-6 bg-green-500 rounded-full"></div>
+                      <h4 className="font-semibold text-gray-800">Penanggung Jawab</h4>
+                    </div>
+                    
+                    <div className="space-y-4">
               <div>
-                <Label>Guru</Label>
+                        <Label className="text-sm font-medium text-gray-700">Guru *</Label>
                 <Select 
                   value={formData.guru_id} 
                   onValueChange={(value) => setFormData({...formData, guru_id: value})}
                 >
-                  <SelectTrigger>
+                          <SelectTrigger className="mt-1">
                     <SelectValue placeholder="Pilih Guru" />
                   </SelectTrigger>
                   <SelectContent>
@@ -3716,12 +3763,12 @@ const ManageSchedulesView = ({ onBack, onLogout }: { onBack: () => void; onLogou
               </div>
 
               <div>
-                <Label>Ruang Kelas</Label>
+                        <Label className="text-sm font-medium text-gray-700">Ruang Kelas</Label>
                 <Select 
                   value={formData.ruang_id || 'none'} 
                   onValueChange={(value) => setFormData({...formData, ruang_id: value === 'none' ? '' : value})}
                 >
-                  <SelectTrigger>
+                          <SelectTrigger className="mt-1">
                     <SelectValue placeholder="Pilih Ruang (Opsional)" />
                   </SelectTrigger>
                   <SelectContent>
@@ -3736,17 +3783,25 @@ const ManageSchedulesView = ({ onBack, onLogout }: { onBack: () => void; onLogou
                     })}
                   </SelectContent>
                 </Select>
+                      </div>
               </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* Waktu dan Hari */}
+                  <div className="space-y-4">
+                    <div className="flex items-center gap-2 mb-3">
+                      <div className="w-1 h-6 bg-orange-500 rounded-full"></div>
+                      <h4 className="font-semibold text-gray-800">Waktu Pelaksanaan</h4>
+                    </div>
+                    
+                    <div className="space-y-4">
               <div>
-                <Label>Hari</Label>
+                        <Label className="text-sm font-medium text-gray-700">Hari *</Label>
                 <Select 
                   value={formData.hari} 
                   onValueChange={(value) => setFormData({...formData, hari: value})}
                 >
-                  <SelectTrigger>
+                          <SelectTrigger className="mt-1">
                     <SelectValue placeholder="Pilih Hari" />
                   </SelectTrigger>
                   <SelectContent>
@@ -3757,22 +3812,22 @@ const ManageSchedulesView = ({ onBack, onLogout }: { onBack: () => void; onLogou
                     ))}
                   </SelectContent>
                 </Select>
-              </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <div className="grid grid-cols-2 gap-3">
               <div>
-                <Label htmlFor="jam-mulai">Jam Mulai</Label>
+                          <Label htmlFor="jam-mulai" className="text-sm font-medium text-gray-700">Jam Mulai *</Label>
                 <Input 
                   id="jam-mulai"
                   type="time" 
                   value={formData.jam_mulai} 
                   onChange={(e) => setFormData({...formData, jam_mulai: e.target.value})} 
                   required 
+                            className="mt-1"
                 />
               </div>
               <div>
-                <Label htmlFor="jam-selesai">Jam Selesai</Label>
+                          <Label htmlFor="jam-selesai" className="text-sm font-medium text-gray-700">Jam Selesai *</Label>
                 <Input 
                   id="jam-selesai"
                   type="time" 
@@ -3780,10 +3835,14 @@ const ManageSchedulesView = ({ onBack, onLogout }: { onBack: () => void; onLogou
                   onChange={(e) => setFormData({...formData, jam_selesai: e.target.value})} 
                   required={editingId !== null || consecutiveHours === 1}
                   disabled={!editingId && consecutiveHours > 1}
+                            className="mt-1"
                 />
               </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-3">
               <div>
-                <Label htmlFor="jam-ke">Jam ke-</Label>
+                          <Label htmlFor="jam-ke" className="text-sm font-medium text-gray-700">Jam ke- *</Label>
                 <Input 
                   id="jam-ke"
                   type="number" 
@@ -3793,18 +3852,18 @@ const ManageSchedulesView = ({ onBack, onLogout }: { onBack: () => void; onLogou
                   min="1"
                   required={editingId !== null || consecutiveHours === 1}
                   disabled={!editingId && consecutiveHours > 1}
+                            className="mt-1"
                 />
-              </div>
             </div>
 
             {!editingId && (
               <div>
-                <Label htmlFor="consecutive-hours">Jumlah Jam Berurutan</Label>
+                            <Label htmlFor="consecutive-hours" className="text-sm font-medium text-gray-700">Jumlah Jam</Label>
                 <Select 
                   value={consecutiveHours?.toString() || '1'} 
                   onValueChange={(value) => setConsecutiveHours(parseInt(value))}
                 >
-                  <SelectTrigger>
+                              <SelectTrigger className="mt-1">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -3818,15 +3877,38 @@ const ManageSchedulesView = ({ onBack, onLogout }: { onBack: () => void; onLogou
                     })}
                   </SelectContent>
                 </Select>
-                <p className="text-sm text-muted-foreground mt-1">
-                  Pilih lebih dari 1 untuk menambahkan jam berurutan secara otomatis
-                </p>
+                          </div>
+                        )}
+                      </div>
+
+                      {!editingId && consecutiveHours > 1 && (
+                        <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                          <div className="flex items-center gap-2">
+                            <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
+                            <p className="text-sm text-blue-700 font-medium">
+                              Akan menambahkan {consecutiveHours} jam berurutan secara otomatis
+                            </p>
+                          </div>
               </div>
             )}
+                    </div>
+                  </div>
 
-            <div className="flex gap-2">
-              <Button type="submit" disabled={isLoading}>
-                {isLoading ? 'Processing...' : (editingId ? 'Update Jadwal' : `Tambah ${consecutiveHours} Jam Pelajaran`)}
+                  {/* Action Buttons */}
+                  <div className="pt-4 border-t">
+                    <div className="flex gap-3">
+                      <Button type="submit" disabled={isLoading} className="flex-1 bg-blue-600 hover:bg-blue-700">
+                        {isLoading ? (
+                          <div className="flex items-center gap-2">
+                            <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                            Processing...
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-2">
+                            <Calendar className="w-4 h-4" />
+                            {editingId ? 'Update Jadwal' : `Tambah ${consecutiveHours} Jam Pelajaran`}
+                          </div>
+                        )}
               </Button>
               {editingId && (
                 <Button type="button" variant="outline" onClick={() => {
@@ -3842,29 +3924,143 @@ const ManageSchedulesView = ({ onBack, onLogout }: { onBack: () => void; onLogou
                     jam_ke: ''
                   });
                   setConsecutiveHours(1);
-                }}>
+                        }} className="px-6">
                   Cancel
                 </Button>
               )}
+                    </div>
             </div>
           </form>
+              </CardContent>
         </Card>
+          </div>
 
-        {/* Schedule List */}
-        <Card className="p-6">
-          <h3 className="text-xl font-bold mb-4">Daftar Jadwal</h3>
-          <div className="space-y-2 max-h-96 overflow-y-auto">
-            {ensureArray<Schedule>(schedules).length === 0 ? (
-              <div className="text-center py-8">
-                <Calendar className="w-12 h-12 mx-auto text-gray-400 mb-4" />
-                <p className="text-gray-600">Belum ada jadwal</p>
-              </div>
-            ) : (
-              ensureArray<Schedule>(schedules).map((schedule) => (
-                <div key={schedule.id} className={`p-3 border rounded hover:bg-gray-50 ${schedule.has_conflict ? 'border-red-500 bg-red-50' : ''}`}>
-                  <div className="text-sm space-y-1">
+          {/* Schedule List dengan design yang lebih baik */}
+          <div className="xl:col-span-2">
+            <Card className="shadow-lg border-0 bg-white">
+              <CardHeader className="bg-gradient-to-r from-gray-50 to-gray-100 border-b">
+                <div className="flex items-center justify-between">
+                  <CardTitle className="flex items-center gap-3 text-xl">
+                    <div className="p-2 bg-gray-100 rounded-lg">
+                      <Calendar className="w-5 h-5 text-gray-600" />
+                    </div>
+                    <div>
+                      <div className="font-bold text-gray-900">Daftar Jadwal</div>
+                      <div className="text-sm text-gray-600 font-normal">
+                        {filteredSchedules.length} dari {ensureArray<Schedule>(schedules).length} jadwal
+                        {(searchTerm || filterDay || filterClass) && (
+                          <span className="text-blue-600 ml-1">(difilter)</span>
+                        )}
+                      </div>
+                    </div>
+                  </CardTitle>
+                  
+                  {/* Search dan Filter */}
+                  <div className="flex gap-2 flex-wrap">
+                    <div className="relative">
+                      <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+                      <Input 
+                        placeholder="Cari jadwal..." 
+                        className="pl-10 w-64"
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                      />
+                    </div>
+                    
+                    <Select value={filterDay} onValueChange={setFilterDay}>
+                      <SelectTrigger className="w-32">
+                        <SelectValue placeholder="Hari" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">Semua Hari</SelectItem>
+                        {daysOfWeek.map(day => (
+                          <SelectItem key={day} value={day}>{day}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    
+                    <Select value={filterClass} onValueChange={setFilterClass}>
+                      <SelectTrigger className="w-40">
+                        <SelectValue placeholder="Kelas" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">Semua Kelas</SelectItem>
+                        {ensureArray<Kelas>(classes).filter(kelas => hasValidId(kelas)).map((kelas) => {
+                          const value = getSelectValue(kelas.id);
+                          return value ? (
+                            <SelectItem key={kelas.id} value={value}>
+                              {kelas.nama_kelas}
+                            </SelectItem>
+                          ) : null;
+                        })}
+                      </SelectContent>
+                    </Select>
+                    
+                    {(searchTerm || filterDay || filterClass) && (
+                      <Button 
+                        variant="outline" 
+                        size="sm"
+                        onClick={() => {
+                          setSearchTerm('');
+                          setFilterDay('');
+                          setFilterClass('');
+                        }}
+                      >
+                        Clear
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              </CardHeader>
+              
+              <CardContent className="p-0">
+                <div className="max-h-[600px] overflow-y-auto">
+                  {filteredSchedules.length === 0 ? (
+                    <div className="text-center py-12">
+                      {ensureArray<Schedule>(schedules).length === 0 ? (
+                        <>
+                          <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                            <Calendar className="w-8 h-8 text-gray-400" />
+                          </div>
+                          <h3 className="text-lg font-medium text-gray-900 mb-2">Belum ada jadwal</h3>
+                          <p className="text-gray-500 mb-4">Mulai dengan menambahkan jadwal pelajaran pertama</p>
+                          <Button onClick={() => document.getElementById('kelas_id')?.scrollIntoView({ behavior: 'smooth' })}>
+                            <Plus className="w-4 h-4 mr-2" />
+                            Tambah Jadwal
+                          </Button>
+                        </>
+                      ) : (
+                        <>
+                          <div className="w-16 h-16 bg-yellow-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                            <Search className="w-8 h-8 text-yellow-600" />
+                          </div>
+                          <h3 className="text-lg font-medium text-gray-900 mb-2">Tidak ada jadwal yang cocok</h3>
+                          <p className="text-gray-500 mb-4">Coba ubah kata kunci pencarian atau filter</p>
+                          <Button 
+                            variant="outline"
+                            onClick={() => {
+                              setSearchTerm('');
+                              setFilterDay('');
+                              setFilterClass('');
+                            }}
+                          >
+                            <RefreshCw className="w-4 h-4 mr-2" />
+                            Reset Filter
+                          </Button>
+                        </>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="divide-y divide-gray-200">
+                      {filteredSchedules.map((schedule) => (
+                        <div key={schedule.id} className={`p-4 hover:bg-gray-50 transition-colors ${schedule.has_conflict ? 'bg-red-50 border-l-4 border-red-500' : ''}`}>
+                          <div className="flex items-start justify-between">
+                            <div className="flex-1">
+                              <div className="flex items-center gap-3 mb-2">
                     <div className="flex items-center gap-2">
-                      <p className="font-medium">{schedule.nama_kelas}</p>
+                                  <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
+                                  <h4 className="font-semibold text-gray-900">{schedule.nama_kelas}</h4>
+                                </div>
                       {schedule.has_conflict && (
                         <Badge variant="destructive" className="text-xs">
                           <AlertTriangle className="w-3 h-3 mr-1" />
@@ -3872,30 +4068,68 @@ const ManageSchedulesView = ({ onBack, onLogout }: { onBack: () => void; onLogou
                         </Badge>
                       )}
                     </div>
-                    <p className="text-muted-foreground">{schedule.nama_mapel}</p>
-                    <p className="text-muted-foreground">{schedule.nama_guru}</p>
+                              
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-3">
+                                <div className="space-y-2">
+                                  <div className="flex items-center gap-2">
+                                    <BookOpen className="w-4 h-4 text-blue-500" />
+                                    <span className="text-sm font-medium text-gray-700">{schedule.nama_mapel}</span>
+                                  </div>
+                                  <div className="flex items-center gap-2">
+                                    <Users className="w-4 h-4 text-green-500" />
+                                    <span className="text-sm text-gray-600">{schedule.nama_guru}</span>
+                                  </div>
+                                </div>
+                                
+                                <div className="space-y-2">
+                                  <div className="flex items-center gap-2">
+                                    <Clock className="w-4 h-4 text-orange-500" />
+                                    <span className="text-sm text-gray-600">
+                                      {schedule.hari}, Jam {schedule.jam_ke}: {schedule.jam_mulai}-{schedule.jam_selesai}
+                                    </span>
+                                  </div>
                     {schedule.nama_ruang && (
-                      <p className="text-muted-foreground">📍 {schedule.nama_ruang} ({schedule.kode_ruang})</p>
-                    )}
-                    <p className="text-muted-foreground">
-                      {schedule.hari}, Jam {schedule.jam_ke}: {schedule.jam_mulai}-{schedule.jam_selesai}
-                    </p>
+                                    <div className="flex items-center gap-2">
+                                      <MapPin className="w-4 h-4 text-purple-500" />
+                                      <span className="text-sm text-gray-600">
+                                        {schedule.nama_ruang} ({schedule.kode_ruang})
+                                      </span>
+                                    </div>
+                                  )}
                   </div>
-                  <div className="flex gap-2 mt-2">
-                    <Button size="sm" variant="outline" onClick={() => handleEdit(schedule)}>
-                      <Edit className="w-3 h-3 mr-1" />
+                              </div>
+                            </div>
+                            
+                            <div className="flex gap-2 ml-4">
+                              <Button 
+                                size="sm" 
+                                variant="outline" 
+                                onClick={() => handleEdit(schedule)}
+                                className="hover:bg-blue-50 hover:border-blue-300"
+                              >
+                                <Edit className="w-4 h-4 mr-1" />
                       Edit
                     </Button>
-                    <Button size="sm" variant="destructive" onClick={() => handleDelete(schedule.id)}>
-                      <Trash2 className="w-3 h-3 mr-1" />
+                              <Button 
+                                size="sm" 
+                                variant="destructive" 
+                                onClick={() => handleDelete(schedule.id)}
+                                className="hover:bg-red-600"
+                              >
+                                <Trash2 className="w-4 h-4 mr-1" />
                       Delete
                     </Button>
                   </div>
                 </div>
-              ))
+                        </div>
+                      ))}
+                    </div>
             )}
           </div>
+              </CardContent>
         </Card>
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -4326,7 +4560,7 @@ const LiveStudentAttendanceView = ({ onBack, onLogout }: { onBack: () => void; o
         </CardHeader>
         <CardContent>
           {attendanceData && attendanceData.length > 0 ? (
-            <>
+            <React.Fragment key="attendance-content">
               <div className="overflow-x-auto">
                 <Table>
                   <TableHeader>
@@ -4399,7 +4633,7 @@ const LiveStudentAttendanceView = ({ onBack, onLogout }: { onBack: () => void; o
                 </Table>
               </div>
               <Pagination />
-            </>
+            </React.Fragment>
           ) : (
             <div className="text-center py-12 text-gray-500">
               <Users className="w-12 h-12 mx-auto mb-4 opacity-50" />
@@ -4450,7 +4684,7 @@ const BandingAbsenReportView = ({ onBack, onLogout }: { onBack: () => void; onLo
     const fetchClasses = useCallback(async () => {
       try {
         setError(null);
-        const data = await apiCall('/api/admin/classes', {}, onLogout);
+        const data = await apiCall('/api/admin/kelas', {}, onLogout);
         if (Array.isArray(data)) {
           setClasses(data);
         } else {
@@ -5286,7 +5520,7 @@ const LiveTeacherAttendanceView = ({ onBack, onLogout }: { onBack: () => void; o
           </CardHeader>
           <CardContent>
             {attendanceData && attendanceData.length > 0 ? (
-              <>
+              <React.Fragment key="teacher-attendance-content">
                 <div className="overflow-x-auto">
                   <Table>
                     <TableHeader>
@@ -5365,7 +5599,7 @@ const LiveTeacherAttendanceView = ({ onBack, onLogout }: { onBack: () => void; o
                   </Table>
                 </div>
                 <TeacherPagination />
-              </>
+              </React.Fragment>
             ) : (
               <div className="text-center py-12 text-gray-500">
                 <GraduationCap className="w-12 h-12 mx-auto mb-4 opacity-50" />
@@ -5836,10 +6070,12 @@ const RiwayatIzinReportView = ({ onBack, onLogout }: { onBack: () => void; onLog
         <div>
           <Label>Kelas</Label>
           <Select value={selectedKelas} onValueChange={setSelectedKelas}>
-            <SelectTrigger className="w-56"><SelectValue placeholder="Semua Kelas"/></SelectTrigger>
+            <SelectTrigger className="w-56">
+              <SelectValue placeholder="Semua Kelas"/>
+            </SelectTrigger>
             <SelectContent>
-              <SelectItem value="">Semua</SelectItem>
-              {classes?.map((c: Kelas)=>(<SelectItem key={c.id} value={String(c.id)}>{c.nama_kelas}</SelectItem>))}
+              <SelectItem key="all" value="all">Semua</SelectItem>
+              {classes?.filter(c => c.id).map((c: Kelas)=>(<SelectItem key={c.id} value={String(c.id)}>{c.nama_kelas}</SelectItem>))}
             </SelectContent>
           </Select>
         </div>
@@ -6312,15 +6548,15 @@ const RiwayatIzinReportView = ({ onBack, onLogout }: { onBack: () => void; onLog
           <div className="flex gap-2">
             <Button onClick={fetchReportData} disabled={loading} className="bg-orange-600 hover:bg-orange-700">
               {loading ? (
-                <>
+                <React.Fragment key="loading-state">
                   <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent mr-2" />
                   Memuat...
-                </>
+                </React.Fragment>
               ) : (
-                <>
+                <React.Fragment key="normal-state">
                   <Search className="w-4 h-4 mr-2" />
                   Tampilkan Data
-                </>
+                </React.Fragment>
               )}
             </Button>
             
@@ -6407,7 +6643,7 @@ const StudentAttendanceSummaryView = ({ onBack, onLogout }: { onBack: () => void
   const fetchClasses = useCallback(async () => {
     try {
       setError(null);
-      const data = await apiCall('/api/admin/classes', {}, onLogout);
+      const data = await apiCall('/api/admin/kelas', {}, onLogout);
       if (Array.isArray(data)) {
         setClasses(data);
       } else {
@@ -6924,15 +7160,15 @@ const TeacherAttendanceSummaryView = ({ onBack, onLogout }: { onBack: () => void
           <div className="flex gap-2">
             <Button onClick={fetchReportData} disabled={loading} className="bg-blue-600 hover:bg-blue-700">
               {loading ? (
-                <>
+                <React.Fragment key="loading-state">
                   <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent mr-2" />
                   Memuat...
-                </>
+                </React.Fragment>
               ) : (
-                <>
+                <React.Fragment key="normal-state">
                   <Search className="w-4 h-4 mr-2" />
                   Tampilkan Data
-                </>
+                </React.Fragment>
               )}
             </Button>
             
@@ -7029,7 +7265,7 @@ const StudentPromotionView = ({ onBack, onLogout }: { onBack: () => void; onLogo
     console.log('👥 Fetching students for classId:', classId);
     setIsLoading(true);
     try {
-      const response = await apiCall('/api/admin/siswa-perwakilan', {}, onLogout);
+      const response = await apiCall('/api/admin/siswa', {}, onLogout);
       console.log('📊 Raw response:', response);
       
       // Handle nested response structure: response.data.data
@@ -7780,15 +8016,15 @@ const StudentPromotionView = ({ onBack, onLogout }: { onBack: () => void; onLogo
               className="bg-emerald-600 hover:bg-emerald-700"
             >
               {isProcessing ? (
-                <>
+                <React.Fragment key="processing-state">
                   <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
                   Memproses...
-                </>
+                </React.Fragment>
               ) : (
-                <>
+                <React.Fragment key="normal-state">
                   <ArrowUpCircle className="w-4 h-4 mr-2" />
                   Konfirmasi Naik Kelas
-                </>
+                </React.Fragment>
               )}
             </Button>
           </DialogFooter>
@@ -7820,15 +8056,15 @@ const StudentPromotionView = ({ onBack, onLogout }: { onBack: () => void; onLogo
                   className="bg-emerald-600 hover:bg-emerald-700"
                 >
                   {isProcessing ? (
-                    <>
+                    <React.Fragment key="processing-state">
                       <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
                       Memproses...
-                    </>
+                    </React.Fragment>
                   ) : (
-                    <>
+                    <React.Fragment key="normal-state">
                       <ArrowUpCircle className="w-4 h-4 mr-2" />
                       Naik Kelas Sekarang
-                    </>
+                    </React.Fragment>
                   )}
                 </Button>
               </div>
@@ -7840,207 +8076,6 @@ const StudentPromotionView = ({ onBack, onLogout }: { onBack: () => void; onLogo
   );
 };
 
-// Realtime Guru Attendance Component
-const RealtimeGuruAttendanceView = ({ onBack, onLogout }: { onBack: () => void; onLogout: () => void }) => {
-  const [attendanceData, setAttendanceData] = useState<Array<Record<string, string | number>>>([]);
-  const [stats, setStats] = useState<Record<string, string | number>>({});
-  const [isLoading, setIsLoading] = useState(false);
-  const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
-
-  const fetchAttendanceData = useCallback(async () => {
-    try {
-      setIsLoading(true);
-      const data = await apiCall('/api/admin/guru/kehadiran-realtime', {}, onLogout);
-      setAttendanceData(data.data || []);
-      setStats(data.stats || {});
-      setLastUpdate(new Date());
-    } catch (error) {
-      console.error('Error fetching attendance data:', error);
-      toast({ title: "Error memuat data kehadiran", description: error.message, variant: "destructive" });
-    } finally {
-      setIsLoading(false);
-    }
-  }, [onLogout]);
-
-  useEffect(() => {
-    fetchAttendanceData();
-    // Auto refresh every 30 seconds
-    const interval = setInterval(fetchAttendanceData, 30000);
-    return () => clearInterval(interval);
-  }, [fetchAttendanceData]);
-
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'Hadir': return 'text-green-600 bg-green-100';
-      case 'Terlambat': return 'text-yellow-600 bg-yellow-100';
-      case 'Belum Hadir': return 'text-gray-600 bg-gray-100';
-      case 'Tidak Hadir': return 'text-red-600 bg-red-100';
-      case 'Sakit': return 'text-orange-600 bg-orange-100';
-      case 'Izin': return 'text-blue-600 bg-blue-100';
-      case 'Dispen': return 'text-purple-600 bg-purple-100';
-      default: return 'text-gray-600 bg-gray-100';
-    }
-  };
-
-  const getStatusIcon = (status: string) => {
-    switch (status) {
-      case 'Hadir': return <CheckCircle className="w-4 h-4" />;
-      case 'Terlambat': return <Clock className="w-4 h-4" />;
-      case 'Belum Hadir': return <AlertCircle className="w-4 h-4" />;
-      case 'Tidak Hadir': return <XCircle className="w-4 h-4" />;
-      case 'Sakit': return <AlertTriangle className="w-4 h-4" />;
-      case 'Izin': return <Info className="w-4 h-4" />;
-      case 'Dispen': return <Shield className="w-4 h-4" />;
-      default: return <AlertCircle className="w-4 h-4" />;
-    }
-  };
-
-  return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Kehadiran Guru Realtime</h1>
-          <p className="text-gray-600">Monitoring kehadiran guru hari ini</p>
-          {lastUpdate && (
-            <p className="text-sm text-gray-500">
-              Terakhir update: {lastUpdate.toLocaleTimeString()}
-            </p>
-          )}
-        </div>
-        <div className="flex gap-2">
-          <Button onClick={fetchAttendanceData} disabled={isLoading} variant="outline">
-            <RefreshCw className={`w-4 h-4 mr-2 ${isLoading ? 'animate-spin' : ''}`} />
-            Refresh
-          </Button>
-          <Button onClick={onBack} variant="outline">
-            <ArrowLeft className="w-4 h-4 mr-2" />
-            Kembali
-          </Button>
-        </div>
-      </div>
-
-      {/* Stats Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-4">
-        <Card className="p-4">
-          <div className="text-center">
-            <div className="text-2xl font-bold text-gray-900">{stats.total || 0}</div>
-            <div className="text-sm text-gray-600">Total</div>
-          </div>
-        </Card>
-        <Card className="p-4">
-          <div className="text-center">
-            <div className="text-2xl font-bold text-green-600">{stats.hadir || 0}</div>
-            <div className="text-sm text-gray-600">Hadir</div>
-          </div>
-        </Card>
-        <Card className="p-4">
-          <div className="text-center">
-            <div className="text-2xl font-bold text-yellow-600">{stats.terlambat || 0}</div>
-            <div className="text-sm text-gray-600">Terlambat</div>
-          </div>
-        </Card>
-        <Card className="p-4">
-          <div className="text-center">
-            <div className="text-2xl font-bold text-gray-600">{stats.belum_hadir || 0}</div>
-            <div className="text-sm text-gray-600">Belum Hadir</div>
-          </div>
-        </Card>
-        <Card className="p-4">
-          <div className="text-center">
-            <div className="text-2xl font-bold text-red-600">{stats.tidak_hadir || 0}</div>
-            <div className="text-sm text-gray-600">Tidak Hadir</div>
-          </div>
-        </Card>
-        <Card className="p-4">
-          <div className="text-center">
-            <div className="text-2xl font-bold text-orange-600">{stats.sakit || 0}</div>
-            <div className="text-sm text-gray-600">Sakit</div>
-          </div>
-        </Card>
-        <Card className="p-4">
-          <div className="text-center">
-            <div className="text-2xl font-bold text-blue-600">{stats.izin || 0}</div>
-            <div className="text-sm text-gray-600">Izin</div>
-          </div>
-        </Card>
-        <Card className="p-4">
-          <div className="text-center">
-            <div className="text-2xl font-bold text-purple-600">{stats.dispen || 0}</div>
-            <div className="text-sm text-gray-600">Dispen</div>
-          </div>
-        </Card>
-      </div>
-
-      {/* Attendance List */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Daftar Kehadiran Guru</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {isLoading ? (
-            <div className="text-center py-8">
-              <Loader2 className="w-8 h-8 animate-spin mx-auto mb-2" />
-              <p>Memuat data kehadiran...</p>
-            </div>
-          ) : attendanceData.length === 0 ? (
-            <div className="text-center py-8 text-gray-500">
-              <Clock className="w-12 h-12 mx-auto mb-2" />
-              <p>Tidak ada jadwal untuk hari ini</p>
-            </div>
-          ) : (
-            <div className="space-y-4">
-              {attendanceData.map((attendance, index) => (
-                <div key={`attendance-${attendance.id || attendance.nama_guru || index}`} className="border rounded-lg p-4 hover:bg-gray-50">
-                  <div className="flex items-center justify-between">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-3 mb-2">
-                        <h3 className="font-semibold text-lg">{attendance.nama_guru}</h3>
-                        <span className={`px-2 py-1 rounded-full text-xs font-medium flex items-center gap-1 ${getStatusColor(String(attendance.status_kehadiran))}`}>
-                          {getStatusIcon(String(attendance.status_kehadiran))}
-                          {attendance.status_kehadiran}
-                        </span>
-                      </div>
-                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm text-gray-600">
-                        <div>
-                          <span className="font-medium">Kelas:</span> {attendance.nama_kelas}
-                        </div>
-                        <div>
-                          <span className="font-medium">Mapel:</span> {attendance.nama_mapel}
-                        </div>
-                        <div>
-                          <span className="font-medium">Jam:</span> {attendance.jam_mulai} - {attendance.jam_selesai}
-                        </div>
-                      </div>
-                      {attendance.waktu_scan && (
-                        <div className="mt-2 text-sm text-gray-500">
-                          <span className="font-medium">Waktu Absen:</span> {new Date(attendance.waktu_scan).toLocaleString()}
-                        </div>
-                      )}
-                      {attendance.jam_terlambat && (
-                        <div className="mt-2 text-sm text-yellow-600">
-                          <span className="font-medium">Terlambat:</span> {attendance.jam_terlambat} menit
-                          {attendance.alasan_terlambat && (
-                            <span> - {attendance.alasan_terlambat}</span>
-                          )}
-                        </div>
-                      )}
-                      {attendance.keterangan && (
-                        <div className="mt-2 text-sm text-gray-600">
-                          <span className="font-medium">Keterangan:</span> {attendance.keterangan}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </CardContent>
-      </Card>
-    </div>
-  );
-};
 
 // Ruang Kelas Management Component
 const RuangKelasManagementView = ({ onBack, onLogout }: { onBack: () => void; onLogout: () => void }) => {
@@ -8407,13 +8442,7 @@ const ReportsView = ({ onBack, onLogout }: { onBack: () => void; onLogout: () =>
       icon: MessageCircle,
       gradient: 'from-red-500 to-red-700'
     },
-    {
-      id: 'riwayat-izin-report',
-      title: 'Riwayat Pengajuan Izin', 
-      description: 'Laporan history pengajuan izin siswa',
-      icon: ClipboardList,
-      gradient: 'from-orange-500 to-orange-700'
-    },
+    // Menu riwayat pengajuan izin dihapus - tidak ada lagi pengajuan izin
     {
       id: 'presensi-siswa',
       title: 'Presensi Siswa', 
@@ -8524,21 +8553,21 @@ export const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
   useEffect(() => {
     const checkTokenValidity = async () => {
       try {
-        const response = await apiCall('/api/verify-token', {}, onLogout);
-        setUserData(response.user);
+        const response = await apiCall('/api/verify', {}, onLogout);
+        setUserData(response.data);
         
         // Load latest profile data from server
         try {
           const profileResponse = await apiCall('/api/admin/info', {}, onLogout);
-          if (profileResponse.success) {
+          if (profileResponse.success && profileResponse.data) {
             setUserData({
-              id: profileResponse.id,
-              username: profileResponse.username,
-              nama: profileResponse.nama,
-              email: profileResponse.email,
-              role: profileResponse.role,
-              created_at: profileResponse.created_at,
-              updated_at: profileResponse.updated_at
+              id: profileResponse.data.id || userData?.id,
+              username: profileResponse.data.username || userData?.username,
+              nama: profileResponse.data.nama || userData?.nama,
+              email: profileResponse.data.email || userData?.email,
+              role: profileResponse.data.role || userData?.role,
+              created_at: profileResponse.data.created_at || userData?.created_at,
+              updated_at: profileResponse.data.updated_at || userData?.updated_at
             });
           }
         } catch (profileErr) {
@@ -8550,7 +8579,7 @@ export const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
     };
 
     checkTokenValidity();
-  }, [onLogout]);
+  }, []);
 
   const handleUpdateProfile = (updatedData: {
     id: number;
@@ -8584,10 +8613,6 @@ export const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
         return <ManageClassesView onBack={handleBack} onLogout={onLogout} />;
       case 'room-management':
         return <RuangKelasManagementView onBack={handleBack} onLogout={onLogout} />;
-      case 'security-management':
-        return <SecurityManagementView />;
-      case 'performance-monitoring':
-        return <PerformanceMonitoringView />;
       case 'add-schedule':
         return <ManageSchedulesView onBack={handleBack} onLogout={onLogout} />;
       case 'backup-management':
@@ -8600,8 +8625,6 @@ export const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
         return <ErrorBoundary><SimpleRestoreView onBack={handleBack} onLogout={onLogout} /></ErrorBoundary>;
       case 'letterhead-settings':
         return <ErrorBoundary><ReportLetterheadSettings onBack={handleBack} onLogout={onLogout} /></ErrorBoundary>;
-      case 'guru-attendance':
-        return <ErrorBoundary><RealtimeGuruAttendanceView onBack={handleBack} onLogout={onLogout} /></ErrorBoundary>;
       case 'reports':
         return <ErrorBoundary><ReportsView onBack={handleBack} onLogout={onLogout} /></ErrorBoundary>;
       default:

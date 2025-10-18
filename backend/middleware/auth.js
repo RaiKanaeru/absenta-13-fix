@@ -2,11 +2,15 @@
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcrypt';
 
-const JWT_SECRET = process.env.JWT_SECRET;
 const PASSWORD_PEPPER = process.env.PASSWORD_PEPPER || '';
 
-if (!JWT_SECRET) {
-  throw new Error('JWT_SECRET environment variable is required');
+// Get JWT_SECRET at runtime to ensure environment variables are loaded
+function getJWTSecret() {
+  const jwtSecret = process.env.JWT_SECRET;
+  if (!jwtSecret) {
+    throw new Error('JWT_SECRET environment variable is required');
+  }
+  return jwtSecret;
 }
 
 // Authenticate JWT token
@@ -18,13 +22,18 @@ export const authenticateToken = (req, res, next) => {
     return res.status(401).json({ error: 'Access token required' });
   }
 
-  jwt.verify(token, JWT_SECRET, (err, user) => {
-    if (err) {
-      return res.status(403).json({ error: 'Invalid token' });
-    }
-    req.user = user;
-    next();
-  });
+  try {
+    const jwtSecret = getJWTSecret();
+    jwt.verify(token, jwtSecret, (err, user) => {
+      if (err) {
+        return res.status(403).json({ error: 'Invalid token' });
+      }
+      req.user = user;
+      next();
+    });
+  } catch (error) {
+    return res.status(500).json({ error: error.message });
+  }
 };
 
 // Role-based authorization
@@ -51,10 +60,15 @@ export const verifyPassword = async (password, hashedPassword) => {
 
 // Generate JWT token
 export const generateToken = (user) => {
-  return jwt.sign({
-    id: user.id,
-    username: user.nama_pengguna,
-    role: user.peran,
-    iat: Math.floor(Date.now() / 1000)
-  }, JWT_SECRET, { expiresIn: '24h' });
+  try {
+    const jwtSecret = getJWTSecret();
+    return jwt.sign({
+      id: user.id,
+      username: user.username,
+      role: user.role.toLowerCase(), // Convert role to lowercase for frontend compatibility
+      iat: Math.floor(Date.now() / 1000)
+    }, jwtSecret, { expiresIn: '24h' });
+  } catch (error) {
+    throw new Error(`Token generation failed: ${error.message}`);
+  }
 };

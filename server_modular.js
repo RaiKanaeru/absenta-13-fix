@@ -1,14 +1,14 @@
 // Modular Express Server
+// IMPORTANT: Load environment variables FIRST before any other imports
+import dotenv from 'dotenv';
+dotenv.config();
+
 import express from 'express';
 import cors from 'cors';
-import dotenv from 'dotenv';
 import { globalLimiter } from './backend/middleware/rateLimiting.js';
 import routes from './backend/routes/index.js';
 import { initSentry, sentryMiddleware } from './backend/config/sentry.js';
 import { performanceMiddleware, startPerformanceMonitoring, performanceRoutes } from './backend/middleware/performance.js';
-
-// Load environment variables
-dotenv.config();
 
 // Initialize Sentry
 initSentry();
@@ -25,7 +25,11 @@ app.use(performanceMiddleware);
 
 // Global middleware
 app.use(cors({
-  origin: process.env.FRONTEND_URL || 'http://localhost:8080',
+  origin: [
+    process.env.FRONTEND_URL || 'http://localhost:8080',
+    'http://localhost:8081',
+    'http://localhost:8080'
+  ],
   credentials: true
 }));
 
@@ -36,10 +40,24 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(globalLimiter);
 
 // Routes
-app.use(routes);
+try {
+  console.log('📍 Loading routes...');
+  app.use(routes);
+  console.log('✅ Routes loaded successfully');
+} catch (error) {
+  console.error('❌ Error loading routes:', error);
+  throw error;
+}
 
 // Performance monitoring routes
-performanceRoutes(app);
+try {
+  console.log('📊 Loading performance monitoring routes...');
+  performanceRoutes(app);
+  console.log('✅ Performance monitoring routes loaded');
+} catch (error) {
+  console.error('❌ Error loading performance routes:', error);
+  throw error;
+}
 
 // Sentry error handler (must be before other error handlers)
 app.use(sentryMiddleware.errorHandler);
@@ -68,11 +86,12 @@ app.use((err, req, res, next) => {
   });
 });
 
-// 404 handler
-app.use('*', (req, res) => {
+// 404 handler (must be the last route)
+app.use((req, res) => {
   res.status(404).json({
     success: false,
-    error: 'Endpoint not found'
+    error: 'Endpoint not found',
+    path: req.path
   });
 });
 

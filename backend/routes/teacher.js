@@ -2,7 +2,7 @@
 import express from 'express';
 import { authenticateToken, requireRole } from '../middleware/auth.js';
 import { apiLimiter } from '../middleware/rateLimiting.js';
-import { db } from '../db.js';
+import { db } from '../../db.js';
 
 const router = express.Router();
 

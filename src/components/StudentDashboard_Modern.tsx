@@ -10,7 +10,7 @@ import { toast } from '@/hooks/use-toast';
 import { apiCall } from '@/utils/api';
 import { FontSizeControl } from '@/components/ui/font-size-control';
 import { EditProfile } from './EditProfile';
-import { ErrorBoundary } from './ErrorBoundary';
+import ErrorBoundary from './ErrorBoundary';
 import { useRequestCancellation } from '@/hooks/useRequestCancellation';
 import { useRetryLogic } from '@/hooks/useRetryLogic';
 import { 
@@ -27,31 +27,6 @@ interface StudentDashboardProps {
     role: string;
   };
   onLogout: () => void;
-}
-
-interface PengajuanIzin {
-  id_pengajuan: number;
-  jadwal_id: number;
-  tanggal_izin: string;
-  jenis_izin: 'sakit' | 'izin' | 'alpa' | 'dispen';
-  alasan: string;
-  bukti_pendukung?: string;
-  status: 'pending' | 'disetujui' | 'ditolak';
-  keterangan_guru?: string;
-  tanggal_pengajuan: string;
-  tanggal_respon?: string;
-  nama_mapel: string;
-  nama_guru: string;
-  jam_mulai: string;
-  jam_selesai: string;
-  // Data untuk kelas
-  siswa_izin?: Array<{
-    nama: string;
-    jenis_izin: 'sakit' | 'izin' | 'alpa' | 'dispen';
-    alasan: string;
-    bukti_pendukung?: string;
-  }>;
-  total_siswa_izin?: number;
 }
 
 interface BandingAbsen {
@@ -238,7 +213,7 @@ const StudentDashboardComponent = ({ userData, onLogout }: StudentDashboardProps
   const [kehadiranData, setKehadiranData] = useState<KehadiranData>({});
   const [adaTugasData, setAdaTugasData] = useState<{[key: number]: boolean}>({});
   const [riwayatData, setRiwayatData] = useState<RiwayatData[]>([]);
-  const [pengajuanIzin, setPengajuanIzin] = useState<PengajuanIzin[]>([]);
+  
   const [bandingAbsen, setBandingAbsen] = useState<BandingAbsen[]>([]);
   const [expandedBanding, setExpandedBanding] = useState<number | null>(null);
   const [attendanceRecords, setAttendanceRecords] = useState<Array<{
@@ -268,7 +243,7 @@ const StudentDashboardComponent = ({ userData, onLogout }: StudentDashboardProps
     initial: true,
     jadwal: false,
     riwayat: false,
-    pengajuanIzin: false,
+    
     bandingAbsen: false,
     submit: false,
     general: false
@@ -337,22 +312,17 @@ const StudentDashboardComponent = ({ userData, onLogout }: StudentDashboardProps
   const [maxDate, setMaxDate] = useState<string>(maxDateValue);
   const [minDate, setMinDate] = useState<string>(minDateValue);
   
-  // State untuk form pengajuan izin (single student) - REMOVED
-  // const [formIzin, setFormIzin] = useState({
   //   jadwal_id: '',
   //   tanggal_izin: '',
   //   jenis_izin: '',
   //   alasan: '',
   //   bukti_pendukung: ''
-  // });
-  // const [showFormIzin, setShowFormIzin] = useState(false);
-  // const [showFormBanding, setShowFormBanding] = useState(false);
   const [showFormIzinKelas, setShowFormIzinKelas] = useState(false);
   const [showFormBandingKelas, setShowFormBandingKelas] = useState(false);
   const [daftarSiswa, setDaftarSiswa] = useState<Array<{id: number; nama: string}>>([]);
   
   // State untuk pagination
-  const [pengajuanIzinPage, setPengajuanIzinPage] = useState(1);
+  
   const [bandingAbsenPage, setBandingAbsenPage] = useState(1);
   const [riwayatPage, setRiwayatPage] = useState(1);
   const [itemsPerPage] = useState(5);
@@ -361,7 +331,6 @@ const StudentDashboardComponent = ({ userData, onLogout }: StudentDashboardProps
   // State untuk expandable rows
   const [expandedRows, setExpandedRows] = useState<Set<number>>(new Set());
   
-  // State untuk form banding absen (single student) - REMOVED
   // const [formBanding, setFormBanding] = useState({
   //   jadwal_id: '',
   //   tanggal_absen: '',
@@ -369,9 +338,7 @@ const StudentDashboardComponent = ({ userData, onLogout }: StudentDashboardProps
   //   status_diajukan: '',
   //   alasan_banding: '',
   //   bukti_pendukung: ''
-  // });
 
-  // State untuk form pengajuan izin kelas
   const [formIzinKelas, setFormIzinKelas] = useState({
     jadwal_id: '',
     tanggal_izin: '',
@@ -408,11 +375,6 @@ const StudentDashboardComponent = ({ userData, onLogout }: StudentDashboardProps
   );
 
   // Memoized pagination data
-  const paginatedPengajuanIzin = useMemo(() => {
-    const startIndex = (pengajuanIzinPage - 1) * itemsPerPage;
-    const endIndex = startIndex + itemsPerPage;
-    return pengajuanIzin.slice(startIndex, endIndex);
-  }, [pengajuanIzin, pengajuanIzinPage, itemsPerPage]);
 
   const paginatedBandingAbsen = useMemo(() => {
     const startIndex = (bandingAbsenPage - 1) * itemsPerPage;
@@ -438,7 +400,6 @@ const StudentDashboardComponent = ({ userData, onLogout }: StudentDashboardProps
   const totalRiwayatPages = useMemo(() => 
     Math.ceil(riwayatData.length / riwayatItemsPerPage), [riwayatData.length, riwayatItemsPerPage]
   );
-
 
   // Helper functions for expandable rows
   const toggleRowExpansion = useCallback((rowId: number) => {
@@ -474,7 +435,6 @@ const StudentDashboardComponent = ({ userData, onLogout }: StudentDashboardProps
 
   // Memoized form handlers - REMOVED (personal forms no longer exist)
 
-
   const handleEditModeToggle = useCallback(() => {
     setIsEditMode(prev => !prev);
   }, []);
@@ -501,7 +461,7 @@ const StudentDashboardComponent = ({ userData, onLogout }: StudentDashboardProps
         setLoadingRef.current('initial', true);
         setError(null);
         
-        const result = await apiCall('/api/siswa/info', {
+        const result = await apiCall('/api/siswa-perwakilan/info', {
           method: 'GET',
           signal: abortController.signal
         });
@@ -824,7 +784,6 @@ const StudentDashboardComponent = ({ userData, onLogout }: StudentDashboardProps
   //   } finally {
   //     setLoadingRef.current('jadwal', false);
   //   }
-  // }, [siswaId, isLoading]);
 
   // Load daftar siswa kelas
   const loadDaftarSiswa = useCallback(async () => {
@@ -912,83 +871,6 @@ const StudentDashboardComponent = ({ userData, onLogout }: StudentDashboardProps
     }
   }, [siswaId]);
 
-  // Load pengajuan izin data
-  const loadPengajuanIzin = useCallback(async () => {
-    if (!siswaId) return;
-
-    try {
-      // Get and clean token from localStorage
-      const rawToken = localStorage.getItem('token');
-      const cleanToken = rawToken ? rawToken.trim() : '';
-      
-      if (!cleanToken) {
-        console.error('❌ Token tidak ditemukan');
-        return;
-      }
-      
-      // Add cache busting and retry logic
-      const timestamp = Date.now();
-      const url = `/api/siswa/${siswaId}/pengajuan-izin?t=${timestamp}`;
-      
-      console.log(`🔄 Loading pengajuan izin for siswa ${siswaId}...`);
-      
-      const response = await fetch(url, {
-        headers: {
-          'Authorization': `Bearer ${cleanToken}`,
-          'Cache-Control': 'no-cache',
-          'Pragma': 'no-cache'
-        },
-        credentials: 'include'
-      });
-
-      console.log(`📊 Pengajuan izin response: ${response.status}`);
-
-      if (response.ok) {
-        const data = await response.json();
-        console.log('✅ Pengajuan izin loaded successfully');
-        
-        // Ensure data is an array
-        if (data && data.success && Array.isArray(data.data)) {
-          setPengajuanIzin(data.data);
-        } else if (Array.isArray(data)) {
-          setPengajuanIzin(data);
-        } else {
-          console.warn('⚠️ Invalid pengajuan izin data format:', data);
-          setPengajuanIzin([]);
-        }
-      } else {
-        const errorData = await response.json();
-        console.error('❌ Error loading pengajuan izin:', errorData);
-        
-        // If 500 error, try to clear cache and retry once
-        if (response.status === 500) {
-          console.log('🔄 Retrying pengajuan izin request after 500 error...');
-          await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1 second
-          
-          const retryResponse = await fetch(url, {
-            headers: {
-              'Authorization': `Bearer ${cleanToken}`,
-              'Cache-Control': 'no-cache',
-              'Pragma': 'no-cache'
-            },
-            credentials: 'include'
-          });
-          
-          if (retryResponse.ok) {
-            const retryData = await retryResponse.json();
-            console.log('✅ Pengajuan izin loaded successfully on retry');
-            setPengajuanIzin(retryData);
-          } else {
-            console.error('❌ Retry also failed:', retryResponse.status);
-          }
-        }
-      }
-    } catch (error) {
-      console.error('❌ Error loading pengajuan izin:', error);
-    }
-  }, [siswaId]);
-
-  // Submit pengajuan izin (single student) - REMOVED (personal feature)
   // const submitPengajuanIzin = useCallback(async () => {
   //   // Cek apakah sedang dalam proses submit
   //   if (submitting) {
@@ -1016,8 +898,7 @@ const StudentDashboardComponent = ({ userData, onLogout }: StudentDashboardProps
   //       jenis_izin: formIzin.jenis_izin,
   //       alasan: formIzin.alasan
   //     };
-      
-      
+
   //     // Get and clean token from localStorage
   //     const rawToken = localStorage.getItem('token');
   //     const cleanToken = rawToken ? rawToken.trim() : '';
@@ -1031,7 +912,7 @@ const StudentDashboardComponent = ({ userData, onLogout }: StudentDashboardProps
   //       return;
   //     }
       
-  //     const response = await fetch(`/api/siswa/${siswaId}/pengajuan-izin`, {
+  //     const response = await fetch(``, {
   //       method: 'POST',
   //       headers: {
   //         'Content-Type': 'application/json',
@@ -1053,7 +934,6 @@ const StudentDashboardComponent = ({ userData, onLogout }: StudentDashboardProps
   //       console.error('❌ Error submitting pengajuan izin:', errorData);
   //       toast({
   //         title: "Error",
-  //         description: errorData.error || "Gagal mengirim pengajuan izin",
   //         variant: "destructive"
   //       });
   //     }
@@ -1068,283 +948,6 @@ const StudentDashboardComponent = ({ userData, onLogout }: StudentDashboardProps
   //     setSubmitting(false);
   //     setLoadingRef.current('submit', false);
   //   }
-  // }, [formIzin, loadPengajuanIzin, siswaId, submitting]);
-
-  // Submit pengajuan izin kelas
-  const submitPengajuanIzinKelas = useCallback(async () => {
-    // Cek apakah sedang dalam proses submit
-    if (submitting) {
-      console.log('⚠️ Pengajuan izin kelas sedang diproses, mencegah multiple submission');
-      return;
-    }
-
-    // Validasi form
-    if (!formIzinKelas.tanggal_izin || !formIzinKelas.jadwal_id || formIzinKelas.siswa_izin.length === 0) {
-      toast({
-        title: "Error",
-        description: "Semua field wajib diisi dan minimal 1 siswa harus dipilih",
-        variant: "destructive"
-      });
-      return;
-    }
-
-    // Validasi setiap siswa
-    for (const siswa of formIzinKelas.siswa_izin) {
-      if (!siswa.id || !siswa.nama || !siswa.jenis_izin || !siswa.alasan) {
-        toast({
-          title: "Error",
-          description: "Semua data siswa harus lengkap",
-          variant: "destructive"
-        });
-        return;
-      }
-    }
-
-    setSubmitting(true);
-    setLoadingRef.current('submit', true);
-    try {
-      const requestData = {
-        jadwal_id: parseInt(formIzinKelas.jadwal_id),
-        tanggal_izin: formIzinKelas.tanggal_izin,
-        siswa_izin: formIzinKelas.siswa_izin
-      };
-      
-      // Get and clean token from localStorage
-      const rawToken = localStorage.getItem('token');
-      const cleanToken = rawToken ? rawToken.trim() : '';
-      
-      if (!cleanToken) {
-        toast({
-          title: "Error",
-          description: "Token tidak ditemukan. Silakan login ulang.",
-          variant: "destructive"
-        });
-        return;
-      }
-      
-      const response = await fetch(`/api/siswa/${siswaId}/pengajuan-izin-kelas`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${cleanToken}`
-        },
-        credentials: 'include',
-        body: JSON.stringify(requestData)
-      });
-
-      if (response.ok) {
-        toast({
-          title: "Berhasil",
-          description: "Pengajuan izin kelas berhasil dikirim"
-        });
-        
-        // Reset form dan reload data
-        setFormIzinKelas({
-          jadwal_id: '',
-          tanggal_izin: '',
-          siswa_izin: []
-        });
-        setShowFormIzinKelas(false);
-        loadPengajuanIzin();
-      } else {
-        const errorData = await response.json();
-        console.error('❌ Error submitting pengajuan izin kelas:', errorData);
-        toast({
-          title: "Error",
-          description: errorData.error || "Gagal mengirim pengajuan izin kelas",
-          variant: "destructive"
-        });
-      }
-    } catch (error) {
-      console.error('Error submitting pengajuan izin kelas:', error);
-      toast({
-        title: "Error",
-        description: "Terjadi kesalahan saat mengirim pengajuan",
-        variant: "destructive"
-      });
-    } finally {
-      setSubmitting(false);
-      setLoadingRef.current('submit', false);
-    }
-  }, [formIzinKelas, loadPengajuanIzin, siswaId, submitting]);
-
-  // Submit banding absen kelas
-  const submitBandingKelas = useCallback(async () => {
-    // Cek apakah sedang dalam proses submit
-    if (submitting) {
-      console.log('⚠️ Banding absen kelas sedang diproses, mencegah multiple submission');
-      return;
-    }
-
-    // Validasi form
-    if (!formBandingKelas.tanggal_absen || !formBandingKelas.jadwal_id || formBandingKelas.siswa_banding.length === 0) {
-      toast({
-        title: "Error",
-        description: "Semua field wajib diisi dan minimal 1 siswa harus dipilih",
-        variant: "destructive"
-      });
-      return;
-    }
-
-    // Validasi setiap siswa
-    for (const siswa of formBandingKelas.siswa_banding) {
-      if (!siswa.id || !siswa.nama || !siswa.status_asli || !siswa.status_diajukan || !siswa.alasan_banding) {
-        toast({
-          title: "Error",
-          description: "Semua data siswa harus lengkap",
-          variant: "destructive"
-        });
-        return;
-      }
-    }
-
-    // Validasi: Semua siswa harus memiliki status tercatat dari database
-    const invalidStudents = formBandingKelas.siswa_banding.filter(
-      s => !s.status_asli
-    );
-    
-    if (invalidStudents.length > 0) {
-      toast({
-        title: "Error",
-        description: "Semua siswa harus memiliki status tercatat dari guru",
-        variant: "destructive"
-      });
-      return;
-    }
-    
-    // Validasi: Siswa harus diabsen dulu
-    const studentsWithoutAttendance = formBandingKelas.siswa_banding.filter(s => {
-      const record = attendanceRecords.find(r => r.siswa_id === s.id);
-      return !record?.has_attendance;
-    });
-    
-    if (studentsWithoutAttendance.length > 0) {
-      toast({
-        title: "Error",
-        description: "Tidak dapat mengajukan banding untuk siswa yang belum diabsen",
-        variant: "destructive"
-      });
-      return;
-    }
-
-    setSubmitting(true);
-    setLoadingRef.current('submit', true);
-    try {
-      const requestData = {
-        jadwal_id: parseInt(formBandingKelas.jadwal_id),
-        tanggal_absen: formBandingKelas.tanggal_absen,
-        siswa_banding: formBandingKelas.siswa_banding
-      };
-      
-      // Get and clean token from localStorage
-      const rawToken = localStorage.getItem('token');
-      const cleanToken = rawToken ? rawToken.trim() : '';
-      
-      if (!cleanToken) {
-        toast({
-          title: "Error",
-          description: "Token tidak ditemukan. Silakan login ulang.",
-          variant: "destructive"
-        });
-        return;
-      }
-      
-      const response = await fetch(`/api/siswa/${siswaId}/banding-absen-kelas`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${cleanToken}`
-        },
-        credentials: 'include',
-        body: JSON.stringify(requestData)
-      });
-
-      if (response.ok) {
-        toast({
-          title: "Berhasil",
-          description: "Pengajuan banding kelas berhasil dikirim"
-        });
-        
-        // Reset form dan reload data
-        setFormBandingKelas({
-          jadwal_id: '',
-          tanggal_absen: '',
-          siswa_banding: []
-        });
-        setShowFormBandingKelas(false);
-        loadBandingAbsenRef.current();
-      } else {
-        const errorData = await response.json();
-        console.error('❌ Error submitting banding kelas:', errorData);
-        toast({
-          title: "Error",
-          description: errorData.error || "Gagal mengirim pengajuan banding kelas",
-          variant: "destructive"
-        });
-      }
-    } catch (error) {
-      console.error('Error submitting banding kelas:', error);
-      toast({
-        title: "Error",
-        description: "Terjadi kesalahan saat mengirim pengajuan",
-        variant: "destructive"
-      });
-    } finally {
-      setSubmitting(false);
-      setLoadingRef.current('submit', false);
-    }
-  }, [formBandingKelas, siswaId, submitting, attendanceRecords]);
-
-  useEffect(() => {
-    if (siswaId && activeTab === 'kehadiran') {
-      loadJadwalHariIniRef.current();
-    }
-  }, [siswaId, activeTab]);
-
-  useEffect(() => {
-    if (siswaId && activeTab === 'riwayat') {
-      loadRiwayatDataRef.current();
-    }
-  }, [siswaId, activeTab]);
-
-  useEffect(() => {
-    if (siswaId && activeTab === 'pengajuan-izin') {
-      loadPengajuanIzinRef.current();
-      loadDaftarSiswaRef.current();
-    }
-  }, [siswaId, activeTab]);
-
-  // Load Banding Absen
-  const loadBandingAbsen = useCallback(async () => {
-    if (!siswaId) return;
-    
-    try {
-      // Get and clean token from localStorage
-      const rawToken = localStorage.getItem('token');
-      const cleanToken = rawToken ? rawToken.trim() : '';
-      
-      if (!cleanToken) {
-        console.error('❌ Token tidak ditemukan');
-        return;
-      }
-      
-      const response = await fetch(`/api/siswa/${siswaId}/banding-absen`, {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${cleanToken}`
-        },
-        credentials: 'include'
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        setBandingAbsen(Array.isArray(data) ? data : []);
-      }
-    } catch (error) {
-      console.error('Error loading banding absen:', error);
-    }
-  }, [siswaId]);
 
   // Create refs for functions to avoid dependency issues
   const loadJadwalHariIniRef = useRef(loadJadwalHariIni);
@@ -3418,8 +3021,7 @@ const StudentDashboardComponent = ({ userData, onLogout }: StudentDashboardProps
   //       status_diajukan: formBanding.status_diajukan,
   //       alasan_banding: formBanding.alasan_banding
   //     };
-      
-      
+
   //     const response = await fetch(`/api/siswa/${siswaId}/banding-absen`, {
   //       method: 'POST',
   //       headers: {
@@ -3455,7 +3057,6 @@ const StudentDashboardComponent = ({ userData, onLogout }: StudentDashboardProps
   //   } finally {
   //     setSubmitting(false);
   //   }
-  // };
 
   // Show loading or error states
   if (isLoading('initial')) {

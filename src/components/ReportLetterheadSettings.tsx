@@ -494,7 +494,7 @@ export default function ReportLetterheadSettings({ onBack, onLogout }: ReportLet
           {logoKananElement}
           <div className={`space-y-1 clear-both ${alignment === 'left' ? 'text-left' : alignment === 'right' ? 'text-right' : 'text-center'}`}>
             {logoElement}
-            {config.lines.map((line, index) => (
+            {config?.lines?.map((line, index) => (
               <div key={index} className={index === 0 ? "font-bold text-lg" : "text-sm"}>
                 {line || `Baris ${index + 1}`}
               </div>
@@ -749,7 +749,7 @@ export default function ReportLetterheadSettings({ onBack, onLogout }: ReportLet
                     </Button>
                   </div>
                   
-                  {config.lines.map((line, index) => (
+                  {config?.lines?.map((line, index) => (
                     <div key={index} className="flex items-center space-x-2">
                       <Input
                         value={line}
@@ -761,7 +761,7 @@ export default function ReportLetterheadSettings({ onBack, onLogout }: ReportLet
                         variant="outline"
                         size="sm"
                         onClick={() => removeLine(index)}
-                        disabled={config.lines.length <= 1}
+                        disabled={!config?.lines || config.lines.length <= 1}
                       >
                         Hapus
                       </Button>

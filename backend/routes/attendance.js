@@ -2,7 +2,7 @@
 import express from 'express';
 import { authenticateToken, requireRole } from '../middleware/auth.js';
 import { apiLimiter } from '../middleware/rateLimiting.js';
-import { db } from '../db.js';
+import { db } from '../../db.js';
 
 const router = express.Router();
 
@@ -10,10 +10,18 @@ const router = express.Router();
 router.use(authenticateToken);
 router.use(apiLimiter);
 
-// Submit attendance (for teachers)
-router.post('/submit', requireRole(['guru', 'admin']), async (req, res) => {
+// Submit attendance (for teachers and KETOS)
+router.post('/submit', requireRole(['guru', 'admin', 'KETOS']), async (req, res) => {
   try {
     const { jadwal_id, siswa_id, tanggal, status, keterangan } = req.body;
+
+    // RBAC Validation: KETOS tidak boleh input DISPEN
+    if (req.user.role === 'KETOS' && status === 'DISPEN') {
+      return res.status(403).json({
+        success: false,
+        error: 'KETOS tidak diperbolehkan menginput status DISPEN. Hanya guru dan admin yang boleh.'
+      });
+    }
 
     // Auto-detect guru_id for guru role
     let guruId = req.body.guru_id;
@@ -40,14 +48,14 @@ router.post('/submit', requireRole(['guru', 'admin']), async (req, res) => {
     if (existing.length > 0) {
       // Update existing record
       await db.execute(
-        'UPDATE absensi_siswa SET status = ?, keterangan = ? WHERE id = ?',
-        [status, keterangan, existing[0].id]
+        'UPDATE absensi_siswa SET status = ?, reason_text = ?, created_by = ?, created_by_role = ? WHERE id = ?',
+        [status, keterangan, req.user.id, req.user.role, existing[0].id]
       );
     } else {
       // Insert new record
       await db.execute(
-        'INSERT INTO absensi_siswa (siswa_id, jadwal_id, tanggal, status, keterangan) VALUES (?, ?, ?, ?, ?)',
-        [siswa_id, jadwal_id, tanggal, status, keterangan]
+        'INSERT INTO absensi_siswa (siswa_id, jadwal_id, tanggal, status, reason_text, created_by, created_by_role) VALUES (?, ?, ?, ?, ?, ?, ?)',
+        [siswa_id, jadwal_id, tanggal, status, keterangan, req.user.id, req.user.role]
       );
     }
 
@@ -111,8 +119,10 @@ router.get('/stats', async (req, res) => {
       SELECT 
         COUNT(*) as total_attendance,
         SUM(CASE WHEN status = 'Hadir' THEN 1 ELSE 0 END) as hadir,
+        SUM(CASE WHEN status = 'Terlambat' THEN 1 ELSE 0 END) as terlambat,
         SUM(CASE WHEN status = 'Izin' THEN 1 ELSE 0 END) as izin,
         SUM(CASE WHEN status = 'Sakit' THEN 1 ELSE 0 END) as sakit,
+        SUM(CASE WHEN status = 'Dispen' THEN 1 ELSE 0 END) as dispen,
         SUM(CASE WHEN status = 'Alpa' THEN 1 ELSE 0 END) as alpa
       FROM absensi_siswa a
       LEFT JOIN jadwal j ON a.jadwal_id = j.id_jadwal

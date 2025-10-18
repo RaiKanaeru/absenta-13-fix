@@ -1,6 +1,6 @@
 // Health check and monitoring routes
 import express from 'express';
-import { db } from '../db.js';
+import { db } from '../../db.js';
 import os from 'os';
 import process from 'process';
 
@@ -16,6 +16,7 @@ router.get('/health', (req, res) => {
     version: process.env.npm_package_version || '1.0.0'
   });
 });
+
 
 // Detailed health check
 router.get('/health/detailed', async (req, res) => {
@@ -211,6 +212,39 @@ router.get('/health/live', (req, res) => {
     success: true,
     message: 'Service is alive',
     timestamp: new Date().toISOString()
+  });
+});
+
+// Test database status endpoint
+router.get('/db-status', async (req, res) => {
+  try {
+    // Test basic database connection
+    await db.execute('SELECT 1 as test');
+    res.json({
+      success: true,
+      message: 'Database connection working',
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    res.status(503).json({
+      success: false,
+      error: 'Database connection failed',
+      message: error.message,
+      code: error.code
+    });
+  }
+});
+
+// Test JSON response endpoint
+router.get('/test-json', (req, res) => {
+  res.json({
+    success: true,
+    message: 'JSON response test',
+    timestamp: new Date().toISOString(),
+    data: {
+      test: 'value',
+      number: 123
+    }
   });
 });
 

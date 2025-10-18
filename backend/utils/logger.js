@@ -352,4 +352,6 @@ class Logger {
 // Create singleton instance
 const logger = new Logger();
 
+// Export both as default and named export for compatibility
+export { logger };
 export default logger;

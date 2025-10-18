@@ -1,6 +1,6 @@
 // src/config/sentry.ts
 import * as Sentry from '@sentry/react';
-import { browserProfilingIntegration } from '@sentry/profiling';
+import React from 'react';
 
 // Initialize Sentry for frontend
 export const initSentry = () => {
@@ -8,16 +8,9 @@ export const initSentry = () => {
     dsn: import.meta.env.VITE_SENTRY_DSN,
     environment: import.meta.env.MODE,
     tracesSampleRate: import.meta.env.MODE === 'production' ? 0.1 : 1.0,
-    profilesSampleRate: import.meta.env.MODE === 'production' ? 0.1 : 1.0,
     integrations: [
-      // Add profiling integration
-      browserProfilingIntegration(),
-      // Add HTTP integration for request tracing
-      new Sentry.Integrations.Http({ tracing: true }),
-      // Add React Router integration
-      new Sentry.Integrations.ReactRouterV6BrowserTracing({
-        useEffect: React.useEffect,
-      }),
+      // Use default integrations
+      ...Sentry.getDefaultIntegrations({}),
     ],
     beforeSend(event, hint) {
       // Filter out sensitive data

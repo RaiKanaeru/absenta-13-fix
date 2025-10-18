@@ -3,22 +3,34 @@ import express from 'express';
 import { authenticateToken, generateToken, verifyPassword } from '../middleware/auth.js';
 import { validateLogin } from '../middleware/validation.js';
 import { loginLimiter } from '../middleware/rateLimiting.js';
-import { accountLockoutMiddleware, recordFailedAttempt, recordSuccessfulAttempt } from '../middleware/accountLockout.js';
-import { db } from '../db.js';
+import { db } from '../../db.js';
 
 const router = express.Router();
 
 // Login endpoint
-router.post('/login', loginLimiter, accountLockoutMiddleware(), validateLogin, async (req, res) => {
+router.post('/login', loginLimiter, validateLogin, async (req, res) => {
   try {
     const { username, password } = req.body;
     const ipAddress = req.ip || req.connection.remoteAddress;
 
     // Find user by username
-    const [users] = await db.execute(
-      'SELECT * FROM pengguna WHERE nama_pengguna = ? AND status = "aktif"',
-      [username]
-    );
+        let users;
+        try {
+          [users] = await db.execute(
+            'SELECT * FROM users WHERE username = ? AND status = "aktif"',
+            [username]
+          );
+        } catch (error) {
+          if (error.code === 'ER_NO_SUCH_TABLE') {
+            return res.status(503).json({
+              success: false,
+              error: 'Database not initialized',
+              message: 'Please contact administrator to set up the database',
+              details: 'Required tables are missing'
+            });
+          }
+          throw error; // Re-throw other database errors
+        }
 
     if (users.length === 0) {
       // Record failed attempt for non-existent user
@@ -33,36 +45,13 @@ router.post('/login', loginLimiter, accountLockoutMiddleware(), validateLogin, a
     const user = users[0];
 
     // Verify password
-    const isValidPassword = await verifyPassword(password, user.kata_sandi);
+    const isValidPassword = await verifyPassword(password, user.password);
     if (!isValidPassword) {
-      // Record failed attempt
-      const lockoutResult = await recordFailedAttempt(username, ipAddress, 'invalid_password');
-      
-      // Check if account is now locked
-      if (lockoutResult.isLocked) {
-        return res.status(423).json({
-          success: false,
-          error: lockoutResult.message,
-          code: 'ACCOUNT_LOCKED',
-          data: {
-            lockedUntil: lockoutResult.lockedUntil,
-            attempts: lockoutResult.attempts,
-            isPermanent: lockoutResult.isPermanent
-          }
-        });
-      }
-
       return res.status(401).json({
         success: false,
-        error: 'Invalid username or password',
-        data: {
-          remainingAttempts: lockoutResult.remainingAttempts
-        }
+        error: 'Invalid username or password'
       });
     }
-
-    // Record successful login
-    await recordSuccessfulAttempt(username, ipAddress);
 
     // Generate JWT token
     const token = generateToken(user);
@@ -72,9 +61,9 @@ router.post('/login', loginLimiter, accountLockoutMiddleware(), validateLogin, a
       data: {
         user: {
           id: user.id,
-          username: user.nama_pengguna,
+          username: user.username,
           nama: user.nama,
-          role: user.peran,
+          role: user.role.toLowerCase(), // Convert role to lowercase for frontend compatibility
           email: user.email
         },
         token
@@ -107,6 +96,15 @@ router.get('/verify', authenticateToken, (req, res) => {
       user: req.user
     },
     message: 'Token is valid'
+  });
+});
+
+// Test endpoint for debugging
+router.get('/test-auth', (req, res) => {
+  res.json({
+    success: true,
+    message: 'Auth routes working',
+    timestamp: new Date().toISOString()
   });
 });
 
