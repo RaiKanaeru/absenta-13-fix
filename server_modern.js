@@ -1359,21 +1359,33 @@ app.delete('/api/admin/kelas/:id', authenticateToken, requireRole(['admin']), as
 function normalizeGuruData(requestBody) {
     const { guru_ids, guru_id, is_multi_guru } = requestBody;
     
-    // Validasi guru_ids
-    if (!guru_ids || !Array.isArray(guru_ids) || guru_ids.length === 0) {
-        throw new Error('guru_ids harus berupa array dengan minimal 1 guru');
+    // ✅ Backward compatibility: terima guru_id lama atau guru_ids baru
+    let normalizedGuruIds = [];
+    
+    if (guru_ids && Array.isArray(guru_ids) && guru_ids.length > 0) {
+        // Klien baru: gunakan guru_ids
+        normalizedGuruIds = guru_ids.map(id => {
+            const parsed = parseInt(id);
+            if (isNaN(parsed) || parsed <= 0) {
+                throw new Error(`Invalid guru_id: ${id}`);
+            }
+            return parsed;
+        });
+    } else if (guru_id) {
+        // ✅ Klien lama: konversi guru_id ke array
+        const parsed = parseInt(guru_id);
+        if (isNaN(parsed) || parsed <= 0) {
+            throw new Error(`Invalid guru_id: ${guru_id}`);
+        }
+        normalizedGuruIds = [parsed];
+    } else {
+        throw new Error('guru_ids atau guru_id harus diisi');
     }
     
-    // Normalisasi: ambil guru pertama dari guru_ids sebagai guru_id
-    const normalizedGuruId = parseInt(guru_ids[0]);
-    
-    // Normalisasi: set is_multi_guru berdasarkan jumlah guru
-    const normalizedIsMultiGuru = guru_ids.length > 1;
-    
     return {
-        guru_id: normalizedGuruId,
-        guru_ids: guru_ids.map(id => parseInt(id)),
-        is_multi_guru: normalizedIsMultiGuru
+        guru_id: normalizedGuruIds[0],
+        guru_ids: normalizedGuruIds,
+        is_multi_guru: normalizedGuruIds.length > 1
     };
 }
 
@@ -1429,11 +1441,14 @@ app.get('/api/admin/jadwal', authenticateToken, requireRole(['admin']), async (r
             guruIds.forEach(id => allGuruIds.add(id));
         }
 
-        // Query semua guru sekaligus (batch)
+        // Query semua guru sekaligus (batch) dengan parameterized query
         let guruMap = {};
         if (allGuruIds.size > 0) {
+            const guruIdsArray = [...allGuruIds];
+            const placeholders = guruIdsArray.map(() => '?').join(',');
             const [allGuru] = await db.execute(
-                `SELECT id_guru, nama FROM guru WHERE id_guru IN (${[...allGuruIds].join(',')})`
+                `SELECT id_guru, nama FROM guru WHERE id_guru IN (${placeholders})`,
+                guruIdsArray
             );
             guruMap = Object.fromEntries(allGuru.map(g => [g.id_guru, g.nama]));
         }
@@ -1712,6 +1727,7 @@ app.get('/api/admin/jadwal/preview', authenticateToken, requireRole(['admin']), 
                 j.jam_mulai,
                 j.jam_selesai,
                 j.status,
+                j.guru_id,        -- ✅ TAMBAHKAN INI
                 j.guru_ids,
                 j.is_multi_guru,
                 m.nama_mapel
@@ -1732,24 +1748,49 @@ app.get('/api/admin/jadwal/preview', authenticateToken, requireRole(['admin']), 
         
         const [schedules] = await db.execute(query, params);
         
-        // Enrich dengan nama guru untuk setiap jadwal
+        // Optimasi: Batch query untuk enrichment nama guru
+        const allGuruIds = new Set();
         for (const schedule of schedules) {
             let guruIds = [];
-            
             if (schedule.guru_ids && schedule.is_multi_guru) {
                 guruIds = JSON.parse(schedule.guru_ids);
-            } else {
+            } else if (schedule.guru_id) {
+                guruIds = [schedule.guru_id];
+            }
+            guruIds.forEach(id => {
+                const parsed = parseInt(id);
+                if (!isNaN(parsed) && parsed > 0) { // ✅ Validasi NaN
+                    allGuruIds.add(parsed);
+                }
+            });
+        }
+
+        // Query semua guru sekaligus (batch) dengan parameterized query
+        let guruMap = {};
+        if (allGuruIds.size > 0) {
+            const guruIdsArray = [...allGuruIds];
+            const placeholders = guruIdsArray.map(() => '?').join(',');
+            const [allGuru] = await db.execute(
+                `SELECT id_guru, nama FROM guru WHERE id_guru IN (${placeholders})`,
+                guruIdsArray
+            );
+            guruMap = Object.fromEntries(allGuru.map(g => [g.id_guru, g.nama]));
+        }
+
+        // Mapping hasil ke setiap jadwal
+        for (const schedule of schedules) {
+            let guruIds = [];
+            if (schedule.guru_ids && schedule.is_multi_guru) {
+                guruIds = JSON.parse(schedule.guru_ids);
+            } else if (schedule.guru_id) {
                 guruIds = [schedule.guru_id];
             }
             
-            if (guruIds.length > 0) {
-                const [guruList] = await db.execute(
-                    `SELECT id_guru, nama FROM guru WHERE id_guru IN (${guruIds.join(',')})`
-                );
-                schedule.guru_names = guruList.map(g => g.nama).join(', ');
-            } else {
-                schedule.guru_names = '';
-            }
+            const guruNames = guruIds
+                .map(id => guruMap[parseInt(id)])
+                .filter(name => name)
+                .join(', ');
+            schedule.guru_names = guruNames || 'Guru tidak ditemukan';
         }
         
         // Group schedules by class and day
@@ -1841,11 +1882,14 @@ app.get('/api/admin/jadwal/export', authenticateToken, requireRole(['admin']), a
             guruIds.forEach(id => allGuruIds.add(id));
         }
 
-        // Query semua guru sekaligus (batch)
+        // Query semua guru sekaligus (batch) dengan parameterized query
         let guruMap = {};
         if (allGuruIds.size > 0) {
+            const guruIdsArray = [...allGuruIds];
+            const placeholders = guruIdsArray.map(() => '?').join(',');
             const [allGuru] = await db.execute(
-                `SELECT id_guru, nama FROM guru WHERE id_guru IN (${[...allGuruIds].join(',')})`
+                `SELECT id_guru, nama FROM guru WHERE id_guru IN (${placeholders})`,
+                guruIdsArray
             );
             guruMap = Object.fromEntries(allGuru.map(g => [g.id_guru, g.nama]));
         }
