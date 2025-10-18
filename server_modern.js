@@ -85,14 +85,20 @@ function authenticateToken(req, res, next) {
     });
 }
 
-// Role-based access control middleware
+// Role-based access control middleware (case-insensitive)
 function requireRole(roles) {
     return (req, res, next) => {
-        console.log('🔍 RBAC Debug - Required roles:', roles);
-        console.log('🔍 RBAC Debug - User role:', req.user.role);
-        console.log('🔍 RBAC Debug - Role match:', roles.includes(req.user.role));
+        // Normalize roles array to lowercase
+        const normalizedRequiredRoles = roles.map(r => r.toLowerCase());
         
-        if (!roles.includes(req.user.role)) {
+        // Normalize user role to lowercase
+        const normalizedUserRole = req.user.role.toLowerCase();
+        
+        console.log('🔍 RBAC Debug - Required roles:', roles, '→', normalizedRequiredRoles);
+        console.log('🔍 RBAC Debug - User role:', req.user.role, '→', normalizedUserRole);
+        console.log('🔍 RBAC Debug - Role match:', normalizedRequiredRoles.includes(normalizedUserRole));
+        
+        if (!normalizedRequiredRoles.includes(normalizedUserRole)) {
             console.log('❌ RBAC: Access denied for role:', req.user.role);
             return res.status(403).json({ error: 'Insufficient permissions' });
         }
@@ -183,7 +189,7 @@ app.post('/api/login', async (req, res) => {
             } else {
                 console.log('❌ Debug: No guru data found for user_id:', user.id);
             }
-        } else if (user.role === 'siswa' || user.role === 'KETOS') {
+        } else if (user.role === 'siswa' || user.role === 'perwakilan') {
             const [siswaData] = await db.execute(
                 `SELECT s.*, k.nama_kelas 
                  FROM siswa s 
@@ -1600,7 +1606,7 @@ app.post('/api/attendance/submit', authenticateToken, requireRole(['guru', 'admi
 // ================================================
 
 // Get daily attendance recap for a class
-app.post('/api/attendance/daily-summary', authenticateToken, requireRole(['guru', 'admin', 'perwakilan', 'ketos']), async (req, res) => {
+app.post('/api/attendance/daily-summary', authenticateToken, requireRole(['guru', 'admin', 'perwakilan']), async (req, res) => {
     try {
         const { classId, date } = req.body;
         
@@ -1657,7 +1663,7 @@ app.post('/api/attendance/daily-summary', authenticateToken, requireRole(['guru'
 });
 
 // Get attendance recap for a date range
-app.post('/api/attendance/range-summary', authenticateToken, requireRole(['guru', 'admin', 'perwakilan', 'ketos']), async (req, res) => {
+app.post('/api/attendance/range-summary', authenticateToken, requireRole(['guru', 'admin', 'perwakilan']), async (req, res) => {
     try {
         const { classId, startDate, endDate } = req.body;
         
@@ -3723,7 +3729,7 @@ app.get('/api/admin/letterhead/preview', authenticateToken, requireRole(['admin'
 // ================================================
 
 // Get siswa perwakilan info
-app.get('/api/siswa-perwakilan/info', authenticateToken, requireRole(['siswa', 'ketos']), async (req, res) => {
+app.get('/api/siswa-perwakilan/info', authenticateToken, requireRole(['siswa', 'perwakilan']), async (req, res) => {
     try {
         console.log('📋 Getting siswa perwakilan info for user:', req.user.id);
 
