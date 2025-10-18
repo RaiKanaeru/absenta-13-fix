@@ -9,6 +9,7 @@ import cookieParser from 'cookie-parser';
 import ExcelJS from 'exceljs';
 import { compressImage, validateImage } from './backend/utils/imageCompression.js';
 import { db, pool } from './db.js';
+import adminRouter from './backend/routes/admin.js';
 
 const app = express();
 const port = 3001;
@@ -116,34 +117,11 @@ app.post('/api/login', async (req, res) => {
             return res.status(400).json({ error: 'Username and password are required' });
         }
 
-        // Query user from database - try users table first, fallback to pengguna
+        // Query user from database - only use users table
         let [rows] = await db.execute(
             'SELECT * FROM users WHERE username = ? AND status = "aktif"',
             [username]
         );
-        
-        // If no results from users table, try pengguna table
-        if (rows.length === 0) {
-            console.log('🔄 Trying pengguna table for user:', username);
-            [rows] = await db.execute(
-                'SELECT * FROM pengguna WHERE nama_pengguna = ? AND (status = "aktif" OR status IS NULL)',
-                [username]
-            );
-            
-            // Transform pengguna data to users format
-            if (rows.length > 0) {
-                const penggunaUser = rows[0];
-                rows = [{
-                    id: penggunaUser.id,
-                    username: penggunaUser.nama_pengguna,
-                    password: penggunaUser.kata_sandi,
-                    role: penggunaUser.peran,
-                    nama: penggunaUser.nama,
-                    email: penggunaUser.email,
-                    status: penggunaUser.status || 'aktif'
-                }];
-            }
-        }
 
         if (rows.length === 0) {
             console.log('❌ Login failed: User not found');
@@ -166,23 +144,30 @@ app.post('/api/login', async (req, res) => {
         try {
             if (user.role === 'guru' || user.role === 'GURU' || user.role.toLowerCase() === 'guru') {
                 console.log('🔍 Debug: Looking for guru data for user_id:', user.id);
-                const [guruData] = await db.execute(
-                    `SELECT g.*, m.nama_mapel 
-                     FROM guru g 
-                     LEFT JOIN mapel m ON g.mapel_id = m.id_mapel 
-                     WHERE g.id_pengguna = ?`,
-                    [user.id]
-                );
-                console.log('🔍 Debug: Guru data found:', guruData.length, 'records');
-                if (guruData.length > 0) {
-                    additionalData = {
-                        guru_id: guruData[0].id_guru,
-                        nip: guruData[0].nip,
-                        mapel: guruData[0].nama_mapel
-                    };
-                    console.log('🔍 Debug: Additional data set:', additionalData);
-                } else {
-                    console.log('❌ Debug: No guru data found for user_id:', user.id);
+                try {
+                    const [guruData] = await db.execute(
+                        `SELECT g.*, m.nama_mapel 
+                         FROM guru g 
+                         LEFT JOIN mapel m ON g.mapel_id = m.id_mapel 
+                         WHERE g.user_id = ?`,
+                        [user.id]
+                    );
+                    console.log('🔍 Debug: Guru data found:', guruData.length, 'records');
+                    if (guruData.length > 0) {
+                        additionalData = {
+                            guru_id: guruData[0].id_guru,
+                            nip: guruData[0].nip,
+                            mapel: guruData[0].nama_mapel
+                        };
+                        console.log('🔍 Debug: Additional data set:', additionalData);
+                    } else {
+                        console.log('❌ Debug: No guru data found for user_id:', user.id);
+                        console.log('⚠️ Debug: Guru login will continue without additional data');
+                    }
+                } catch (guruError) {
+                    console.error('❌ Error fetching guru data:', guruError);
+                    console.log('⚠️ Debug: Guru login will continue without additional data');
+                    // Continue login even if guru data fetch fails
                 }
             } else if (user.role === 'siswa' || user.role === 'perwakilan') {
                 console.log('🔍 Debug: Looking for siswa data for user_id:', user.id);
@@ -190,7 +175,7 @@ app.post('/api/login', async (req, res) => {
                     `SELECT s.*, k.nama_kelas 
                      FROM siswa s 
                      JOIN kelas k ON s.kelas_id = k.id_kelas 
-                     WHERE s.id_pengguna = ?`,
+                     WHERE s.user_id = ?`,
                     [user.id]
                 );
                 console.log('🔍 Debug: Siswa data found:', siswaData.length, 'records');
@@ -2292,7 +2277,6 @@ app.post('/api/attendance/range-summary', authenticateToken, requireRole(['guru'
 // REPORTS ENDPOINTS - Teacher Attendance Reports
 // ================================================
 
-// Endpoint pengajuan izin dihapus sesuai aturan bisnis baru
 
 // Get analytics data for dashboard
 app.get('/api/admin/analytics', authenticateToken, requireRole(['admin']), async (req, res) => {
@@ -2381,34 +2365,19 @@ app.get('/api/admin/analytics', authenticateToken, requireRole(['admin']), async
             LIMIT 5
         `;
 
-        // Get recent notifications/permission requests
-        const notificationsQuery = `
-            SELECT 
-                pi.id_izin as id,
-                CONCAT('Permohonan izin dari ', s.nama, ' (', k.nama_kelas, ')') as message,
-                pi.tanggal_pengajuan as timestamp,
-                pi.status,
-                'permission_request' as type
-            FROM pengajuan_izin pi
-            JOIN siswa s ON pi.siswa_id = s.id_siswa
-            JOIN kelas k ON s.kelas_id = k.id_kelas
-            WHERE pi.status = 'pending'
-            ORDER BY pi.tanggal_pengajuan DESC
-            LIMIT 10
-        `;
+        // Notifications removed - pengajuan izin feature disabled
 
         const [studentAttendance] = await db.execute(studentAttendanceQuery);
         const [teacherAttendance] = await db.execute(teacherAttendanceQuery);
         const [topAbsentStudents] = await db.execute(topAbsentStudentsQuery);
         const [topAbsentTeachers] = await db.execute(topAbsentTeachersQuery);
-        const [notifications] = await db.execute(notificationsQuery);
 
         const analyticsData = {
             studentAttendance: studentAttendance || [],
             teacherAttendance: teacherAttendance || [],
             topAbsentStudents: topAbsentStudents || [],
             topAbsentTeachers: topAbsentTeachers || [],
-            notifications: notifications || []
+            notifications: []
         };
 
         console.log(`✅ Analytics data retrieved successfully`);
@@ -3070,21 +3039,6 @@ app.get('/api/admin/banding-absen-report', authenticateToken, requireRole(['admi
 });
 
 
-// ================================================
-// PENGAJUAN IZIN SISWA ENDPOINTS
-// ================================================
-
-// Endpoint pengajuan izin dihapus - siswa tidak boleh mengajukan izin sendiri
-
-// Endpoint pengajuan izin legacy dihapus - siswa tidak boleh mengajukan izin sendiri
-
-// Endpoint submit pengajuan izin dihapus - siswa tidak boleh mengajukan izin sendiri
-
-// Endpoint guru untuk pengajuan izin dihapus - tidak ada lagi pengajuan izin
-
-// Endpoint guru approve/reject pengajuan izin dihapus - tidak ada lagi pengajuan izin
-
-// Endpoint guru approve pengajuan izin alternative dihapus - tidak ada lagi pengajuan izin
 
 // ================================================
 // COMPATIBILITY ENDPOINTS FOR SCHEDULE MANAGEMENT
@@ -5584,7 +5538,7 @@ app.get('/api/admin/system-performance', authenticateToken, requireRole(['admin'
         console.log('📊 Getting system performance data');
         
         // Get database connection status
-        const dbStatus = connection ? 'connected' : 'disconnected';
+        const dbStatus = pool ? 'connected' : 'disconnected';
         
         // Get memory usage (simplified)
         const memoryUsage = process.memoryUsage();
@@ -5600,14 +5554,25 @@ app.get('/api/admin/system-performance', authenticateToken, requireRole(['admin'
             uptime_minutes: Math.floor((uptime % 3600) / 60)
         };
         
-        // Get database performance metrics
-        const [dbMetrics] = await db.execute(`
-            SELECT 
-                COUNT(*) as total_connections,
-                (SELECT COUNT(*) FROM information_schema.processlist WHERE db = DATABASE()) as active_connections
-            FROM information_schema.processlist 
-            WHERE db = DATABASE()
-        `);
+        // Get database performance metrics (safer query)
+        let dbMetrics = [{ total_connections: 0, active_connections: 0 }];
+        try {
+            const [dbMetricsResult] = await db.execute(`
+                SHOW STATUS LIKE 'Threads_connected'
+            `);
+            const [dbMetricsResult2] = await db.execute(`
+                SHOW STATUS LIKE 'Connections'
+            `);
+            
+            dbMetrics = [{
+                total_connections: dbMetricsResult2[0]?.Value || 0,
+                active_connections: dbMetricsResult[0]?.Value || 0
+            }];
+        } catch (dbError) {
+            console.warn('⚠️ Could not get database metrics:', dbError.message);
+            // Use fallback values
+            dbMetrics = [{ total_connections: 1, active_connections: 1 }];
+        }
         
         const performanceData = {
             system: {
@@ -5647,8 +5612,10 @@ app.get('/api/admin/system-performance', authenticateToken, requireRole(['admin'
     }
 });
 
+// Register admin router for backup endpoints
+app.use('/api/admin', adminRouter);
+
 // ================================================
-// ENDPOINTS UNTUK PENGAJUAN IZIN KELAS
 // ================================================
 
 // Get daftar siswa in class for siswa perwakilan
@@ -5685,7 +5652,6 @@ app.get('/api/siswa/:siswaId/daftar-siswa', authenticateToken, requireRole(['sis
     }
 });
 
-// Endpoint pengajuan izin kelas dihapus - tidak ada lagi pengajuan izin
 
 // ================================================
 // ENDPOINTS UNTUK BANDING ABSEN
@@ -5850,79 +5816,6 @@ app.post('/api/siswa/:siswaId/banding-absen-kelas', authenticateToken, requireRo
     }
 });
 
-// ✅ ENDPOINT BARU: Pengajuan izin 1 siswa per request
-app.post('/api/siswa/:siswaId/pengajuan-izin', authenticateToken, requireRole(['siswa']), async (req, res) => {
-    try {
-        const { siswaId } = req.params;
-        const { 
-            jadwal_id, 
-            tanggal_izin,
-            tanggal_mulai,
-            tanggal_selesai,
-            jam_ke,
-            alasan_izin,
-            jenis_izin = 'sakit',
-            bukti_pendukung,
-            kelas_id
-        } = req.body;
-
-        // ✅ VALIDASI: Field required
-        if (!jadwal_id || !tanggal_izin || !alasan_izin || !kelas_id) {
-            return res.status(400).json({
-                success: false,
-                error: 'Field jadwal_id, tanggal_izin, alasan_izin, dan kelas_id wajib diisi'
-            });
-        }
-
-        // ✅ CEK DUPLIKASI: Izin untuk jadwal + tanggal sama
-        const [existing] = await db.execute(
-            `SELECT id_izin FROM pengajuan_izin_siswa 
-             WHERE siswa_id = ? AND jadwal_id = ? AND tanggal_izin = ?`,
-            [siswaId, jadwal_id, tanggal_izin]
-        );
-
-        if (existing.length > 0) {
-            return res.status(400).json({
-                success: false,
-                error: 'Anda sudah mengajukan izin untuk jadwal dan tanggal ini'
-            });
-        }
-
-        // ✅ INSERT: 1 row saja
-        const [result] = await db.execute(
-            `INSERT INTO pengajuan_izin_siswa 
-             (siswa_id, jadwal_id, tanggal_izin, tanggal_mulai, tanggal_selesai, 
-              jam_ke, alasan_izin, jenis_izin, bukti_pendukung, kelas_id)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            [
-                siswaId, 
-                jadwal_id, 
-                tanggal_izin,
-                tanggal_mulai || tanggal_izin,
-                tanggal_selesai || tanggal_izin,
-                jam_ke,
-                alasan_izin,
-                jenis_izin,
-                bukti_pendukung,
-                kelas_id
-            ]
-        );
-
-        console.log(`✅ Pengajuan izin berhasil diajukan: ${result.insertId}`);
-        
-        res.json({
-            success: true,
-            message: 'Pengajuan izin berhasil diajukan',
-            data: { id_izin: result.insertId }
-        });
-    } catch (error) {
-        console.error('❌ Error pengajuan izin:', error);
-        res.status(500).json({ 
-            success: false, 
-            error: 'Gagal mengajukan izin' 
-        });
-    }
-});
 
 // Get banding absen for teacher to process
 app.get('/api/guru/:guruId/banding-absen', authenticateToken, requireRole(['guru']), async (req, res) => {
@@ -6011,13 +5904,6 @@ app.put('/api/banding-absen/:bandingId/respond', authenticateToken, requireRole(
 
 // Database connection is handled in startServer() function below
 
-// ================================================
-// RIWAYAT PENGAJUAN IZIN ENDPOINTS (STEP 8)
-// ================================================
-
-// Endpoint riwayat pengajuan izin dihapus - tidak ada lagi pengajuan izin
-
-// Endpoint download riwayat pengajuan izin dihapus - tidak ada lagi pengajuan izin
 
 // ================================================
 // GLOBAL ERROR HANDLERS

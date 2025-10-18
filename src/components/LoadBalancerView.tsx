@@ -18,6 +18,7 @@ import {
     AlertTriangle, 
     CheckCircle, 
     XCircle,
+    Info,
     RefreshCw,
     BarChart3,
     Clock,
@@ -146,7 +147,8 @@ const LoadBalancerView: React.FC = () => {
 
         try {
             const token = localStorage.getItem('token');
-            const response = await fetch('/api/admin/system-performance', {
+            const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
+            const response = await fetch(`${API_BASE_URL}/api/admin/system-performance`, {
                 credentials: 'include',
                 headers: {
                     'Content-Type': 'application/json',
@@ -436,6 +438,17 @@ const LoadBalancerView: React.FC = () => {
                     <AlertDescription>
                         <strong>Load Balancer DISABLED</strong> - Performance monitoring is paused. 
                         Auto refresh is automatically disabled when load balancer is off.
+                    </AlertDescription>
+                </Alert>
+            )}
+
+            {/* Data Simulasi Warning Badge */}
+            {performance && (
+                <Alert variant="warning" className="mb-4">
+                    <Info className="h-4 w-4" />
+                    <AlertDescription>
+                        <strong>Mode Simulasi:</strong> Data performa sistem menggunakan data placeholder. 
+                        Untuk data real-time, implementasi query database diperlukan.
                     </AlertDescription>
                 </Alert>
             )}

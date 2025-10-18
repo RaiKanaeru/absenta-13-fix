@@ -108,30 +108,31 @@ const Index = () => {
                 
                 // Merge JWT data with latest profile data
                 const updatedUserData = {
-                  ...result.data.user,
+                  ...normalizedUserData,
                   ...profileInfo,
                   // Map field names for compatibility based on role
-                  ...(result.data.user.role === 'siswa' && {
+                  ...(normalizedUserData.role === 'siswa' && {
                     siswa_id: profileInfo.id_siswa,
                     nis: profileInfo.nis,
                     kelas: profileInfo.nama_kelas,
                     kelas_id: profileInfo.kelas_id
                   }),
-                  ...(result.data.user.role === 'guru' && {
+                  ...(normalizedUserData.role === 'guru' && {
                     guru_id: profileInfo.guru_id || profileInfo.id, // Use guru_id if available, fallback to id
                     nip: profileInfo.nip,
                     mapel: profileInfo.mata_pelajaran
                   })
                 };
-                setUserData(normalizeUserData(updatedUserData));
+                // ✅ FIX: Data sudah dinormalisasi, langsung set
+                setUserData(updatedUserData);
                 console.log('✅ Updated user data with latest profile:', updatedUserData);
               } else {
                 console.log('❌ Profile data not successful:', profileData);
-                setUserData(normalizeUserData(result.data.user));
+                setUserData(normalizedUserData);
               }
             } else {
               console.log('❌ Profile data not successful:', profileData);
-              setUserData(normalizeUserData(result.data.user));
+              setUserData(normalizedUserData);
             }
           } catch (profileError) {
             console.error('❌ Failed to load latest profile data:', profileError);
@@ -140,7 +141,7 @@ const Index = () => {
               stack: profileError.stack,
               name: profileError.name
             });
-            setUserData(normalizeUserData(result.data.user));
+            setUserData(normalizedUserData);
           }
           
           // ✅ FIX: Safe access with optional chaining
@@ -323,6 +324,22 @@ const Index = () => {
         
       default:
         console.error('❌ Unknown user role:', userData.role);
+        // Normalize role one more time as fallback
+        const fallbackRole = userData.role === 'perwakilan' ? 'siswa' : userData.role;
+        if (fallbackRole === 'siswa') {
+          console.log('🔄 Fallback: Converting perwakilan to siswa');
+          if (!userData.siswa_id) {
+            console.error('❌ Siswa user missing siswa_id');
+            handleLogout();
+            return null;
+          }
+          return (
+            <StudentDashboard 
+              userData={userData as UserData & { siswa_id: number; nis: string; kelas: string; kelas_id: number }}
+              onLogout={handleLogout}
+            />
+          );
+        }
         setError(`Role pengguna '${userData.role}' tidak dikenali. Hubungi administrator.`);
         toast({
           title: "Error Role",

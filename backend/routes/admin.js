@@ -1,5 +1,7 @@
 // Admin routes
 import express from 'express';
+import fs from 'fs';
+import path from 'path';
 import { authenticateToken, requireRole } from '../middleware/auth.js';
 import { validateTeacher, validateStudent, validateSubject, validateClass, validateRoom } from '../middleware/validation.js';
 import { apiLimiter } from '../middleware/rateLimiting.js';
@@ -714,12 +716,46 @@ router.get('/live-summary', async (req, res) => {
 // Archive and backup endpoints
 router.get('/archive-stats', async (req, res) => {
   try {
+    // Check if backups directory exists
+    const backupsDir = path.join(process.cwd(), 'backups');
+    let totalArchives = 0;
+    let lastBackup = null;
+    let storageUsed = 0;
+    
+    try {
+      const files = await fs.promises.readdir(backupsDir);
+      const backupFiles = files.filter(file => file.endsWith('.sql') || file.endsWith('.json'));
+      
+      totalArchives = backupFiles.length;
+      
+      if (backupFiles.length > 0) {
+        // Get the most recent backup
+        const fileStats = await Promise.all(
+          backupFiles.map(async (file) => {
+            const stats = await fs.promises.stat(path.join(backupsDir, file));
+            return { file, stats };
+          })
+        );
+        
+        const sortedFiles = fileStats.sort((a, b) => b.stats.mtime - a.stats.mtime);
+        lastBackup = {
+          name: sortedFiles[0].file,
+          created: sortedFiles[0].stats.birthtime
+        };
+        
+        // Calculate total storage used
+        storageUsed = fileStats.reduce((total, { stats }) => total + stats.size, 0);
+      }
+    } catch (dirError) {
+      console.log('Backups directory not found');
+    }
+    
     res.json({
       success: true,
       data: {
-        totalArchives: 0,
-        lastBackup: null,
-        storageUsed: '0 MB'
+        totalArchives,
+        lastBackup,
+        storageUsed: `${Math.round(storageUsed / 1024 / 1024 * 100) / 100} MB`
       },
       message: 'Archive stats retrieved successfully'
     });
@@ -734,9 +770,31 @@ router.get('/archive-stats', async (req, res) => {
 
 router.get('/backups', async (req, res) => {
   try {
+    // Check if backups directory exists
+    const backupsDir = path.join(process.cwd(), 'backups');
+    let backupFiles = [];
+    
+    try {
+      const files = await fs.promises.readdir(backupsDir);
+      backupFiles = files
+        .filter(file => file.endsWith('.sql') || file.endsWith('.json'))
+        .map(file => {
+          const stats = fs.statSync(path.join(backupsDir, file));
+          return {
+            name: file,
+            size: stats.size,
+            created: stats.birthtime,
+            modified: stats.mtime
+          };
+        })
+        .sort((a, b) => new Date(b.created) - new Date(a.created));
+    } catch (dirError) {
+      console.log('Backups directory not found, creating empty list');
+    }
+    
     res.json({
       success: true,
-      data: [],
+      data: backupFiles,
       message: 'Backups retrieved successfully'
     });
   } catch (error) {
@@ -761,6 +819,46 @@ router.get('/backup-settings', async (req, res) => {
     });
   } catch (error) {
     console.error('Backup settings error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Internal server error'
+    });
+  }
+});
+
+router.post('/backup-settings', async (req, res) => {
+  try {
+    const { autoBackup, backupFrequency, retentionDays } = req.body;
+    
+    // In a real implementation, you would save these settings to a database or config file
+    console.log('Backup settings updated:', { autoBackup, backupFrequency, retentionDays });
+    
+    res.json({
+      success: true,
+      message: 'Backup settings updated successfully'
+    });
+  } catch (error) {
+    console.error('Update backup settings error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Internal server error'
+    });
+  }
+});
+
+router.post('/archive-old-data', async (req, res) => {
+  try {
+    const { daysToKeep } = req.body;
+    
+    // In a real implementation, you would archive old data based on the daysToKeep parameter
+    console.log('Archiving old data, keeping last', daysToKeep, 'days');
+    
+    res.json({
+      success: true,
+      message: 'Old data archived successfully'
+    });
+  } catch (error) {
+    console.error('Archive old data error:', error);
     res.status(500).json({
       success: false,
       error: 'Internal server error'

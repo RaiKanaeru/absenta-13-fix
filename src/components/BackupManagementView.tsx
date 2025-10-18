@@ -74,8 +74,9 @@ const BackupManagementView: React.FC = () => {
     
     // Helper function untuk fetch dengan auth headers
     const fetchWithAuth = async (url: string, options: RequestInit = {}) => {
-        // Gunakan proxy Vite yang sudah dikonfigurasi untuk /api/*
-        const fullUrl = url.startsWith('http') ? url : url;
+        // Gunakan API base URL yang sudah dikonfigurasi
+        const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
+        const fullUrl = url.startsWith('http') ? url : `${API_BASE_URL}${url}`;
         
         return fetch(fullUrl, {
             ...options,
@@ -128,19 +129,21 @@ const BackupManagementView: React.FC = () => {
 
     // Load backups on component mount
     useEffect(() => {
-        loadBackups();
-        loadArchiveStats();
-        loadBackupSettings();
-        loadCustomSchedules();
+        // DISABLED: Fitur backup belum siap
+        // loadBackups();
+        // loadArchiveStats();
+        // loadBackupSettings();
+        // loadCustomSchedules();
     }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
     // Auto-refresh custom schedules every minute to update countdown
     useEffect(() => {
-        const interval = setInterval(() => {
-            loadCustomSchedules();
-        }, 60000); // Refresh every minute
+        // DISABLED: Fitur backup belum implementasi penuh
+        // const interval = setInterval(() => {
+        //     loadCustomSchedules();
+        // }, 60000); // Refresh every minute
 
-        return () => clearInterval(interval);
+        // return () => clearInterval(interval);
     }, []);
 
     const loadBackups = async () => {
@@ -670,6 +673,15 @@ const BackupManagementView: React.FC = () => {
 
     return (
         <div className="space-y-6">
+            {/* Feature Under Development Banner */}
+            <Alert variant="default" className="border-yellow-500 bg-yellow-50">
+                <AlertTriangle className="h-4 w-4 text-yellow-600" />
+                <AlertDescription className="text-yellow-800">
+                    <strong>Fitur Dalam Pengembangan:</strong> Sistem backup dan archive sedang dalam tahap implementasi. 
+                    Fitur ini akan diaktifkan setelah integrasi backend selesai.
+                </AlertDescription>
+            </Alert>
+
             <div className="flex items-center justify-between">
                 <div>
                     <h2 className="text-2xl font-bold tracking-tight">Backup & Archive Management</h2>
@@ -721,13 +733,13 @@ const BackupManagementView: React.FC = () => {
                     )}
                 </div>
                 <div className="flex gap-2">
-                    <Button onClick={loadBackups} variant="outline" size="sm">
+                    <Button onClick={loadBackups} variant="outline" size="sm" disabled={true}>
                         <RefreshCw className="h-4 w-4 mr-2" />
                         Refresh
                     </Button>
                     <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
                         <DialogTrigger asChild>
-                            <Button>
+                            <Button disabled={true}>
                                 <Database className="h-4 w-4 mr-2" />
                                 Buat Backup
                             </Button>
@@ -816,10 +828,7 @@ const BackupManagementView: React.FC = () => {
                                 <Button 
                                     onClick={createBackup} 
                                     className="w-full" 
-                                    disabled={
-                                        (backupType === 'semester' && !selectedSemester) ||
-                                        (backupType === 'date' && !selectedDate)
-                                    }
+                                    disabled={true}
                                 >
                                     <Database className="h-4 w-4 mr-2" />
                                     Buat Backup
@@ -884,7 +893,7 @@ const BackupManagementView: React.FC = () => {
                                     <p className="text-muted-foreground mb-4">
                                         Buat backup pertama untuk melindungi data Anda
                                     </p>
-                                    <Button onClick={() => setShowCreateDialog(true)}>
+                                    <Button onClick={() => setShowCreateDialog(true)} disabled={true}>
                                         <Database className="h-4 w-4 mr-2" />
                                         Buat Backup Pertama
                                     </Button>
@@ -940,6 +949,7 @@ const BackupManagementView: React.FC = () => {
                                                             size="sm"
                                                             variant="outline"
                                                             onClick={() => downloadBackup(backup.id)}
+                                                            disabled={true}
                                                         >
                                                             <Download className="h-4 w-4" />
                                                         </Button>
@@ -947,6 +957,7 @@ const BackupManagementView: React.FC = () => {
                                                             size="sm"
                                                             variant="outline"
                                                             onClick={() => restoreBackup(backup.id)}
+                                                            disabled={true}
                                                         >
                                                             <RotateCcw className="h-4 w-4" />
                                                         </Button>
@@ -954,6 +965,7 @@ const BackupManagementView: React.FC = () => {
                                                             size="sm"
                                                             variant="outline"
                                                             onClick={() => deleteBackup(backup.id)}
+                                                            disabled={true}
                                                         >
                                                             <Trash2 className="h-4 w-4" />
                                                         </Button>
@@ -1070,7 +1082,7 @@ const BackupManagementView: React.FC = () => {
                             <div className="flex gap-2 flex-wrap">
                                 <Button 
                                     onClick={archiveOldData} 
-                                    disabled={archiveLoading}
+                                    disabled={true}
                                     variant="outline"
                                     className="flex-1 min-w-[200px]"
                                 >
@@ -1331,7 +1343,7 @@ const BackupManagementView: React.FC = () => {
                                 </div>
                             </div>
                             
-                            <Button onClick={saveBackupSettings} className="w-full">
+                            <Button onClick={saveBackupSettings} className="w-full" disabled={true}>
                                 <Settings className="h-4 w-4 mr-2" />
                                 Simpan Pengaturan
                             </Button>
@@ -1413,7 +1425,7 @@ const BackupManagementView: React.FC = () => {
                                                 />
                                                 <Label htmlFor="enabled">Aktifkan jadwal ini</Label>
                                             </div>
-                                            <Button onClick={createCustomSchedule} className="w-full">
+                                            <Button onClick={createCustomSchedule} className="w-full" disabled={true}>
                                                 <Calendar className="h-4 w-4 mr-2" />
                                                 Buat Jadwal
                                             </Button>

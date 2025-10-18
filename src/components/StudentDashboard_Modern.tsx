@@ -217,13 +217,6 @@ const StudentDashboardComponent = ({ userData, onLogout }: StudentDashboardProps
   const [bandingAbsen, setBandingAbsen] = useState<BandingAbsen[]>([]);
   const [expandedBanding, setExpandedBanding] = useState<number | null>(null);
   
-  // State untuk pengajuan izin
-  const [izinData, setIzinData] = useState({
-    jadwal_id: '',
-    tanggal_izin: '',
-    alasan: '',
-    jenis_izin: 'sakit'
-  });
   const [attendanceRecords, setAttendanceRecords] = useState<Array<{
     siswa_id: number;
     nama: string;
@@ -1694,88 +1687,6 @@ const StudentDashboardComponent = ({ userData, onLogout }: StudentDashboardProps
     );
   };
 
-  // Render Pengajuan Izin Content
-  const renderPengajuanIzinContent = () => {
-    return (
-      <div className="space-y-6">
-        {/* Header */}
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-          <div className="min-w-0">
-            <h2 className="text-2xl font-bold text-gray-900 truncate">Pengajuan Izin</h2>
-            <p className="text-gray-600">Ajukan izin untuk ketidakhadiran</p>
-          </div>
-        </div>
-
-        {/* Form Pengajuan Izin */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Form Pengajuan Izin</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <form onSubmit={handleSubmitPengajuanIzin} className="space-y-4">
-              {/* Nama Siswa (Read-only) */}
-              <div>
-                <Label htmlFor="nama">Nama Siswa</Label>
-                <input
-                  id="nama"
-                  type="text"
-                  value={userData.nama}
-                  readOnly
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-50"
-                />
-              </div>
-
-              {/* Tanggal Izin */}
-              <div>
-                <Label htmlFor="tanggal_izin">Tanggal Izin</Label>
-                <input
-                  id="tanggal_izin"
-                  type="date"
-                  value={izinData.tanggal_izin}
-                  onChange={(e) => setIzinData({...izinData, tanggal_izin: e.target.value})}
-                  required
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md"
-                />
-              </div>
-
-              {/* Alasan */}
-              <div>
-                <Label htmlFor="alasan">Alasan Izin</Label>
-                <Textarea
-                  id="alasan"
-                  value={izinData.alasan}
-                  onChange={(e) => setIzinData({...izinData, alasan: e.target.value})}
-                  placeholder="Masukkan alasan izin..."
-                  required
-                  className="w-full"
-                />
-              </div>
-
-              {/* Jenis Izin */}
-              <div>
-                <Label htmlFor="jenis_izin">Jenis Izin</Label>
-                <select
-                  id="jenis_izin"
-                  value={izinData.jenis_izin}
-                  onChange={(e) => setIzinData({...izinData, jenis_izin: e.target.value})}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md"
-                >
-                  <option value="sakit">Sakit</option>
-                  <option value="izin">Izin</option>
-                  <option value="lainnya">Lainnya</option>
-                </select>
-              </div>
-
-              <Button type="submit" className="w-full">
-                <Send className="h-4 w-4 mr-2" />
-                Ajukan Izin
-              </Button>
-            </form>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  };
 
   // Render Banding Absen Content
   // Render Banding Absen Content untuk Kelas
@@ -2391,36 +2302,6 @@ const StudentDashboardComponent = ({ userData, onLogout }: StudentDashboardProps
     );
   };
 
-  // Handler untuk submit pengajuan izin
-  const handleSubmitPengajuanIzin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    
-    try {
-      const response = await apiCall(`/api/siswa/${userData.id}/pengajuan-izin`, {
-        method: 'POST',
-        body: JSON.stringify({
-          jadwal_id: izinData.jadwal_id,
-          tanggal_izin: izinData.tanggal_izin,
-          alasan_izin: izinData.alasan,
-          jenis_izin: izinData.jenis_izin,
-          kelas_id: userData.kelas_id
-        })
-      });
-
-      if (response.success) {
-        toast({ title: "Success", description: response.message });
-        // Reset form
-        setIzinData({
-          jadwal_id: '',
-          tanggal_izin: '',
-          alasan: '',
-          jenis_izin: 'sakit'
-        });
-      }
-    } catch (error: any) {
-      toast({ title: "Error", description: error.message || "Gagal mengajukan izin" });
-    }
-  };
 
   // Submit Banding Absen (personal) - REMOVED
   // const submitBandingAbsen = async (e: React.FormEvent) => {
@@ -2622,14 +2503,6 @@ const StudentDashboardComponent = ({ userData, onLogout }: StudentDashboardProps
             <span className="ml-2">Riwayat</span>
           </Button>
           <Button
-            variant={activeTab === 'pengajuan-izin' ? "default" : "ghost"}
-            className={`w-full justify-start`}
-            onClick={() => {setActiveTab('pengajuan-izin'); setSidebarOpen(false);}}
-          >
-            <FileText className="h-4 w-4" />
-            <span className="ml-2">Pengajuan Izin</span>
-          </Button>
-          <Button
             variant={activeTab === 'banding-absen' ? "default" : "ghost"}
             className={`w-full justify-start`}
             onClick={() => {setActiveTab('banding-absen'); setSidebarOpen(false);}}
@@ -2733,7 +2606,6 @@ const StudentDashboardComponent = ({ userData, onLogout }: StudentDashboardProps
           {/* Content */}
           {activeTab === 'kehadiran' && renderKehadiranContent()}
           {activeTab === 'riwayat' && renderRiwayatContent()}
-          {activeTab === 'pengajuan-izin' && renderPengajuanIzinContent()}
           {activeTab === 'banding-absen' && renderBandingAbsenContent()}
         </div>
       </div>
