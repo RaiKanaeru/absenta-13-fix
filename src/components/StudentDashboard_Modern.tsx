@@ -606,7 +606,11 @@ const StudentDashboardComponent = ({ userData, onLogout }: StudentDashboardProps
 
   // Load jadwal by date for edit mode
   const loadJadwalByDate = useCallback(async (tanggal: string) => {
-    if (!siswaId || isLoading('jadwal')) return;
+    console.log('[loadJadwalByDate] Called with tanggal:', tanggal, 'siswaId:', siswaId);
+    if (!siswaId || isLoading('jadwal')) {
+      console.log('[loadJadwalByDate] Early return - siswaId:', siswaId, 'isLoading:', isLoading('jadwal'));
+      return;
+    }
 
     setLoadingRef.current('jadwal', true);
     try {
@@ -919,8 +923,9 @@ const StudentDashboardComponent = ({ userData, onLogout }: StudentDashboardProps
 
   // Submit banding kelas
   const submitBandingKelas = useCallback(async () => {
+    console.log('[submitBandingKelas] Called with form:', formBandingKelas);
     if (submitting) {
-      console.log('Submit already in progress');
+      console.log('[submitBandingKelas] Already submitting, return');
       return;
     }
 
