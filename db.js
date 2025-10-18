@@ -16,7 +16,6 @@ const dbConfig = {
     enableKeepAlive: true,
     keepAliveInitialDelay: 0,
     connectTimeout: 10000,
-    acquireTimeout: 10000,
     idleTimeout: 300000,
     charset: 'utf8mb4',
     port: 3306

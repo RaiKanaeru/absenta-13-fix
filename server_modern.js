@@ -8,6 +8,7 @@ import jwt from 'jsonwebtoken';
 import cookieParser from 'cookie-parser';
 import ExcelJS from 'exceljs';
 import { compressImage, validateImage } from './backend/utils/imageCompression.js';
+import { db, pool } from './db.js';
 
 const app = express();
 const port = 3001;
@@ -43,45 +44,9 @@ app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(cookieParser());
 
-// ================================================
-// DATABASE CONNECTION - MySQL Real Connection
-// ================================================
-const dbConfig = {
-    host: 'localhost',
-    user: 'root',
-    password: '',
-    database: 'absenta13',
-    connectTimeout: 10000,
-    acquireTimeout: 10000,
-    timeout: 10000,
-    reconnect: true
-};
+// Database configuration is handled by db.js
 
-let connection;
-
-async function connectToDatabase() {
-    console.log('🔄 Connecting to MySQL database...');
-    try {
-        connection = await mysql.createConnection(dbConfig);
-        console.log('✅ Successfully connected to MySQL database');
-
-        // Test connection
-        await connection.execute('SELECT 1');
-        console.log('✅ Database connection test successful');
-
-        connection.on('error', err => {
-            console.error('❌ Database connection error:', err);
-            if (err.code === 'PROTOCOL_CONNECTION_LOST') {
-                connectToDatabase();
-            }
-        });
-
-    } catch (error) {
-        console.error('❌ Failed to connect to database:', error.message);
-        console.log('🔄 Retrying connection in 5 seconds...');
-        setTimeout(connectToDatabase, 5000);
-    }
-}
+// Database connection is handled by db.js pool
 
 // ================================================
 // MIDDLEWARE - JWT Authentication & Authorization
@@ -146,7 +111,7 @@ app.post('/api/login', async (req, res) => {
         }
 
         // Query user from database - try users table first, fallback to pengguna
-        let [rows] = await connection.execute(
+        let [rows] = await db.execute(
             'SELECT * FROM users WHERE username = ? AND status = "aktif"',
             [username]
         );
@@ -154,7 +119,7 @@ app.post('/api/login', async (req, res) => {
         // If no results from users table, try pengguna table
         if (rows.length === 0) {
             console.log('🔄 Trying pengguna table for user:', username);
-            [rows] = await connection.execute(
+            [rows] = await db.execute(
                 'SELECT * FROM pengguna WHERE nama_pengguna = ? AND (status = "aktif" OR status IS NULL)',
                 [username]
             );
@@ -194,7 +159,7 @@ app.post('/api/login', async (req, res) => {
         
         if (user.role === 'guru' || user.role === 'GURU' || user.role.toLowerCase() === 'guru') {
             console.log('🔍 Debug: Looking for guru data for user_id:', user.id);
-            const [guruData] = await connection.execute(
+            const [guruData] = await db.execute(
                 `SELECT g.*, m.nama_mapel 
                  FROM guru g 
                  JOIN mapel m ON g.mapel_id = m.id_mapel 
@@ -213,7 +178,7 @@ app.post('/api/login', async (req, res) => {
                 console.log('❌ Debug: No guru data found for user_id:', user.id);
             }
         } else if (user.role === 'siswa' || user.role === 'KETOS') {
-            const [siswaData] = await connection.execute(
+            const [siswaData] = await db.execute(
                 `SELECT s.*, k.nama_kelas 
                  FROM siswa s 
                  JOIN kelas k ON s.kelas_id = k.id_kelas 
@@ -339,7 +304,7 @@ app.get('/api/verify-token', authenticateToken, (req, res) => {
 // Lightweight master data for filters
 // app.get('/api/admin/classes', authenticateToken, requireRole(['admin']), async (req, res) => {
 //     try {
-//         const [rows] = await connection.execute(
+//         const [rows] = await db.execute(
 //             'SELECT id_kelas AS id, nama_kelas FROM kelas WHERE status = "aktif" ORDER BY nama_kelas'
 //         );
 //         res.json(rows);
@@ -356,27 +321,27 @@ app.get('/api/dashboard/stats', authenticateToken, async (req, res) => {
         
         if (req.user.role === 'admin') {
             // Admin statistics
-            const [totalSiswa] = await connection.execute(
+            const [totalSiswa] = await db.execute(
                 'SELECT COUNT(*) as count FROM siswa WHERE status = "aktif"'
             );
             
-            const [totalGuru] = await connection.execute(
+            const [totalGuru] = await db.execute(
                 'SELECT COUNT(*) as count FROM guru WHERE status = "aktif"'
             );
             
-            const [totalKelas] = await connection.execute(
+            const [totalKelas] = await db.execute(
                 'SELECT COUNT(*) as count FROM kelas WHERE status = "aktif"'
             );
             
-            const [totalMapel] = await connection.execute(
+            const [totalMapel] = await db.execute(
                 'SELECT COUNT(*) as count FROM mapel WHERE status = "aktif"'
             );
             
-            const [absensiHariIni] = await connection.execute(
+            const [absensiHariIni] = await db.execute(
                 'SELECT COUNT(*) as count FROM absensi_guru WHERE tanggal = CURDATE()'
             );
             
-            const [persentaseKehadiran] = await connection.execute(
+            const [persentaseKehadiran] = await db.execute(
                 `SELECT 
                     ROUND(
                         (SUM(CASE WHEN status = 'Hadir' THEN 1 ELSE 0 END) * 100.0 / COUNT(*)), 2
@@ -394,21 +359,21 @@ app.get('/api/dashboard/stats', authenticateToken, async (req, res) => {
             
         } else if (req.user.role === 'guru') {
             // Guru statistics
-            const [jadwalHariIni] = await connection.execute(
+            const [jadwalHariIni] = await db.execute(
                 `SELECT COUNT(*) as count 
                  FROM jadwal 
                  WHERE guru_id = ? AND hari = DAYNAME(CURDATE()) AND status = 'aktif'`,
                 [req.user.guru_id]
             );
             
-            const [absensiMingguIni] = await connection.execute(
+            const [absensiMingguIni] = await db.execute(
                 `SELECT COUNT(*) as count 
                  FROM absensi_guru 
                  WHERE guru_id = ? AND tanggal >= DATE_SUB(CURDATE(), INTERVAL 7 DAY)`,
                 [req.user.guru_id]
             );
             
-            const [persentaseKehadiran] = await connection.execute(
+            const [persentaseKehadiran] = await db.execute(
                 `SELECT 
                     ROUND(
                         (SUM(CASE WHEN status = 'Hadir' THEN 1 ELSE 0 END) * 100.0 / COUNT(*)), 2
@@ -424,14 +389,14 @@ app.get('/api/dashboard/stats', authenticateToken, async (req, res) => {
             
         } else if (req.user.role === 'siswa') {
             // Siswa statistics
-            const [jadwalHariIni] = await connection.execute(
+            const [jadwalHariIni] = await db.execute(
                 `SELECT COUNT(*) as count 
                  FROM jadwal 
                  WHERE kelas_id = ? AND hari = DAYNAME(CURDATE()) AND status = 'aktif'`,
                 [req.user.kelas_id]
             );
             
-            const [absensiMingguIni] = await connection.execute(
+            const [absensiMingguIni] = await db.execute(
                 `SELECT COUNT(*) as count 
                  FROM absensi_guru 
                  WHERE kelas_id = ? AND tanggal >= DATE_SUB(CURDATE(), INTERVAL 7 DAY)`,
@@ -459,7 +424,7 @@ app.get('/api/dashboard/chart', authenticateToken, async (req, res) => {
 
         if (req.user.role === 'admin') {
             // Admin chart - Weekly attendance overview
-            const [weeklyData] = await connection.execute(
+            const [weeklyData] = await db.execute(
                 `SELECT 
                     DATE(tanggal) as tanggal,
                     SUM(CASE WHEN status = 'Hadir' THEN 1 ELSE 0 END) as hadir,
@@ -479,7 +444,7 @@ app.get('/api/dashboard/chart', authenticateToken, async (req, res) => {
 
         } else if (req.user.role === 'guru') {
             // Guru chart - Personal attendance
-            const [personalData] = await connection.execute(
+            const [personalData] = await db.execute(
                 `SELECT 
                     DATE(tanggal) as tanggal,
                     SUM(CASE WHEN status = 'Hadir' THEN 1 ELSE 0 END) as hadir,
@@ -535,8 +500,8 @@ app.get('/api/admin/siswa', authenticateToken, requireRole(['admin']), async (re
         query += ' ORDER BY s.created_at DESC LIMIT ? OFFSET ?';
         params.push(parseInt(limit), parseInt(offset));
 
-        const [rows] = await connection.execute(query, params);
-        const [countResult] = await connection.execute(countQuery, search ? [`%${search}%`, `%${search}%`, `%${search}%`] : []);
+        const [rows] = await db.execute(query, params);
+        const [countResult] = await db.execute(countQuery, search ? [`%${search}%`, `%${search}%`, `%${search}%`] : []);
 
         res.json({
             success: true,
@@ -565,13 +530,13 @@ app.post('/api/admin/siswa', authenticateToken, requireRole(['admin']), async (r
         await connection.beginTransaction();
 
         // Create user account
-        const [userResult] = await connection.execute(
+        const [userResult] = await db.execute(
             'INSERT INTO users (username, password, role, nama, status) VALUES (?, ?, "siswa", ?, "aktif")',
             [username, hashedPassword, nama]
         );
 
         // Create siswa record
-        await connection.execute(
+        await db.execute(
             'INSERT INTO siswa (nis, nama, kelas_id, user_id, jabatan, status) VALUES (?, ?, ?, ?, ?, "aktif")',
             [nis, nama, kelas_id, userResult.insertId, jabatan || 'Sekretaris Kelas']
         );
@@ -617,8 +582,8 @@ app.get('/api/admin/guru', authenticateToken, requireRole(['admin']), async (req
         query += ' ORDER BY g.created_at DESC LIMIT ? OFFSET ?';
         params.push(parseInt(limit), parseInt(offset));
 
-        const [rows] = await connection.execute(query, params);
-        const [countResult] = await connection.execute(countQuery, search ? [`%${search}%`, `%${search}%`, `%${search}%`] : []);
+        const [rows] = await db.execute(query, params);
+        const [countResult] = await db.execute(countQuery, search ? [`%${search}%`, `%${search}%`, `%${search}%`] : []);
 
         res.json({
             success: true,
@@ -647,13 +612,13 @@ app.post('/api/admin/guru', authenticateToken, requireRole(['admin']), async (re
         await connection.beginTransaction();
 
         // Create user account
-        const [userResult] = await connection.execute(
+        const [userResult] = await db.execute(
             'INSERT INTO users (username, password, role, nama, status) VALUES (?, ?, "guru", ?, "aktif")',
             [username, hashedPassword, nama]
         );
 
         // Create guru record
-        await connection.execute(
+        await db.execute(
             'INSERT INTO guru (nip, nama, mapel_id, user_id, no_telp, alamat, status) VALUES (?, ?, ?, ?, ?, ?, "aktif")',
             [nip, nama, mapel_id, userResult.insertId, no_telp, alamat]
         );
@@ -687,7 +652,7 @@ app.put('/api/admin/guru/:id', authenticateToken, requireRole(['admin']), async 
         }
 
         // Check if username already exists (excluding current user)
-        const [existingUsers] = await connection.execute(
+        const [existingUsers] = await db.execute(
             'SELECT id FROM users WHERE username = ? AND id != (SELECT user_id FROM guru WHERE id = ?)',
             [username, id]
         );
@@ -697,7 +662,7 @@ app.put('/api/admin/guru/:id', authenticateToken, requireRole(['admin']), async 
         }
 
         // Check if NIP already exists (excluding current guru)
-        const [existingNIP] = await connection.execute(
+        const [existingNIP] = await db.execute(
             'SELECT id FROM guru WHERE nip = ? AND id != ?',
             [nip, id]
         );
@@ -710,7 +675,7 @@ app.put('/api/admin/guru/:id', authenticateToken, requireRole(['admin']), async 
 
         try {
             // Get current user_id
-            const [guruResult] = await connection.execute(
+            const [guruResult] = await db.execute(
                 'SELECT user_id FROM guru WHERE id = ?',
                 [id]
             );
@@ -724,19 +689,19 @@ app.put('/api/admin/guru/:id', authenticateToken, requireRole(['admin']), async 
             // Update user account
             if (password) {
                 const hashedPassword = await bcrypt.hash(password, saltRounds);
-                await connection.execute(
+                await db.execute(
                     'UPDATE users SET username = ?, password = ?, nama = ?, email = ?, status = ? WHERE id = ?',
                     [username, hashedPassword, nama, email || null, status || 'aktif', userId]
                 );
             } else {
-                await connection.execute(
+                await db.execute(
                     'UPDATE users SET username = ?, nama = ?, email = ?, status = ? WHERE id = ?',
                     [username, nama, email || null, status || 'aktif', userId]
                 );
             }
 
             // Update guru data
-            await connection.execute(
+            await db.execute(
                 'UPDATE guru SET nip = ?, nama = ?, mapel_id = ?, no_telp = ?, alamat = ?, jenis_kelamin = ?, status = ? WHERE id = ?',
                 [nip, nama, mapel_id, no_telp || null, alamat || null, jenis_kelamin || null, status || 'aktif', id]
             );
@@ -764,7 +729,7 @@ app.delete('/api/admin/guru/:id', authenticateToken, requireRole(['admin']), asy
 
         try {
             // Get user_id first
-            const [guruResult] = await connection.execute(
+            const [guruResult] = await db.execute(
                 'SELECT user_id FROM guru WHERE id = ?',
                 [id]
             );
@@ -776,13 +741,13 @@ app.delete('/api/admin/guru/:id', authenticateToken, requireRole(['admin']), asy
             const userId = guruResult[0].user_id;
 
             // Delete from guru table first (foreign key constraint)
-            await connection.execute(
+            await db.execute(
                 'DELETE FROM guru WHERE id = ?',
                 [id]
             );
 
             // Delete from users table
-            await connection.execute(
+            await db.execute(
                 'DELETE FROM users WHERE id = ?',
                 [userId]
             );
@@ -811,7 +776,7 @@ app.get('/api/admin/mapel', authenticateToken, requireRole(['admin']), async (re
             ORDER BY nama_mapel
         `;
         
-        const [rows] = await connection.execute(query);
+        const [rows] = await db.execute(query);
         console.log(`✅ Subjects retrieved: ${rows.length} items`);
         res.json(rows);
     } catch (error) {
@@ -830,7 +795,7 @@ app.post('/api/admin/mapel', authenticateToken, requireRole(['admin']), async (r
         }
 
         // Check if kode_mapel already exists
-        const [existing] = await connection.execute(
+        const [existing] = await db.execute(
             'SELECT id_mapel FROM mapel WHERE kode_mapel = ?',
             [kode_mapel]
         );
@@ -844,7 +809,7 @@ app.post('/api/admin/mapel', authenticateToken, requireRole(['admin']), async (r
             VALUES (?, ?, ?, ?)
         `;
 
-        const [result] = await connection.execute(insertQuery, [
+        const [result] = await db.execute(insertQuery, [
             kode_mapel, 
             nama_mapel, 
             deskripsi || null,
@@ -874,7 +839,7 @@ app.put('/api/admin/mapel/:id', authenticateToken, requireRole(['admin']), async
         }
 
         // Check if kode_mapel already exists for other records
-        const [existing] = await connection.execute(
+        const [existing] = await db.execute(
             'SELECT id_mapel FROM mapel WHERE kode_mapel = ? AND id_mapel != ?',
             [kode_mapel, id]
         );
@@ -889,7 +854,7 @@ app.put('/api/admin/mapel/:id', authenticateToken, requireRole(['admin']), async
             WHERE id_mapel = ?
         `;
 
-        const [result] = await connection.execute(updateQuery, [
+        const [result] = await db.execute(updateQuery, [
             kode_mapel, 
             nama_mapel, 
             deskripsi || null,
@@ -915,7 +880,7 @@ app.delete('/api/admin/mapel/:id', authenticateToken, requireRole(['admin']), as
         const { id } = req.params;
         console.log('🗑️ Deleting subject:', { id });
 
-        const [result] = await connection.execute(
+        const [result] = await db.execute(
             'DELETE FROM mapel WHERE id_mapel = ?',
             [id]
         );
@@ -944,7 +909,7 @@ app.get('/api/kelas', authenticateToken, async (req, res) => {
             ORDER BY tingkat, nama_kelas
         `;
         
-        const [rows] = await connection.execute(query);
+        const [rows] = await db.execute(query);
         console.log(`✅ Classes retrieved: ${rows.length} items`);
         res.json(rows);
     } catch (error) {
@@ -963,7 +928,7 @@ app.get('/api/admin/kelas', authenticateToken, requireRole(['admin']), async (re
             ORDER BY tingkat, nama_kelas
         `;
         
-        const [rows] = await connection.execute(query);
+        const [rows] = await db.execute(query);
         console.log(`✅ Classes retrieved: ${rows.length} items`);
         res.json(rows);
     } catch (error) {
@@ -989,7 +954,7 @@ app.post('/api/admin/kelas', authenticateToken, requireRole(['admin']), async (r
             VALUES (?, ?, 'aktif')
         `;
 
-        const [result] = await connection.execute(insertQuery, [nama_kelas, tingkat]);
+        const [result] = await db.execute(insertQuery, [nama_kelas, tingkat]);
         console.log('✅ Class added successfully:', result.insertId);
         res.json({ message: 'Kelas berhasil ditambahkan', id: result.insertId });
     } catch (error) {
@@ -1022,7 +987,7 @@ app.put('/api/admin/kelas/:id', authenticateToken, requireRole(['admin']), async
             WHERE id_kelas = ?
         `;
 
-        const [result] = await connection.execute(updateQuery, [nama_kelas, tingkat, id]);
+        const [result] = await db.execute(updateQuery, [nama_kelas, tingkat, id]);
 
         if (result.affectedRows === 0) {
             return res.status(404).json({ error: 'Kelas tidak ditemukan' });
@@ -1042,7 +1007,7 @@ app.delete('/api/admin/kelas/:id', authenticateToken, requireRole(['admin']), as
         const { id } = req.params;
         console.log('🗑️ Deleting class:', { id });
 
-        const [result] = await connection.execute(
+        const [result] = await db.execute(
             'DELETE FROM kelas WHERE id_kelas = ?',
             [id]
         );
@@ -1093,7 +1058,7 @@ app.get('/api/admin/jadwal', authenticateToken, requireRole(['admin']), async (r
                 k.nama_kelas
         `;
         
-        const [rows] = await connection.execute(query);
+        const [rows] = await db.execute(query);
         console.log(`✅ Schedules retrieved: ${rows.length} items`);
         res.json(rows);
     } catch (error) {
@@ -1117,7 +1082,7 @@ app.post('/api/admin/jadwal', authenticateToken, requireRole(['admin']), async (
         }
 
         // Check for schedule conflicts - same class, day, and time slot
-        const [conflicts] = await connection.execute(
+        const [conflicts] = await db.execute(
             `SELECT id_jadwal FROM jadwal 
              WHERE kelas_id = ? AND hari = ? AND jam_ke = ? AND status = 'aktif'`,
             [kelas_id, hari, jam_ke]
@@ -1131,7 +1096,7 @@ app.post('/api/admin/jadwal', authenticateToken, requireRole(['admin']), async (
         }
 
         // Check teacher availability - same day and time slot
-        const [teacherConflicts] = await connection.execute(
+        const [teacherConflicts] = await db.execute(
             `SELECT id_jadwal FROM jadwal 
              WHERE guru_id = ? AND hari = ? AND jam_ke = ? AND status = 'aktif'`,
             [guru_id, hari, jam_ke]
@@ -1146,7 +1111,7 @@ app.post('/api/admin/jadwal', authenticateToken, requireRole(['admin']), async (
 
         // Check room availability - same room, day, and time slot (if ruang_id is provided)
         if (ruang_id) {
-            const [roomConflicts] = await connection.execute(
+            const [roomConflicts] = await db.execute(
                 `SELECT id_jadwal FROM jadwal 
                  WHERE ruang_id = ? AND hari = ? AND jam_ke = ? AND status = 'aktif'`,
                 [ruang_id, hari, jam_ke]
@@ -1161,7 +1126,7 @@ app.post('/api/admin/jadwal', authenticateToken, requireRole(['admin']), async (
         }
 
         // Check time overlap for same class and day
-        const [timeOverlaps] = await connection.execute(
+        const [timeOverlaps] = await db.execute(
             `SELECT id_jadwal, jam_mulai, jam_selesai FROM jadwal 
              WHERE kelas_id = ? AND hari = ? AND status = 'aktif' 
              AND (
@@ -1180,10 +1145,10 @@ app.post('/api/admin/jadwal', authenticateToken, requireRole(['admin']), async (
             });
         }
 
-        const [result] = await connection.execute(
+        const [result] = await db.execute(
             `INSERT INTO jadwal (kelas_id, mapel_id, guru_id, ruang_id, hari, jam_ke, jam_mulai, jam_selesai, status)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'aktif')`,
-            [kelas_id, mapel_id, guru_id, ruang_id, hari, jam_ke, jam_mulai, jam_selesai]
+            [kelas_id, mapel_id, guru_id, ruang_id || null, hari, jam_ke, jam_mulai, jam_selesai]
         );
 
         console.log('✅ Schedule added successfully');
@@ -1210,7 +1175,7 @@ app.put('/api/admin/jadwal/:id', authenticateToken, requireRole(['admin']), asyn
         }
 
         // Check for schedule conflicts (excluding current schedule)
-        const [conflicts] = await connection.execute(
+        const [conflicts] = await db.execute(
             `SELECT id_jadwal FROM jadwal 
              WHERE kelas_id = ? AND hari = ? AND jam_ke = ? AND status = 'aktif' AND id_jadwal != ?`,
             [kelas_id, hari, jam_ke, id]
@@ -1221,7 +1186,7 @@ app.put('/api/admin/jadwal/:id', authenticateToken, requireRole(['admin']), asyn
         }
 
         // Check teacher availability (excluding current schedule)
-        const [teacherConflicts] = await connection.execute(
+        const [teacherConflicts] = await db.execute(
             `SELECT id_jadwal FROM jadwal 
              WHERE guru_id = ? AND hari = ? AND jam_ke = ? AND status = 'aktif' AND id_jadwal != ?`,
             [guru_id, hari, jam_ke, id]
@@ -1233,7 +1198,7 @@ app.put('/api/admin/jadwal/:id', authenticateToken, requireRole(['admin']), asyn
 
         // Check room availability (excluding current schedule)
         if (ruang_id) {
-            const [roomConflicts] = await connection.execute(
+            const [roomConflicts] = await db.execute(
                 `SELECT id_jadwal FROM jadwal 
                  WHERE ruang_id = ? AND hari = ? AND jam_ke = ? AND status = 'aktif' AND id_jadwal != ?`,
                 [ruang_id, hari, jam_ke, id]
@@ -1245,7 +1210,7 @@ app.put('/api/admin/jadwal/:id', authenticateToken, requireRole(['admin']), asyn
         }
 
         // Check time overlap for same class and day (excluding current schedule)
-        const [timeOverlaps] = await connection.execute(
+        const [timeOverlaps] = await db.execute(
             `SELECT id_jadwal, jam_mulai, jam_selesai FROM jadwal 
              WHERE kelas_id = ? AND hari = ? AND status = 'aktif' AND id_jadwal != ?
              AND (
@@ -1263,11 +1228,11 @@ app.put('/api/admin/jadwal/:id', authenticateToken, requireRole(['admin']), asyn
             });
         }
 
-        const [result] = await connection.execute(
+        const [result] = await db.execute(
             `UPDATE jadwal 
              SET kelas_id = ?, mapel_id = ?, guru_id = ?, ruang_id = ?, hari = ?, jam_ke = ?, jam_mulai = ?, jam_selesai = ?
              WHERE id_jadwal = ?`,
-            [kelas_id, mapel_id, guru_id, ruang_id, hari, jam_ke, jam_mulai, jam_selesai, id]
+            [kelas_id, mapel_id, guru_id, ruang_id || null, hari, jam_ke, jam_mulai, jam_selesai, id]
         );
 
         if (result.affectedRows === 0) {
@@ -1316,7 +1281,7 @@ app.get('/api/admin/jadwal/preview', authenticateToken, requireRole(['admin']), 
         
         query += ' ORDER BY j.kelas_id, j.hari, j.jam_ke';
         
-        const [schedules] = await connection.execute(query, params);
+        const [schedules] = await db.execute(query, params);
         
         // Group schedules by class and day
         const groupedSchedules = {};
@@ -1392,7 +1357,7 @@ app.get('/api/admin/jadwal/export', authenticateToken, requireRole(['admin']), a
         
         query += ' ORDER BY j.kelas_id, j.hari, j.jam_ke';
         
-        const [schedules] = await connection.execute(query, params);
+        const [schedules] = await db.execute(query, params);
         
         if (format === 'excel') {
             const ExcelJS = require('exceljs');
@@ -1465,7 +1430,7 @@ app.delete('/api/admin/jadwal/:id', authenticateToken, requireRole(['admin']), a
         const { id } = req.params;
         console.log('🗑️ Deleting schedule:', { id });
 
-        const [result] = await connection.execute(
+        const [result] = await db.execute(
             'DELETE FROM jadwal WHERE id_jadwal = ?',
             [id]
         );
@@ -1489,7 +1454,7 @@ app.get('/api/schedule/:id/students', authenticateToken, requireRole(['guru', 'a
         console.log(`👥 Getting students for schedule ID: ${id}`);
 
         // First, get the schedule details to get the class ID
-        const [scheduleData] = await connection.execute(
+        const [scheduleData] = await db.execute(
             'SELECT kelas_id FROM jadwal WHERE id_jadwal = ? AND status = "aktif"',
             [id]
         );
@@ -1502,12 +1467,12 @@ app.get('/api/schedule/:id/students', authenticateToken, requireRole(['guru', 'a
         const currentDate = new Date().toISOString().split('T')[0];
 
         // Get all students in the class with their existing attendance for today
-        const [students] = await connection.execute(
+        const [students] = await db.execute(
             `SELECT 
                 s.id_siswa as id,
                 s.nis,
                 s.nama,
-                sp.jenis_kelamin,
+                s.jenis_kelamin,
                 s.jabatan,
                 s.status,
                 k.nama_kelas,
@@ -1546,7 +1511,7 @@ app.post('/api/attendance/submit', authenticateToken, requireRole(['guru', 'admi
         console.log(`📝 Notes data:`, JSON.stringify(notes, null, 2));
 
         // Get the schedule details to verify it exists
-        const [scheduleData] = await connection.execute(
+        const [scheduleData] = await db.execute(
             'SELECT kelas_id, mapel_id FROM jadwal WHERE id_jadwal = ? AND status = "aktif"',
             [scheduleId]
         );
@@ -1578,7 +1543,7 @@ app.post('/api/attendance/submit', authenticateToken, requireRole(['guru', 'admi
             console.log(`👤 Processing student ${studentId}: status="${status}", note="${note}"`);
             
             // Check if attendance already exists for today
-            const [existingAttendance] = await connection.execute(
+            const [existingAttendance] = await db.execute(
                 'SELECT id, status as current_status FROM absensi_siswa WHERE siswa_id = ? AND jadwal_id = ? AND tanggal = ?',
                 [studentId, scheduleId, currentDate]
             );
@@ -1589,7 +1554,7 @@ app.post('/api/attendance/submit', authenticateToken, requireRole(['guru', 'admi
                 console.log(`🔄 Updating existing attendance ID ${existingId} from "${currentStatus}" to "${status}"`);
                 
                 // Update existing attendance
-                const [updateResult] = await connection.execute(
+                const [updateResult] = await db.execute(
                     'UPDATE absensi_siswa SET status = ?, keterangan = ?, waktu_absen = ? WHERE id = ?',
                     [status, note, `${currentDate} ${currentTime}`, existingId]
                 );
@@ -1599,7 +1564,7 @@ app.post('/api/attendance/submit', authenticateToken, requireRole(['guru', 'admi
                 console.log(`➕ Inserting new attendance for student ${studentId}`);
                 
                 // Insert new attendance
-                const [insertResult] = await connection.execute(
+                const [insertResult] = await db.execute(
                     'INSERT INTO absensi_siswa (siswa_id, jadwal_id, tanggal, status, keterangan, waktu_absen, guru_id) VALUES (?, ?, ?, ?, ?, ?, ?)',
                     [studentId, scheduleId, currentDate, status, note, `${currentDate} ${currentTime}`, guruId]
                 );
@@ -1733,11 +1698,11 @@ app.get('/api/admin/analytics', authenticateToken, requireRole(['admin']), async
             LIMIT 10
         `;
 
-        const [studentAttendance] = await connection.execute(studentAttendanceQuery);
-        const [teacherAttendance] = await connection.execute(teacherAttendanceQuery);
-        const [topAbsentStudents] = await connection.execute(topAbsentStudentsQuery);
-        const [topAbsentTeachers] = await connection.execute(topAbsentTeachersQuery);
-        const [notifications] = await connection.execute(notificationsQuery);
+        const [studentAttendance] = await db.execute(studentAttendanceQuery);
+        const [teacherAttendance] = await db.execute(teacherAttendanceQuery);
+        const [topAbsentStudents] = await db.execute(topAbsentStudentsQuery);
+        const [topAbsentTeachers] = await db.execute(topAbsentTeachersQuery);
+        const [notifications] = await db.execute(notificationsQuery);
 
         const analyticsData = {
             studentAttendance: studentAttendance || [],
@@ -1790,7 +1755,7 @@ app.get('/api/admin/live-teacher-attendance', authenticateToken, requireRole(['a
             ORDER BY k.nama_kelas, j.jam_mulai, g.nama
         `;
         
-        const [rows] = await connection.execute(query);
+        const [rows] = await db.execute(query);
         console.log(`✅ Live teacher attendance retrieved: ${rows.length} records`);
         res.json(rows);
     } catch (error) {
@@ -1820,7 +1785,7 @@ app.get('/api/admin/live-student-attendance', authenticateToken, requireRole(['a
             ORDER BY k.nama_kelas, s.nama
         `;
         
-        const [rows] = await connection.execute(query);
+        const [rows] = await db.execute(query);
         console.log(`✅ Live student attendance retrieved: ${rows.length} records`);
         res.json(rows);
     } catch (error) {
@@ -1873,7 +1838,7 @@ app.get('/api/admin/teacher-attendance-report', authenticateToken, requireRole([
         
         query += ' ORDER BY ag.tanggal DESC, k.nama_kelas, j.jam_ke';
         
-        const [rows] = await connection.execute(query, params);
+        const [rows] = await db.execute(query, params);
         console.log(`✅ Teacher attendance report retrieved: ${rows.length} records`);
         res.json(rows);
     } catch (error) {
@@ -1926,7 +1891,7 @@ app.get('/api/admin/download-teacher-attendance', authenticateToken, requireRole
         
         query += ' ORDER BY ag.tanggal DESC, k.nama_kelas, j.jam_ke';
         
-        const [rows] = await connection.execute(query, params);
+        const [rows] = await db.execute(query, params);
 
         // Enhanced CSV format with UTF-8 BOM for Excel compatibility
         let csvContent = '\uFEFF'; // UTF-8 BOM
@@ -1986,7 +1951,7 @@ app.get('/api/admin/student-attendance-report', authenticateToken, requireRole([
         
         query += ' ORDER BY a.waktu_absen DESC, k.nama_kelas, s.nama';
         
-        const [rows] = await connection.execute(query, params);
+        const [rows] = await db.execute(query, params);
         console.log(`✅ Student attendance report retrieved: ${rows.length} records`);
         res.json(rows);
     } catch (error) {
@@ -2034,7 +1999,7 @@ app.get('/api/admin/download-student-attendance', authenticateToken, requireRole
         
         query += ' ORDER BY a.waktu_absen DESC, k.nama_kelas, s.nama';
         
-        const [rows] = await connection.execute(query, params);
+        const [rows] = await db.execute(query, params);
 
         // Enhanced CSV format with UTF-8 BOM for Excel compatibility
         let csvContent = '\uFEFF'; // UTF-8 BOM
@@ -2092,7 +2057,7 @@ app.get('/api/admin/student-attendance-summary', authenticateToken, requireRole(
         }
         query += ' GROUP BY s.id_siswa, s.nama, s.nis, k.nama_kelas ORDER BY k.nama_kelas, s.nama';
 
-        const [rows] = await connection.execute(query, params);
+        const [rows] = await db.execute(query, params);
         res.json(rows);
     } catch (error) {
         console.error('❌ Error getting student attendance summary:', error);
@@ -2135,7 +2100,7 @@ app.get('/api/admin/download-student-attendance-excel', authenticateToken, requi
         }
         query += ' GROUP BY s.id_siswa, s.nama, s.nis, k.nama_kelas ORDER BY k.nama_kelas, s.nama';
 
-        const [rows] = await connection.execute(query, params);
+        const [rows] = await db.execute(query, params);
 
         const workbook = new ExcelJS.Workbook();
         const sheet = workbook.addWorksheet('Kehadiran Siswa');
@@ -2232,7 +2197,7 @@ app.get('/api/admin/teacher-attendance-summary', authenticateToken, requireRole(
         `;
         const params = [startDate, endDate];
         query += ' GROUP BY g.id_guru, g.nama, g.nip ORDER BY g.nama';
-        const [rows] = await connection.execute(query, params);
+        const [rows] = await db.execute(query, params);
         res.json(rows);
     } catch (error) {
         console.error('❌ Error getting teacher attendance summary:', error);
@@ -2265,7 +2230,7 @@ app.get('/api/admin/download-teacher-attendance-excel', authenticateToken, requi
         `;
         const params = [startDate, endDate];
         query += ' GROUP BY g.id_guru, g.nama, g.nip ORDER BY g.nama';
-        const [rows] = await connection.execute(query, params);
+        const [rows] = await db.execute(query, params);
 
         const workbook = new ExcelJS.Workbook();
         const sheet = workbook.addWorksheet('Kehadiran Guru');
@@ -2319,7 +2284,7 @@ app.get('/api/admin/download-teacher-attendance-excel', authenticateToken, requi
 app.get('/api/guru/classes', authenticateToken, requireRole(['guru']), async (req, res) => {
     try {
         const guruId = req.user.guru_id;
-        const [rows] = await connection.execute(
+        const [rows] = await db.execute(
             `SELECT DISTINCT k.id_kelas as id, k.nama_kelas 
              FROM jadwal j JOIN kelas k ON j.kelas_id = k.id_kelas 
              WHERE j.guru_id = ? AND j.status = 'aktif' ORDER BY k.nama_kelas`,
@@ -2367,7 +2332,7 @@ app.get('/api/guru/attendance-summary', authenticateToken, requireRole(['guru'])
             params.push(kelas_id);
         }
         query += ' GROUP BY s.id_siswa, s.nama, s.nis, k.nama_kelas ORDER BY k.nama_kelas, s.nama';
-        const [rows] = await connection.execute(query, params);
+        const [rows] = await db.execute(query, params);
         res.json(rows);
     } catch (error) {
         console.error('❌ Error getting teacher attendance summary (guru):', error);
@@ -2409,7 +2374,7 @@ app.get('/api/guru/download-attendance-excel', authenticateToken, requireRole(['
             params.push(kelas_id);
         }
         query += ' GROUP BY s.id_siswa, s.nama, s.nis, k.nama_kelas ORDER BY k.nama_kelas, s.nama';
-        const [rows] = await connection.execute(query, params);
+        const [rows] = await db.execute(query, params);
 
         const workbook = new ExcelJS.Workbook();
         const sheet = workbook.addWorksheet('Kehadiran Siswa (Guru)');
@@ -2519,7 +2484,7 @@ app.get('/api/admin/banding-absen-report', authenticateToken, requireRole(['admi
         
         query += ' GROUP BY pba.id_banding ORDER BY pba.tanggal_pengajuan DESC';
         
-        const [rows] = await connection.execute(query, params);
+        const [rows] = await db.execute(query, params);
         console.log(`✅ Banding absen report retrieved: ${rows.length} records`);
         res.json(rows);
     } catch (error) {
@@ -2582,7 +2547,7 @@ app.get('/api/admin/download-banding-absen', authenticateToken, requireRole(['ad
         
         query += ' GROUP BY pba.id_banding ORDER BY pba.tanggal_pengajuan DESC';
         
-        const [rows] = await connection.execute(query, params);
+        const [rows] = await db.execute(query, params);
 
         // Enhanced CSV format with UTF-8 BOM for Excel compatibility
         let csvContent = '\uFEFF'; // UTF-8 BOM
@@ -2639,7 +2604,7 @@ app.get('/api/admin/subjects', authenticateToken, requireRole(['admin']), async 
             ORDER BY nama_mapel
         `;
         
-        const [rows] = await connection.execute(query);
+        const [rows] = await db.execute(query);
         console.log(`✅ Subjects retrieved: ${rows.length} items`);
         res.json(rows);
     } catch (error) {
@@ -2659,7 +2624,7 @@ app.get('/api/admin/classes', authenticateToken, requireRole(['admin']), async (
             ORDER BY tingkat, nama_kelas
         `;
         
-        const [rows] = await connection.execute(query);
+        const [rows] = await db.execute(query);
         console.log(`✅ Classes retrieved: ${rows.length} items`);
         res.json(rows);
     } catch (error) {
@@ -2700,7 +2665,7 @@ app.get('/api/jadwal/today', authenticateToken, async (req, res) => {
             params = [req.user.kelas_id];
         }
 
-        const [rows] = await connection.execute(query, params);
+        const [rows] = await db.execute(query, params);
         
         console.log(`📅 Today's schedule retrieved for ${req.user.role}: ${req.user.username}`);
         res.json({ success: true, data: rows });
@@ -2717,7 +2682,7 @@ app.post('/api/absensi', authenticateToken, requireRole(['siswa']), async (req, 
         const { jadwal_id, guru_id, status, keterangan } = req.body;
 
         // Check if attendance already recorded for today
-        const [existing] = await connection.execute(
+        const [existing] = await db.execute(
             `SELECT * FROM absensi_guru 
              WHERE jadwal_id = ? AND tanggal = CURDATE()`,
             [jadwal_id]
@@ -2728,7 +2693,7 @@ app.post('/api/absensi', authenticateToken, requireRole(['siswa']), async (req, 
         }
 
         // Get jadwal details
-        const [jadwalData] = await connection.execute(
+        const [jadwalData] = await db.execute(
             'SELECT * FROM jadwal WHERE id_jadwal = ?',
             [jadwal_id]
         );
@@ -2738,7 +2703,7 @@ app.post('/api/absensi', authenticateToken, requireRole(['siswa']), async (req, 
         }
 
         // Record attendance
-        await connection.execute(
+        await db.execute(
             `INSERT INTO absensi_guru (jadwal_id, guru_id, kelas_id, siswa_pencatat_id, tanggal, jam_ke, status, keterangan)
              VALUES (?, ?, ?, ?, CURDATE(), ?, ?, ?)`,
             [jadwal_id, guru_id, req.user.kelas_id, req.user.siswa_id, jadwalData[0].jam_ke, status, keterangan]
@@ -2799,7 +2764,7 @@ app.get('/api/absensi/history', authenticateToken, async (req, res) => {
         query += ' ORDER BY ag.tanggal DESC, j.jam_ke ASC LIMIT ?';
         params.push(parseInt(limit));
 
-        const [rows] = await connection.execute(query, params);
+        const [rows] = await db.execute(query, params);
         
         console.log(`📊 Attendance history retrieved for ${req.user.role}: ${req.user.username}`);
         res.json({ success: true, data: rows });
@@ -2851,7 +2816,7 @@ app.get('/api/export/absensi', authenticateToken, requireRole(['admin']), async 
 
         query += ' ORDER BY ag.tanggal DESC, k.nama_kelas, j.jam_ke';
 
-        const [rows] = await connection.execute(query, params);
+        const [rows] = await db.execute(query, params);
 
         // Create Excel workbook
         const workbook = new ExcelJS.Workbook();
@@ -2927,7 +2892,7 @@ app.get('/api/guru/jadwal', authenticateToken, requireRole(['guru', 'admin']), a
     }
 
     try {
-        const [jadwal] = await connection.execute(`
+        const [jadwal] = await db.execute(`
             SELECT 
                 j.id_jadwal AS id,
                 j.hari,
@@ -2971,7 +2936,7 @@ app.get('/api/guru/history', authenticateToken, requireRole(['guru', 'admin']), 
     }
 
     try {
-        const [history] = await connection.execute(`
+        const [history] = await db.execute(`
             SELECT 
                 ag.tanggal, 
                 ag.status, 
@@ -3033,7 +2998,7 @@ app.get('/api/guru/student-attendance-history', authenticateToken, requireRole([
             ORDER BY absensi.waktu_absen DESC, jadwal.jam_ke ASC
             LIMIT 1000`;
 
-        const [history] = await connection.execute(query, [guruId]);
+        const [history] = await db.execute(query, [guruId]);
 
         console.log(`✅ Found ${history.length} student attendance records for guru_id ${guruId}`);
         
@@ -3071,7 +3036,7 @@ app.get('/api/guru/student-attendance-simple', authenticateToken, requireRole(['
         }
 
         // Simple query to test
-        const [result] = await connection.execute(`
+        const [result] = await db.execute(`
             SELECT COUNT(*) as total
             FROM jadwal j
             WHERE j.guru_id = ?
@@ -3125,7 +3090,7 @@ app.get('/api/admin/guru/kehadiran-realtime', authenticateToken, requireRole(['a
             ORDER BY ag.jam_ke, g.nama
         `;
 
-        const [attendance] = await connection.execute(query, [tanggal]);
+        const [attendance] = await db.execute(query, [tanggal]);
 
         // Group by status for summary
         const summary = {
@@ -3176,7 +3141,7 @@ app.put('/api/admin/guru/kehadiran/:id', authenticateToken, requireRole(['admin'
             WHERE id_absensi = ?
         `;
 
-        await connection.execute(updateQuery, [
+        await db.execute(updateQuery, [
             status, 
             keterangan, 
             jam_terlambat, 
@@ -3226,7 +3191,7 @@ app.get('/api/admin/guru/kehadiran-statistik', authenticateToken, requireRole(['
 
         query += ' GROUP BY ag.guru_id, g.nama ORDER BY persentase_hadir DESC';
 
-        const [statistics] = await connection.execute(query, params);
+        const [statistics] = await db.execute(query, params);
 
         res.json({
             success: true,
@@ -3266,8 +3231,8 @@ app.get('/api/admin/ruang-kelas', authenticateToken, requireRole(['admin']), asy
         query += ' ORDER BY created_at DESC LIMIT ? OFFSET ?';
         params.push(parseInt(limit), parseInt(offset));
         
-        const [ruangKelas] = await connection.execute(query, params);
-        const [count] = await connection.execute(countQuery, params.slice(0, -2));
+        const [ruangKelas] = await db.execute(query, params);
+        const [count] = await db.execute(countQuery, params.slice(0, -2));
         
         res.json({
             data: ruangKelas,
@@ -3297,7 +3262,7 @@ app.post('/api/admin/ruang-kelas', authenticateToken, requireRole(['admin']), as
         }
 
         // Check if kode_ruang already exists
-        const [existing] = await connection.execute(
+        const [existing] = await db.execute(
             'SELECT id FROM ruang_kelas WHERE kode_ruang = ?',
             [kode_ruang]
         );
@@ -3307,7 +3272,7 @@ app.post('/api/admin/ruang-kelas', authenticateToken, requireRole(['admin']), as
         }
 
         // Insert ruang kelas
-        const [result] = await connection.execute(
+        const [result] = await db.execute(
             'INSERT INTO ruang_kelas (kode_ruang, nama_ruang, kapasitas, lokasi, fasilitas, status) VALUES (?, ?, ?, ?, ?, ?)',
             [kode_ruang, nama_ruang, kapasitas || 30, lokasi, fasilitas, status || 'aktif']
         );
@@ -3338,7 +3303,7 @@ app.put('/api/admin/ruang-kelas/:id', authenticateToken, requireRole(['admin']),
         }
 
         // Check if kode_ruang already exists (excluding current record)
-        const [existing] = await connection.execute(
+        const [existing] = await db.execute(
             'SELECT id FROM ruang_kelas WHERE kode_ruang = ? AND id != ?',
             [kode_ruang, id]
         );
@@ -3348,7 +3313,7 @@ app.put('/api/admin/ruang-kelas/:id', authenticateToken, requireRole(['admin']),
         }
 
         // Update ruang kelas
-        await connection.execute(
+        await db.execute(
             'UPDATE ruang_kelas SET kode_ruang = ?, nama_ruang = ?, kapasitas = ?, lokasi = ?, fasilitas = ?, status = ? WHERE id = ?',
             [kode_ruang, nama_ruang, kapasitas, lokasi, fasilitas, status, id]
         );
@@ -3369,7 +3334,7 @@ app.delete('/api/admin/ruang-kelas/:id', authenticateToken, requireRole(['admin'
         console.log('🗑️ Deleting ruang kelas:', { id });
 
         // Check if ruang is being used in jadwal
-        const [jadwalCheck] = await connection.execute(
+        const [jadwalCheck] = await db.execute(
             'SELECT COUNT(*) as count FROM jadwal WHERE ruang_id = ?',
             [id]
         );
@@ -3381,7 +3346,7 @@ app.delete('/api/admin/ruang-kelas/:id', authenticateToken, requireRole(['admin'
         }
 
         // Delete ruang kelas
-        const [result] = await connection.execute(
+        const [result] = await db.execute(
             'DELETE FROM ruang_kelas WHERE id = ?',
             [id]
         );
@@ -3404,7 +3369,7 @@ app.get('/api/admin/ruang-kelas/:id', authenticateToken, requireRole(['admin']),
     try {
         const { id } = req.params;
         
-        const [ruangKelas] = await connection.execute(
+        const [ruangKelas] = await db.execute(
             'SELECT * FROM ruang_kelas WHERE id = ?',
             [id]
         );
@@ -3448,7 +3413,7 @@ app.get('/api/admin/letterhead', authenticateToken, requireRole(['admin']), asyn
 
         // Try to get from database if exists
         try {
-            const [configRows] = await connection.execute(
+            const [configRows] = await db.execute(
                 'SELECT config_value FROM system_config WHERE config_key = ?',
                 [`letterhead_${reportKey || 'global'}`]
             );
@@ -3537,7 +3502,7 @@ app.post('/api/admin/letterhead', authenticateToken, requireRole(['admin']), asy
         const configValue = JSON.stringify(processedConfig);
 
         // Insert or update configuration
-        await connection.execute(
+        await db.execute(
             `INSERT INTO system_config (config_key, config_value, updated_at) 
              VALUES (?, ?, NOW()) 
              ON DUPLICATE KEY UPDATE config_value = VALUES(config_value), updated_at = NOW()`,
@@ -3654,7 +3619,7 @@ app.get('/api/siswa-perwakilan/info', authenticateToken, requireRole(['siswa', '
     try {
         console.log('📋 Getting siswa perwakilan info for user:', req.user.id);
 
-        const [siswaData] = await connection.execute(
+        const [siswaData] = await db.execute(
             `SELECT s.id_siswa, s.nis, s.nama, s.kelas_id, k.nama_kelas 
              FROM siswa s 
              JOIN kelas k ON s.kelas_id = k.id_kelas 
@@ -3698,7 +3663,7 @@ app.get('/api/siswa/:siswa_id/jadwal-hari-ini', authenticateToken, requireRole([
         console.log('📅 Current day:', currentDay);
 
         // Get siswa's class
-        const [siswaData] = await connection.execute(
+        const [siswaData] = await db.execute(
             'SELECT kelas_id FROM siswa WHERE id_siswa = ?',
             [siswa_id]
         );
@@ -3710,7 +3675,7 @@ app.get('/api/siswa/:siswa_id/jadwal-hari-ini', authenticateToken, requireRole([
         const kelasId = siswaData[0].kelas_id;
 
         // Get today's schedule for the class
-        const [jadwalData] = await connection.execute(`
+        const [jadwalData] = await db.execute(`
             SELECT 
                 j.id_jadwal,
                 j.jam_ke,
@@ -3794,7 +3759,7 @@ app.get('/api/siswa/:siswaId/jadwal-rentang', authenticateToken, requireRole(['s
 
         // Get siswa's class
         console.log('🔍 Getting siswa data...');
-        const [siswaData] = await connection.execute(
+        const [siswaData] = await db.execute(
             'SELECT kelas_id FROM siswa WHERE id_siswa = ?',
             [parseInt(siswaId)]
         );
@@ -3812,7 +3777,7 @@ app.get('/api/siswa/:siswaId/jadwal-rentang', authenticateToken, requireRole(['s
 
         // Get schedule for the specific date and class
         console.log('🔍 Getting jadwal data...');
-        const [jadwalData] = await connection.execute(`
+        const [jadwalData] = await db.execute(`
             SELECT 
                 j.id_jadwal,
                 j.jam_ke,
@@ -3911,7 +3876,7 @@ app.get('/api/siswa/:siswa_id/jadwal-rentang', authenticateToken, requireRole(['
 
         // Get siswa's class
         console.log('🔍 Getting siswa data (legacy)...');
-        const [siswaData] = await connection.execute(
+        const [siswaData] = await db.execute(
             'SELECT kelas_id FROM siswa WHERE id_siswa = ?',
             [parseInt(siswa_id)]
         );
@@ -3929,7 +3894,7 @@ app.get('/api/siswa/:siswa_id/jadwal-rentang', authenticateToken, requireRole(['
 
         // Get schedule for the specific date and class
         console.log('🔍 Getting jadwal data (legacy)...');
-        const [jadwalData] = await connection.execute(`
+        const [jadwalData] = await db.execute(`
             SELECT 
                 j.id_jadwal,
                 j.jam_ke,
@@ -3984,7 +3949,7 @@ app.post('/api/siswa/submit-kehadiran-guru', authenticateToken, requireRole(['si
         console.log('📝 Kehadiran data:', kehadiran_data);
 
         // Begin transaction
-        await connection.execute('START TRANSACTION');
+        await db.execute('START TRANSACTION');
 
         const today = new Date().toISOString().split('T')[0];
         const currentTime = new Date().toTimeString().split(' ')[0];
@@ -3994,21 +3959,21 @@ app.post('/api/siswa/submit-kehadiran-guru', authenticateToken, requireRole(['si
             const { status, keterangan } = data;
 
             // Check if attendance record already exists
-            const [existingRecord] = await connection.execute(
+            const [existingRecord] = await db.execute(
                 'SELECT id_absensi FROM absensi_guru WHERE jadwal_id = ? AND tanggal = ?',
                 [jadwalId, today]
             );
 
             if (existingRecord.length > 0) {
                 // Update existing record
-                await connection.execute(`
+                await db.execute(`
                     UPDATE absensi_guru 
                     SET status = ?, keterangan = ?, waktu_pencatatan = ?, siswa_pencatat_id = ?
                     WHERE jadwal_id = ? AND tanggal = ?
                 `, [status, keterangan || null, currentTime, siswa_id, jadwalId, today]);
             } else {
                 // Insert new record
-                await connection.execute(`
+                await db.execute(`
                     INSERT INTO absensi_guru 
                     (jadwal_id, tanggal, status, keterangan, waktu_pencatatan, siswa_pencatat_id) 
                     VALUES (?, ?, ?, ?, ?, ?)
@@ -4017,7 +3982,7 @@ app.post('/api/siswa/submit-kehadiran-guru', authenticateToken, requireRole(['si
         }
 
         // Commit transaction
-        await connection.execute('COMMIT');
+        await db.execute('COMMIT');
 
         console.log('✅ Kehadiran guru submitted successfully');
 
@@ -4028,7 +3993,7 @@ app.post('/api/siswa/submit-kehadiran-guru', authenticateToken, requireRole(['si
 
     } catch (error) {
         // Rollback on error
-        await connection.execute('ROLLBACK');
+        await db.execute('ROLLBACK');
         console.error('❌ Error submitting kehadiran guru:', error);
         res.status(500).json({ error: 'Gagal menyimpan data kehadiran guru' });
     }
@@ -4041,7 +4006,7 @@ app.get('/api/siswa/:siswa_id/riwayat-kehadiran', authenticateToken, requireRole
         console.log('📊 Getting riwayat kehadiran kelas for siswa:', siswa_id);
 
         // Get siswa's class
-        const [siswaData] = await connection.execute(
+        const [siswaData] = await db.execute(
             'SELECT kelas_id, nama FROM siswa WHERE id_siswa = ?',
             [siswa_id]
         );
@@ -4053,14 +4018,14 @@ app.get('/api/siswa/:siswa_id/riwayat-kehadiran', authenticateToken, requireRole
         const kelasId = siswaData[0].kelas_id;
 
         // Get total students in class
-        const [totalSiswaResult] = await connection.execute(
+        const [totalSiswaResult] = await db.execute(
             'SELECT COUNT(*) as total FROM siswa WHERE kelas_id = ?',
             [kelasId]
         );
         const totalSiswa = totalSiswaResult[0].total;
 
         // Get attendance history for the last 30 days with aggregated data
-        const [riwayatData] = await connection.execute(`
+        const [riwayatData] = await db.execute(`
             SELECT 
                 ag.tanggal,
                 j.id_jadwal,
@@ -4074,13 +4039,13 @@ app.get('/api/siswa/:siswa_id/riwayat-kehadiran', authenticateToken, requireRole
                 s.nama as nama_pencatat,
                 -- Get attendance data for this schedule
                 (SELECT GROUP_CONCAT(
-                    CONCAT(sp2.nama, ':', sp2.nis, ':', COALESCE(abs2.status, 'tidak_hadir'))
+                    CONCAT(s2.nama, ':', s2.nis, ':', COALESCE(abs2.status, 'tidak_hadir'))
                     SEPARATOR '|'
                 ) FROM siswa s2 
-                LEFT JOIN absensi_siswa abs2 ON sp2.id_siswa = abs2.siswa_id 
+                LEFT JOIN absensi_siswa abs2 ON s2.id_siswa = abs2.siswa_id 
                     AND abs2.jadwal_id = j.id_jadwal 
                     AND DATE(abs2.waktu_absen) = ag.tanggal
-                WHERE sp2.kelas_id = ?) as siswa_data
+                WHERE s2.kelas_id = ?) as siswa_data
             FROM absensi_guru ag
             JOIN jadwal j ON ag.jadwal_id = j.id_jadwal
             JOIN mapel mp ON j.mapel_id = mp.id_mapel
@@ -4213,7 +4178,7 @@ app.get('/api/admin/teachers', authenticateToken, requireRole(['admin']), async 
             ORDER BY g.nama ASC
         `;
         
-        const [results] = await connection.execute(query);
+        const [results] = await db.execute(query);
         console.log(`✅ Teachers retrieved: ${results.length} items`);
         res.json(results);
     } catch (error) {
@@ -4233,7 +4198,7 @@ app.post('/api/admin/teachers', authenticateToken, requireRole(['admin']), async
         }
 
         // Check if username already exists
-        const [existingUsers] = await connection.execute(
+        const [existingUsers] = await db.execute(
             'SELECT id FROM users WHERE username = ?',
             [username]
         );
@@ -4250,14 +4215,14 @@ app.post('/api/admin/teachers', authenticateToken, requireRole(['admin']), async
 
         try {
             // Insert user account
-            const [userResult] = await connection.execute(
+            const [userResult] = await db.execute(
                 'INSERT INTO users (username, password, role) VALUES (?, ?, ?)',
                 [username, hashedPassword, 'guru']
             );
 
             // Insert guru data with generated NIP
             const nip = `G${Date.now().toString().slice(-8)}`; // Generate simple NIP
-            await connection.execute(
+            await db.execute(
                 'INSERT INTO guru (nip, nama, username, jenis_kelamin, status) VALUES (?, ?, ?, ?, ?)',
                 [nip, nama, username, 'L', 'aktif']
             );
@@ -4287,7 +4252,7 @@ app.put('/api/admin/teachers/:id', authenticateToken, requireRole(['admin']), as
         }
 
         // Check if username already exists (excluding current user)
-        const [existingUsers] = await connection.execute(
+        const [existingUsers] = await db.execute(
             'SELECT id FROM users WHERE username = ? AND id != ?',
             [username, id]
         );
@@ -4300,7 +4265,7 @@ app.put('/api/admin/teachers/:id', authenticateToken, requireRole(['admin']), as
 
         try {
             // Get current username
-            const [currentUser] = await connection.execute(
+            const [currentUser] = await db.execute(
                 'SELECT username FROM users WHERE id = ?',
                 [id]
             );
@@ -4314,19 +4279,19 @@ app.put('/api/admin/teachers/:id', authenticateToken, requireRole(['admin']), as
             // Update user account
             if (password) {
                 const hashedPassword = await bcrypt.hash(password, saltRounds);
-                await connection.execute(
+                await db.execute(
                     'UPDATE users SET username = ?, password = ? WHERE id = ?',
                     [username, hashedPassword, id]
                 );
             } else {
-                await connection.execute(
+                await db.execute(
                     'UPDATE users SET username = ? WHERE id = ?',
                     [username, id]
                 );
             }
 
             // Update guru data
-            await connection.execute(
+            await db.execute(
                 'UPDATE guru SET nama = ?, username = ? WHERE username = ?',
                 [nama, username, oldUsername]
             );
@@ -4354,7 +4319,7 @@ app.delete('/api/admin/teachers/:id', authenticateToken, requireRole(['admin']),
 
         try {
             // Get username first
-            const [userResult] = await connection.execute(
+            const [userResult] = await db.execute(
                 'SELECT username FROM users WHERE id = ?',
                 [id]
             );
@@ -4366,13 +4331,13 @@ app.delete('/api/admin/teachers/:id', authenticateToken, requireRole(['admin']),
             const username = userResult[0].username;
 
             // Delete from guru table first (foreign key constraint)
-            await connection.execute(
+            await db.execute(
                 'DELETE FROM guru WHERE username = ?',
                 [username]
             );
 
             // Delete from users table
-            await connection.execute(
+            await db.execute(
                 'DELETE FROM users WHERE id = ?',
                 [id]
             );
@@ -4405,7 +4370,7 @@ app.get('/api/admin/teachers-data', authenticateToken, requireRole(['admin']), a
             ORDER BY g.nama ASC
         `;
         
-        const [results] = await connection.execute(query);
+        const [results] = await db.execute(query);
         console.log(`✅ Teachers data retrieved: ${results.length} items`);
         res.json(results);
     } catch (error) {
@@ -4425,7 +4390,7 @@ app.post('/api/admin/teachers-data', authenticateToken, requireRole(['admin']), 
         }
 
         // Check if NIP already exists
-        const [existing] = await connection.execute(
+        const [existing] = await db.execute(
             'SELECT id FROM guru WHERE nip = ?',
             [nip]
         );
@@ -4439,7 +4404,7 @@ app.post('/api/admin/teachers-data', authenticateToken, requireRole(['admin']), 
             VALUES ((SELECT COALESCE(MAX(id_guru), 0) + 1 FROM guru g2), ?, ?, ?, ?, ?, ?, ?, ?)
         `;
 
-        const [result] = await connection.execute(query, [
+        const [result] = await db.execute(query, [
             nip, nama, email || null, mata_pelajaran || null, 
             alamat || null, telepon || null, jenis_kelamin, status || 'aktif'
         ]);
@@ -4468,7 +4433,7 @@ app.put('/api/admin/teachers-data/:id', authenticateToken, requireRole(['admin']
         }
 
         // Check if NIP already exists for other records
-        const [existing] = await connection.execute(
+        const [existing] = await db.execute(
             'SELECT id FROM guru WHERE nip = ? AND id != ?',
             [nip, id]
         );
@@ -4484,7 +4449,7 @@ app.put('/api/admin/teachers-data/:id', authenticateToken, requireRole(['admin']
             WHERE id = ?
         `;
 
-        const [result] = await connection.execute(updateQuery, [
+        const [result] = await db.execute(updateQuery, [
             nip, nama, email || null, mata_pelajaran || null,
             alamat || null, telepon || null, jenis_kelamin, status || 'aktif', id
         ]);
@@ -4507,7 +4472,7 @@ app.delete('/api/admin/teachers-data/:id', authenticateToken, requireRole(['admi
         const { id } = req.params;
         console.log('🗑️ Deleting teacher data:', { id });
 
-        const [result] = await connection.execute(
+        const [result] = await db.execute(
             'DELETE FROM guru WHERE id = ?',
             [id]
         );
@@ -4533,24 +4498,24 @@ app.get('/api/admin/students', authenticateToken, requireRole(['admin']), async 
             SELECT 
                 u.id, 
                 u.username, 
-                COALESCE(sp.email, u.email) as email,
+                COALESCE(s.email, u.email) as email,
                 s.nis, 
                 s.nama, 
                 s.kelas_id, 
                 k.nama_kelas,
-                sp.jenis_kelamin,
+                s.jenis_kelamin,
                 s.jabatan,
                 s.status,
-                sp.alamat,
-                sp.telepon_orangtua
+                s.alamat,
+                s.telepon_orangtua
             FROM users u
-            LEFT JOIN siswa s ON u.username = sp.username
+            LEFT JOIN siswa s ON u.id = s.user_id
             LEFT JOIN kelas k ON s.kelas_id = k.id_kelas
             WHERE u.role = 'siswa'
             ORDER BY s.nama ASC
         `;
         
-        const [results] = await connection.execute(query);
+        const [results] = await db.execute(query);
         console.log(`✅ Students retrieved: ${results.length} items`);
         res.json(results);
     } catch (error) {
@@ -4570,7 +4535,7 @@ app.post('/api/admin/students', authenticateToken, requireRole(['admin']), async
         }
 
         // Check if username already exists
-        const [existingUsers] = await connection.execute(
+        const [existingUsers] = await db.execute(
             'SELECT id FROM users WHERE username = ?',
             [username]
         );
@@ -4580,7 +4545,7 @@ app.post('/api/admin/students', authenticateToken, requireRole(['admin']), async
         }
 
         // Check if NIS already exists
-        const [existingNIS] = await connection.execute(
+        const [existingNIS] = await db.execute(
             'SELECT id FROM siswa WHERE nis = ?',
             [nis]
         );
@@ -4597,13 +4562,13 @@ app.post('/api/admin/students', authenticateToken, requireRole(['admin']), async
 
         try {
             // Insert user account
-            const [userResult] = await connection.execute(
+            const [userResult] = await db.execute(
                 'INSERT INTO users (username, password, role, nama, email, status) VALUES (?, ?, ?, ?, ?, ?)',
                 [username, hashedPassword, 'siswa', nama, email || null, status || 'aktif']
             );
 
             // Insert siswa data
-            await connection.execute(
+            await db.execute(
                 'INSERT INTO siswa (nis, nama, username, user_id, kelas_id, jabatan, jenis_kelamin, email, telepon_orangtua, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
                 [nis, nama, username, userResult.insertId, kelas_id, jabatan || 'Sekretaris Kelas', jenis_kelamin, email || null, telepon_siswa || null, status || 'aktif']
             );
@@ -4633,7 +4598,7 @@ app.put('/api/admin/students/:id', authenticateToken, requireRole(['admin']), as
         }
 
         // Check if username already exists (excluding current user)
-        const [existingUsers] = await connection.execute(
+        const [existingUsers] = await db.execute(
             'SELECT id FROM users WHERE username = ? AND id != ?',
             [username, id]
         );
@@ -4643,8 +4608,8 @@ app.put('/api/admin/students/:id', authenticateToken, requireRole(['admin']), as
         }
 
         // Check if NIS already exists (excluding current student)
-        const [existingNIS] = await connection.execute(
-            'SELECT sp.id FROM siswa s JOIN users u ON s.user_id = u.id WHERE s.nis = ? AND u.id != ?',
+        const [existingNIS] = await db.execute(
+            'SELECT s.id_siswa FROM siswa s JOIN users u ON s.user_id = u.id WHERE s.nis = ? AND u.id != ?',
             [nis, id]
         );
 
@@ -4656,7 +4621,7 @@ app.put('/api/admin/students/:id', authenticateToken, requireRole(['admin']), as
 
         try {
             // Get current username
-            const [currentUser] = await connection.execute(
+            const [currentUser] = await db.execute(
                 'SELECT username FROM users WHERE id = ?',
                 [id]
             );
@@ -4670,19 +4635,19 @@ app.put('/api/admin/students/:id', authenticateToken, requireRole(['admin']), as
             // Update user account
             if (password) {
                 const hashedPassword = await bcrypt.hash(password, saltRounds);
-                await connection.execute(
+                await db.execute(
                     'UPDATE users SET username = ?, password = ?, nama = ?, email = ?, status = ? WHERE id = ?',
                     [username, hashedPassword, nama, email || null, status || 'aktif', id]
                 );
             } else {
-                await connection.execute(
+                await db.execute(
                     'UPDATE users SET username = ?, nama = ?, email = ?, status = ? WHERE id = ?',
                     [username, nama, email || null, status || 'aktif', id]
                 );
             }
 
             // Update siswa data
-            await connection.execute(
+            await db.execute(
                 'UPDATE siswa SET nama = ?, username = ?, nis = ?, kelas_id = ?, jabatan = ?, jenis_kelamin = ?, email = ?, telepon_orangtua = ?, status = ? WHERE username = ?',
                 [nama, username, nis, kelas_id, jabatan || 'Sekretaris Kelas', jenis_kelamin, email || null, telepon_siswa || null, status || 'aktif', oldUsername]
             );
@@ -4710,7 +4675,7 @@ app.delete('/api/admin/students/:id', authenticateToken, requireRole(['admin']),
 
         try {
             // Get username first
-            const [userResult] = await connection.execute(
+            const [userResult] = await db.execute(
                 'SELECT username FROM users WHERE id = ?',
                 [id]
             );
@@ -4722,13 +4687,13 @@ app.delete('/api/admin/students/:id', authenticateToken, requireRole(['admin']),
             const username = userResult[0].username;
 
             // Delete from siswa table first (foreign key constraint)
-            await connection.execute(
+            await db.execute(
                 'DELETE FROM siswa WHERE username = ?',
                 [username]
             );
 
             // Delete from users table
-            await connection.execute(
+            await db.execute(
                 'DELETE FROM users WHERE id = ?',
                 [id]
             );
@@ -4754,15 +4719,15 @@ app.get('/api/admin/students-data', authenticateToken, requireRole(['admin']), a
         console.log('📋 Getting students data for admin dashboard');
         
         const query = `
-            SELECT sp.id, s.nis, s.nama, s.kelas_id, k.nama_kelas, 
-                   sp.jenis_kelamin, sp.alamat, sp.telepon_orangtua, 
+            SELECT s.id_siswa as id, s.nis, s.nama, s.kelas_id, k.nama_kelas, 
+                   s.jenis_kelamin, s.alamat, s.telepon_orangtua, 
                    COALESCE(s.status, 'aktif') as status
             FROM siswa s
             LEFT JOIN kelas k ON s.kelas_id = k.id_kelas
             ORDER BY s.nama ASC
         `;
         
-        const [results] = await connection.execute(query);
+        const [results] = await db.execute(query);
         console.log(`✅ Students data retrieved: ${results.length} items`);
         res.json(results);
     } catch (error) {
@@ -4782,7 +4747,7 @@ app.post('/api/admin/students-data', authenticateToken, requireRole(['admin']), 
         }
 
         // Check if NIS already exists
-        const [existing] = await connection.execute(
+        const [existing] = await db.execute(
             'SELECT id FROM siswa WHERE nis = ?',
             [nis]
         );
@@ -4796,7 +4761,7 @@ app.post('/api/admin/students-data', authenticateToken, requireRole(['admin']), 
             VALUES ((SELECT COALESCE(MAX(id_siswa), 0) + 1 FROM siswa s2), ?, ?, ?, ?, ?, ?, ?)
         `;
 
-        const [result] = await connection.execute(insertQuery, [
+        const [result] = await db.execute(insertQuery, [
             nis, nama, kelas_id, jenis_kelamin, 
             alamat || null, telepon_orangtua || null, status || 'aktif'
         ]);
@@ -4825,7 +4790,7 @@ app.put('/api/admin/students-data/:id', authenticateToken, requireRole(['admin']
         }
 
         // Check if NIS already exists for other records
-        const [existing] = await connection.execute(
+        const [existing] = await db.execute(
             'SELECT id FROM siswa WHERE nis = ? AND id != ?',
             [nis, id]
         );
@@ -4841,7 +4806,7 @@ app.put('/api/admin/students-data/:id', authenticateToken, requireRole(['admin']
             WHERE id = ?
         `;
 
-        const [result] = await connection.execute(updateQuery, [
+        const [result] = await db.execute(updateQuery, [
             nis, nama, kelas_id, jenis_kelamin,
             alamat || null, telepon_orangtua || null, status || 'aktif', id
         ]);
@@ -4864,7 +4829,7 @@ app.delete('/api/admin/students-data/:id', authenticateToken, requireRole(['admi
         const { id } = req.params;
         console.log('🗑️ Deleting student data:', { id });
 
-        const [result] = await connection.execute(
+        const [result] = await db.execute(
             'DELETE FROM siswa WHERE id = ?',
             [id]
         );
@@ -4913,7 +4878,7 @@ app.get('/api/admin/live-summary', authenticateToken, requireRole(['admin']), as
             ORDER BY j.jam_mulai
         `;
 
-        const [ongoingClasses] = await connection.execute(ongoingQuery, [currentDay, currentTime]);
+        const [ongoingClasses] = await db.execute(ongoingQuery, [currentDay, currentTime]);
         
         // Calculate overall attendance percentage for today
         const attendanceQuery = `
@@ -4925,7 +4890,7 @@ app.get('/api/admin/live-summary', authenticateToken, requireRole(['admin']), as
             WHERE j.hari = ?
         `;
         
-        const [attendanceResult] = await connection.execute(attendanceQuery, [currentDay]);
+        const [attendanceResult] = await db.execute(attendanceQuery, [currentDay]);
         const attendanceStats = attendanceResult[0];
         
         const attendancePercentage = attendanceStats.total_jadwal_today > 0 
@@ -4965,21 +4930,21 @@ app.get('/api/admin/monitoring-dashboard', authenticateToken, requireRole(['admi
         console.log('📊 Getting monitoring dashboard data');
         
         // Get system statistics
-        const [totalClasses] = await connection.execute('SELECT COUNT(*) as count FROM kelas');
-        const [totalStudents] = await connection.execute('SELECT COUNT(*) as count FROM siswa');
-        const [totalTeachers] = await connection.execute('SELECT COUNT(*) as count FROM guru');
-        const [totalSubjects] = await connection.execute('SELECT COUNT(*) as count FROM mapel');
+        const [totalClasses] = await db.execute('SELECT COUNT(*) as count FROM kelas');
+        const [totalStudents] = await db.execute('SELECT COUNT(*) as count FROM siswa');
+        const [totalTeachers] = await db.execute('SELECT COUNT(*) as count FROM guru');
+        const [totalSubjects] = await db.execute('SELECT COUNT(*) as count FROM mapel');
         
         // Get today's attendance stats
         const today = new Date().toISOString().split('T')[0];
-        const [todayAttendance] = await connection.execute(`
+        const [todayAttendance] = await db.execute(`
             SELECT COUNT(*) as count 
             FROM absensi_guru 
             WHERE DATE(tanggal) = ?
         `, [today]);
         
         // Get recent activity (last 7 days)
-        const [recentActivity] = await connection.execute(`
+        const [recentActivity] = await db.execute(`
             SELECT 
                 DATE(tanggal) as date,
                 COUNT(*) as activities
@@ -5106,7 +5071,7 @@ app.get('/api/admin/system-performance', authenticateToken, requireRole(['admin'
         };
         
         // Get database performance metrics
-        const [dbMetrics] = await connection.execute(`
+        const [dbMetrics] = await db.execute(`
             SELECT 
                 COUNT(*) as total_connections,
                 (SELECT COUNT(*) FROM information_schema.processlist WHERE db = DATABASE()) as active_connections
@@ -5163,7 +5128,7 @@ app.get('/api/siswa/:siswaId/daftar-siswa', authenticateToken, requireRole(['sis
         console.log('📋 Getting daftar siswa for class representative:', siswaId);
 
         // Get the class of the siswa perwakilan
-        const [kelasData] = await connection.execute(
+        const [kelasData] = await db.execute(
             'SELECT kelas_id FROM siswa WHERE id_siswa = ?',
             [siswaId]
         );
@@ -5175,7 +5140,7 @@ app.get('/api/siswa/:siswaId/daftar-siswa', authenticateToken, requireRole(['sis
         const kelasId = kelasData[0].kelas_id;
 
         // Get all students in the same class
-        const [siswaData] = await connection.execute(`
+        const [siswaData] = await db.execute(`
             SELECT id_siswa as id, nama 
             FROM siswa 
             WHERE kelas_id = ? 
@@ -5231,7 +5196,7 @@ app.get('/api/siswa/:siswaId/banding-absen', authenticateToken, requireRole(['si
             ORDER BY ba.tanggal_pengajuan DESC
         `;
 
-        const [rows] = await connection.execute(query, [siswaId]);
+        const [rows] = await db.execute(query, [siswaId]);
         console.log(`✅ Banding absen retrieved: ${rows.length} items`);
         res.json(rows);
     } catch (error) {
@@ -5257,7 +5222,7 @@ app.post('/api/siswa/:siswaId/banding-absen', authenticateToken, requireRole(['s
         }
 
         // Check if banding already exists for this combination
-        const [existing] = await connection.execute(
+        const [existing] = await db.execute(
             'SELECT id_banding FROM pengajuan_banding_absen WHERE siswa_id = ? AND jadwal_id = ? AND tanggal_absen = ? AND status_banding = "pending"',
             [siswaId, jadwal_id, tanggal_absen]
         );
@@ -5267,7 +5232,7 @@ app.post('/api/siswa/:siswaId/banding-absen', authenticateToken, requireRole(['s
         }
 
         // Insert banding absen
-        const [result] = await connection.execute(
+        const [result] = await db.execute(
             `INSERT INTO pengajuan_banding_absen 
             (siswa_id, jadwal_id, tanggal_absen, status_asli, status_diajukan, alasan_banding)
              VALUES (?, ?, ?, ?, ?, ?)`,
@@ -5305,7 +5270,7 @@ app.post('/api/siswa/:siswaId/banding-absen-kelas', authenticateToken, requireRo
         }
 
         // Get siswa perwakilan's class
-        const [kelasData] = await connection.execute(
+        const [kelasData] = await db.execute(
             'SELECT kelas_id FROM siswa WHERE id_siswa = ?',
             [siswaId]
         );
@@ -5317,7 +5282,7 @@ app.post('/api/siswa/:siswaId/banding-absen-kelas', authenticateToken, requireRo
         const kelasId = kelasData[0].kelas_id;
 
         // Insert main banding absen record
-        const [bandingResult] = await connection.execute(
+        const [bandingResult] = await db.execute(
             `INSERT INTO pengajuan_banding_absen (siswa_id, jadwal_id, tanggal_absen, status_asli, status_diajukan, alasan_banding, tanggal_pengajuan, status_banding, kelas_id, jenis_banding)
              VALUES (?, ?, ?, 'kelas', 'kelas', 'Pengajuan banding absen untuk kelas', NOW(), 'pending', ?, 'kelas')`,
             [siswaId, jadwal_id, tanggal_absen, kelasId]
@@ -5327,7 +5292,7 @@ app.post('/api/siswa/:siswaId/banding-absen-kelas', authenticateToken, requireRo
 
         // Insert individual student records
         for (const siswa of siswa_banding) {
-            await connection.execute(
+            await db.execute(
                 `INSERT INTO banding_absen_detail (banding_id, nama_siswa, status_asli, status_diajukan, alasan_banding, bukti_pendukung)
                  VALUES (?, ?, ?, ?, ?, ?)`,
                 [bandingId, siswa.nama, siswa.status_asli, siswa.status_diajukan, siswa.alasan_banding, siswa.bukti_pendukung || null]
@@ -5380,7 +5345,7 @@ app.get('/api/guru/:guruId/banding-absen', authenticateToken, requireRole(['guru
             ORDER BY ba.tanggal_pengajuan DESC, ba.status_banding ASC
         `;
 
-        const [rows] = await connection.execute(query, [guruId]);
+        const [rows] = await db.execute(query, [guruId]);
         console.log(`✅ Banding absen for guru retrieved: ${rows.length} items`);
         res.json(rows);
     } catch (error) {
@@ -5404,7 +5369,7 @@ app.put('/api/banding-absen/:bandingId/respond', authenticateToken, requireRole(
         }
 
         // Update banding absen
-        const [result] = await connection.execute(
+        const [result] = await db.execute(
             `UPDATE pengajuan_banding_absen 
              SET status_banding = ?, catatan_guru = ?, tanggal_keputusan = NOW(), diproses_oleh = ?
              WHERE id_banding = ?`,
@@ -5430,19 +5395,7 @@ app.put('/api/banding-absen/:bandingId/respond', authenticateToken, requireRole(
 // SERVER INITIALIZATION
 // ================================================
 
-// Initialize database connection and start server
-connectToDatabase().then(() => {
-    app.listen(port, () => {
-        console.log(`🚀 ABSENTA Modern Server is running on http://localhost:${port}`);
-        console.log(`📱 Frontend should connect to this server`);
-        console.log(`🔑 Admin login: admin / admin123`);
-        console.log(`👨‍🏫 Guru login: guru_matematika / guru123`);
-        console.log(`👨‍🎓 Siswa login: perwakilan_x_ipa1 / siswa123`);
-    });
-}).catch(error => {
-    console.error('❌ Failed to start server:', error);
-    process.exit(1);
-});
+// Database connection is handled in startServer() function below
 
 // ================================================
 // RIWAYAT PENGAJUAN IZIN ENDPOINTS (STEP 8)
@@ -5524,16 +5477,18 @@ app.use((req, res) => {
 // Initialize database connection and start server
 async function startServer() {
     try {
-        // Connect to database first
-        await connectToDatabase();
+        // Test database connection using pool
+        const isConnected = await db.testConnection();
+        if (!isConnected) {
+            throw new Error('Database connection failed');
+        }
         
-        // Wait a bit for connection to stabilize
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        console.log('✅ Database pool connection successful');
         
         // Start server
         app.listen(port, () => {
             console.log(`🚀 ABSENTA Modern Server running on port ${port}`);
-            console.log(`📊 Database connection: ${connection ? 'Connected' : 'Not connected'}`);
+            console.log(`📊 Database pool: Connected`);
             console.log(`🌐 Server URL: http://localhost:${port}`);
             console.log(`📋 Health check: http://localhost:${port}/api/health`);
         });
@@ -5549,10 +5504,8 @@ startServer();
 // Handle graceful shutdown
 process.on('SIGINT', async () => {
     console.log('🛑 Shutting down server...');
-    if (connection) {
-        await connection.end();
-        console.log('✅ Database connection closed');
-    }
+    await db.close();
+    console.log('✅ Database pool closed');
     process.exit(0);
 });
 
