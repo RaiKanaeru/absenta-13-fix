@@ -420,24 +420,24 @@ export const EditProfile = ({ userData, onUpdate, onClose, role }: EditProfilePr
                   )}
                 </div>
                 
-                <div>
-                  <Label htmlFor="no_telepon">
-                    {role === 'siswa' ? 'Telepon Orangtua' : 'Nomor Telepon'}
-                  </Label>
-                  <Input
-                    id="no_telepon"
-                    value={formData.no_telepon}
-                    onChange={(e) => handleInputChange('no_telepon', e.target.value)}
-                    placeholder={role === 'siswa' ? 'Masukkan nomor telepon orangtua (opsional)' : 'Masukkan nomor telepon (opsional)'}
-                    className={errors.no_telepon ? 'border-red-500' : ''}
-                  />
-                  {errors.no_telepon && (
-                    <p className="text-red-500 text-xs mt-1 flex items-center gap-1">
-                      <AlertCircle className="w-3 h-3" />
-                      {errors.no_telepon}
-                    </p>
-                  )}
-                </div>
+                {role !== 'siswa' && (
+                  <div>
+                    <Label htmlFor="no_telepon">Nomor Telepon</Label>
+                    <Input
+                      id="no_telepon"
+                      value={formData.no_telepon}
+                      onChange={(e) => handleInputChange('no_telepon', e.target.value)}
+                      placeholder="Masukkan nomor telepon (opsional)"
+                      className={errors.no_telepon ? 'border-red-500' : ''}
+                    />
+                    {errors.no_telepon && (
+                      <p className="text-red-500 text-xs mt-1 flex items-center gap-1">
+                        <AlertCircle className="w-3 h-3" />
+                        {errors.no_telepon}
+                      </p>
+                    )}
+                  </div>
+                )}
               </div>
 
               {role === 'siswa' && (
@@ -462,38 +462,42 @@ export const EditProfile = ({ userData, onUpdate, onClose, role }: EditProfilePr
                 </div>
               )}
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <Label htmlFor="jenis_kelamin">Jenis Kelamin</Label>
-                  <select
-                    id="jenis_kelamin"
-                    value={formData.jenis_kelamin}
-                    onChange={(e) => handleInputChange('jenis_kelamin', e.target.value)}
-                    className={`w-full px-3 py-2 border border-gray-300 rounded-md ${errors.jenis_kelamin ? 'border-red-500' : ''}`}
-                  >
-                    <option value="">Pilih jenis kelamin (opsional)</option>
-                    <option value="L">Laki-laki</option>
-                    <option value="P">Perempuan</option>
-                  </select>
-                  {errors.jenis_kelamin && (
-                    <p className="text-red-500 text-xs mt-1 flex items-center gap-1">
-                      <AlertCircle className="w-3 h-3" />
-                      {errors.jenis_kelamin}
-                    </p>
-                  )}
+              {role !== 'admin' && (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <Label htmlFor="jenis_kelamin">Jenis Kelamin</Label>
+                    <select
+                      id="jenis_kelamin"
+                      value={formData.jenis_kelamin}
+                      onChange={(e) => handleInputChange('jenis_kelamin', e.target.value)}
+                      className={`w-full px-3 py-2 border border-gray-300 rounded-md ${errors.jenis_kelamin ? 'border-red-500' : ''}`}
+                    >
+                      <option value="">Pilih jenis kelamin (opsional)</option>
+                      <option value="L">Laki-laki</option>
+                      <option value="P">Perempuan</option>
+                    </select>
+                    {errors.jenis_kelamin && (
+                      <p className="text-red-500 text-xs mt-1 flex items-center gap-1">
+                        <AlertCircle className="w-3 h-3" />
+                        {errors.jenis_kelamin}
+                      </p>
+                    )}
+                  </div>
                 </div>
-              </div>
+              )}
 
-              <div>
-                <Label htmlFor="alamat">Alamat</Label>
-                <Textarea
-                  id="alamat"
-                  value={formData.alamat}
-                  onChange={(e) => handleInputChange('alamat', e.target.value)}
-                  placeholder="Masukkan alamat (opsional)"
-                  rows={3}
-                />
-              </div>
+              {role !== 'admin' && (
+                <div>
+                  <Label htmlFor="alamat">Alamat</Label>
+                  <Textarea
+                    id="alamat"
+                    value={formData.alamat}
+                    onChange={(e) => handleInputChange('alamat', e.target.value)}
+                    placeholder="Masukkan alamat (opsional)"
+                    rows={3}
+                  />
+                </div>
+              )}
             </div>
 
             {/* Change Password Section */}

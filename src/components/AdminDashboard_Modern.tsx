@@ -9,6 +9,8 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "@/hooks/use-toast";
 import { formatTime24WithSeconds, formatDateTime24 } from "@/lib/time-utils";
 import { FontSizeControl } from "@/components/ui/font-size-control";
@@ -190,6 +192,10 @@ interface Schedule {
   kelas_id: number;
   mapel_id: number;
   guru_id: number;
+  guru_ids?: string;
+  is_multi_guru?: boolean;
+  guru_list?: Array<{id_guru: number, nama: string}>;
+  guru_names?: string;
   ruang_id?: number;
   hari: string;
   jam_mulai: string;
@@ -3159,6 +3165,8 @@ const ManageSchedulesView = ({ onBack, onLogout }: { onBack: () => void; onLogou
     kelas_id: '',
     mapel_id: '',
     guru_id: '',
+    guru_ids: [] as string[],
+    is_multi_guru: false,
     ruang_id: '',
     hari: '',
     jam_mulai: '',
@@ -3168,12 +3176,46 @@ const ManageSchedulesView = ({ onBack, onLogout }: { onBack: () => void; onLogou
 
   const daysOfWeek = ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat'];
 
+  // Multi-select handlers
+  const handleGuruToggle = (guruId: number, checked: boolean) => {
+    const guruIdStr = String(guruId);
+    if (checked) {
+      if (formData.guru_ids.length >= 3) {
+        toast({
+          title: "Peringatan",
+          description: "Maksimal 3 guru per jadwal",
+          variant: "destructive"
+        });
+        return;
+      }
+      setFormData({
+        ...formData,
+        guru_ids: [...formData.guru_ids, guruIdStr],
+        guru_id: formData.guru_ids.length === 0 ? guruIdStr : formData.guru_id
+      });
+    } else {
+      setFormData({
+        ...formData,
+        guru_ids: formData.guru_ids.filter(id => id !== guruIdStr),
+        guru_id: formData.guru_ids.length === 1 ? '' : formData.guru_id
+      });
+    }
+  };
+
+  const handleRemoveGuru = (guruId: string) => {
+    setFormData({
+      ...formData,
+      guru_ids: formData.guru_ids.filter(id => id !== guruId),
+      guru_id: formData.guru_ids.length === 1 ? '' : formData.guru_id
+    });
+  };
+
   // Filter dan search functionality
   const filteredSchedules = ensureArray<Schedule>(schedules).filter(schedule => {
     const matchesSearch = !searchTerm || 
       schedule.nama_kelas?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       schedule.nama_mapel?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      schedule.nama_guru?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (schedule.guru_names || schedule.nama_guru)?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       schedule.nama_ruang?.toLowerCase().includes(searchTerm.toLowerCase());
     
     const matchesDay = !filterDay || filterDay === 'all' || schedule.hari === filterDay;
@@ -3343,6 +3385,26 @@ const ManageSchedulesView = ({ onBack, onLogout }: { onBack: () => void; onLogou
     e.preventDefault();
     setIsLoading(true);
 
+    // Validation
+    if (formData.guru_ids.length === 0) {
+      toast({
+        title: "Error",
+        description: "Minimal 1 guru harus dipilih",
+        variant: "destructive"
+      });
+      setIsLoading(false);
+      return;
+    }
+    if (formData.guru_ids.length > 3) {
+      toast({
+        title: "Error", 
+        description: "Maksimal 3 guru per jadwal",
+        variant: "destructive"
+      });
+      setIsLoading(false);
+      return;
+    }
+
     try {
       if (editingId) {
         // Update existing schedule
@@ -3351,7 +3413,9 @@ const ManageSchedulesView = ({ onBack, onLogout }: { onBack: () => void; onLogou
           body: JSON.stringify({
             kelas_id: parseInt(formData.kelas_id),
             mapel_id: parseInt(formData.mapel_id),
-            guru_id: parseInt(formData.guru_id),
+            guru_id: parseInt(formData.guru_ids[0]),
+            guru_ids: formData.guru_ids.map(id => parseInt(id)),
+            is_multi_guru: formData.guru_ids.length > 1,
             ruang_id: formData.ruang_id ? parseInt(formData.ruang_id) : null,
             hari: formData.hari,
             jam_mulai: formData.jam_mulai,
@@ -3379,7 +3443,9 @@ const ManageSchedulesView = ({ onBack, onLogout }: { onBack: () => void; onLogou
             body: JSON.stringify({
               kelas_id: parseInt(formData.kelas_id),
               mapel_id: parseInt(formData.mapel_id),
-              guru_id: parseInt(formData.guru_id),
+              guru_id: parseInt(formData.guru_ids[0]),
+              guru_ids: formData.guru_ids.map(id => parseInt(id)),
+              is_multi_guru: formData.guru_ids.length > 1,
               ruang_id: formData.ruang_id ? parseInt(formData.ruang_id) : null,
               hari: formData.hari,
               jam_mulai: slot.jam_mulai,
@@ -3400,6 +3466,8 @@ const ManageSchedulesView = ({ onBack, onLogout }: { onBack: () => void; onLogou
         kelas_id: '',
         mapel_id: '',
         guru_id: '',
+        guru_ids: [],
+        is_multi_guru: false,
         ruang_id: '',
         hari: '',
         jam_mulai: '',
@@ -3448,6 +3516,10 @@ const ManageSchedulesView = ({ onBack, onLogout }: { onBack: () => void; onLogou
       kelas_id: schedule.kelas_id?.toString() || '',
       mapel_id: schedule.mapel_id?.toString() || '',
       guru_id: schedule.guru_id?.toString() || '',
+      guru_ids: schedule.guru_ids && schedule.is_multi_guru 
+        ? (Array.isArray(schedule.guru_ids) ? schedule.guru_ids : JSON.parse(schedule.guru_ids as string))
+        : [schedule.guru_id?.toString() || ''],
+      is_multi_guru: schedule.is_multi_guru || false,
       ruang_id: schedule.ruang_id?.toString() || '',
       hari: schedule.hari,
       jam_mulai: schedule.jam_mulai,
@@ -3500,37 +3572,37 @@ const ManageSchedulesView = ({ onBack, onLogout }: { onBack: () => void; onLogou
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Header dengan gradient background */}
-      <div className="bg-gradient-to-r from-blue-600 to-blue-800 text-white">
-        <div className="px-6 py-8">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
-              <Button variant="outline" size="icon" onClick={onBack} className="bg-white/10 border-white/20 text-white hover:bg-white/20">
-            <ArrowLeft className="w-4 h-4" />
-          </Button>
-          <div>
-                <h1 className="text-3xl font-bold">Kelola Jadwal</h1>
-                <p className="text-blue-100 mt-1">Atur jadwal pelajaran untuk setiap kelas dengan mudah</p>
-          </div>
-        </div>
-        <div className="flex gap-2 flex-wrap">
-              <Button onClick={checkConflicts} disabled={isLoading} variant="outline" className="bg-white/10 border-white/20 text-white hover:bg-white/20">
-            <AlertTriangle className="w-4 h-4 mr-2" />
-            Cek Bentrok
-          </Button>
-              <Button onClick={generatePreview} disabled={isLoading} variant="outline" className="bg-white/10 border-white/20 text-white hover:bg-white/20">
-            <Eye className="w-4 h-4 mr-2" />
-            Preview Jadwal
-          </Button>
-              <Button onClick={() => setShowAdvancedImport(true)} variant="outline" className="bg-white/10 border-white/20 text-white hover:bg-white/20">
-            <FileText className="w-4 h-4 mr-2" />
-            Import Advanced
-          </Button>
-              <Button onClick={() => setShowImport(true)} variant="outline" className="bg-white/10 border-white/20 text-white hover:bg-white/20">
-            <Download className="w-4 h-4 mr-2" />
-            Import Excel
-          </Button>
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50">
+      {/* Header dengan design yang lebih modern */}
+      <div className="bg-white shadow-sm border-b">
+        <div className="px-6 py-6">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <Button variant="outline" size="icon" onClick={onBack} className="hover:bg-blue-50 hover:border-blue-200">
+                <ArrowLeft className="w-4 h-4" />
+              </Button>
+              <div>
+                <h1 className="text-3xl font-bold text-gray-900">Kelola Jadwal</h1>
+                <p className="text-gray-600 mt-1">Atur jadwal pelajaran untuk setiap kelas dengan mudah</p>
+              </div>
+            </div>
+            <div className="flex gap-3 flex-wrap">
+              <Button onClick={checkConflicts} disabled={isLoading} variant="outline" className="hover:bg-red-50 hover:border-red-200 hover:text-red-700">
+                <AlertTriangle className="w-4 h-4 mr-2" />
+                Cek Bentrok
+              </Button>
+              <Button onClick={generatePreview} disabled={isLoading} variant="outline" className="hover:bg-blue-50 hover:border-blue-200 hover:text-blue-700">
+                <Eye className="w-4 h-4 mr-2" />
+                Preview Jadwal
+              </Button>
+              <Button onClick={() => setShowAdvancedImport(true)} variant="outline" className="hover:bg-green-50 hover:border-green-200 hover:text-green-700">
+                <FileText className="w-4 h-4 mr-2" />
+                Import Advanced
+              </Button>
+              <Button onClick={() => setShowImport(true)} variant="outline" className="hover:bg-purple-50 hover:border-purple-200 hover:text-purple-700">
+                <Download className="w-4 h-4 mr-2" />
+                Import Excel
+              </Button>
             </div>
           </div>
         </div>
@@ -3637,7 +3709,7 @@ const ManageSchedulesView = ({ onBack, onLogout }: { onBack: () => void; onLogou
                             <div key={`schedule-${jadwal.id || jadwal.nama_mapel}-${index}`} className="text-xs bg-blue-50 p-1 rounded">
                               <p className="font-medium">{jadwal.jam_mulai}-{jadwal.jam_selesai}</p>
                               <p className="text-gray-600">{jadwal.nama_mapel}</p>
-                              <p className="text-gray-500">{jadwal.nama_guru}</p>
+                              <p className="text-gray-500">{jadwal.guru_names || jadwal.nama_guru}</p>
                             </div>
                           )) || <p className="text-xs text-gray-400 text-center">-</p>}
                         </div>
@@ -3656,21 +3728,21 @@ const ManageSchedulesView = ({ onBack, onLogout }: { onBack: () => void; onLogou
         </Card>
       )}
 
-        {/* Form Section dengan design yang lebih baik */}
-        <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+        {/* Form Section dengan design yang lebih modern */}
+        <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
           {/* Form Card */}
           <div className="xl:col-span-1">
-            <Card className="shadow-lg border-0 bg-white">
-              <CardHeader className="bg-gradient-to-r from-blue-50 to-indigo-50 border-b">
+            <Card className="shadow-xl border-0 bg-white rounded-xl overflow-hidden">
+              <CardHeader className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white">
                 <CardTitle className="flex items-center gap-3 text-xl">
-                  <div className="p-2 bg-blue-100 rounded-lg">
-                    <Calendar className="w-5 h-5 text-blue-600" />
+                  <div className="p-2 bg-white/20 rounded-lg">
+                    <Calendar className="w-5 h-5" />
                   </div>
                   <div>
-                    <div className="font-bold text-gray-900">
-            {editingId ? 'Edit Jadwal' : 'Tambah Jadwal'}
+                    <div className="font-bold">
+                      {editingId ? 'Edit Jadwal' : 'Tambah Jadwal'}
                     </div>
-                    <div className="text-sm text-gray-600 font-normal">
+                    <div className="text-blue-100 font-normal">
                       {editingId ? 'Perbarui informasi jadwal' : 'Buat jadwal pelajaran baru'}
                     </div>
                   </div>
@@ -3680,9 +3752,9 @@ const ManageSchedulesView = ({ onBack, onLogout }: { onBack: () => void; onLogou
                 <form onSubmit={handleSubmit} className="space-y-6">
                   {/* Kelas dan Mata Pelajaran */}
                   <div className="space-y-4">
-                    <div className="flex items-center gap-2 mb-3">
-                      <div className="w-1 h-6 bg-blue-500 rounded-full"></div>
-                      <h4 className="font-semibold text-gray-800">Informasi Dasar</h4>
+                    <div className="flex items-center gap-3 mb-4">
+                      <div className="w-2 h-8 bg-gradient-to-b from-blue-500 to-indigo-500 rounded-full"></div>
+                      <h4 className="font-semibold text-gray-800 text-lg">Informasi Dasar</h4>
                     </div>
                     
                     <div className="space-y-4">
@@ -3742,25 +3814,54 @@ const ManageSchedulesView = ({ onBack, onLogout }: { onBack: () => void; onLogou
                     <div className="space-y-4">
               <div>
                         <Label className="text-sm font-medium text-gray-700">Guru *</Label>
-                <Select 
-                  value={formData.guru_id} 
-                  onValueChange={(value) => setFormData({...formData, guru_id: value})}
-                >
-                          <SelectTrigger className="mt-1">
-                    <SelectValue placeholder="Pilih Guru" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {ensureArray<Teacher>(teachers).filter(teacher => hasValidId(teacher)).map((teacher) => {
-                      const value = getSelectValue(teacher.id);
-                      return value ? (
-                        <SelectItem key={teacher.id} value={value}>
-                          {teacher.nama} (NIP: {teacher.nip})
-                        </SelectItem>
-                      ) : null;
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button variant="outline" className="w-full justify-start mt-1">
+                      {formData.guru_ids.length > 0 
+                        ? `${formData.guru_ids.length} Guru Dipilih` 
+                        : 'Pilih Guru'}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-80">
+                    <div className="space-y-2">
+                      <h4 className="font-medium text-sm">Pilih Guru (Maksimal 3)</h4>
+                      <div className="space-y-2 max-h-60 overflow-y-auto">
+                        {ensureArray<Teacher>(teachers).filter(teacher => hasValidId(teacher)).map((teacher) => (
+                          <div key={teacher.id} className="flex items-center space-x-2">
+                            <Checkbox 
+                              id={`guru-${teacher.id}`}
+                              checked={formData.guru_ids.includes(String(teacher.id))}
+                              onCheckedChange={(checked) => handleGuruToggle(teacher.id, checked as boolean)}
+                              disabled={!formData.guru_ids.includes(String(teacher.id)) && formData.guru_ids.length >= 3}
+                            />
+                            <Label htmlFor={`guru-${teacher.id}`} className="text-sm">
+                              {teacher.nama} (NIP: {teacher.nip})
+                            </Label>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </PopoverContent>
+                </Popover>
+                
+                {/* Badge display */}
+                {formData.guru_ids.length > 0 && (
+                  <div className="flex flex-wrap gap-2 mt-2">
+                    {formData.guru_ids.map(id => {
+                      const guru = teachers.find(g => g.id === parseInt(id));
+                      return (
+                        <Badge key={id} variant="secondary" className="flex items-center gap-1">
+                          {guru?.nama}
+                          <X 
+                            className="h-3 w-3 cursor-pointer hover:text-red-500" 
+                            onClick={() => handleRemoveGuru(id)} 
+                          />
+                        </Badge>
+                      );
                     })}
-                  </SelectContent>
-                </Select>
-              </div>
+                  </div>
+                )}
+                      </div>
 
               <div>
                         <Label className="text-sm font-medium text-gray-700">Ruang Kelas</Label>
@@ -3917,6 +4018,8 @@ const ManageSchedulesView = ({ onBack, onLogout }: { onBack: () => void; onLogou
                     kelas_id: '',
                     mapel_id: '',
                     guru_id: '',
+                    guru_ids: [],
+                    is_multi_guru: false,
                     ruang_id: '',
                     hari: '',
                     jam_mulai: '',
@@ -3935,40 +4038,40 @@ const ManageSchedulesView = ({ onBack, onLogout }: { onBack: () => void; onLogou
         </Card>
           </div>
 
-          {/* Schedule List dengan design yang lebih baik */}
+          {/* Schedule List dengan design yang lebih modern */}
           <div className="xl:col-span-2">
-            <Card className="shadow-lg border-0 bg-white">
-              <CardHeader className="bg-gradient-to-r from-gray-50 to-gray-100 border-b">
+            <Card className="shadow-xl border-0 bg-white rounded-xl overflow-hidden">
+              <CardHeader className="bg-gradient-to-r from-slate-600 to-slate-700 text-white">
                 <div className="flex items-center justify-between">
                   <CardTitle className="flex items-center gap-3 text-xl">
-                    <div className="p-2 bg-gray-100 rounded-lg">
-                      <Calendar className="w-5 h-5 text-gray-600" />
+                    <div className="p-2 bg-white/20 rounded-lg">
+                      <Calendar className="w-5 h-5" />
                     </div>
                     <div>
-                      <div className="font-bold text-gray-900">Daftar Jadwal</div>
-                      <div className="text-sm text-gray-600 font-normal">
+                      <div className="font-bold text-white">Daftar Jadwal</div>
+                      <div className="text-slate-200 font-normal">
                         {filteredSchedules.length} dari {ensureArray<Schedule>(schedules).length} jadwal
                         {(searchTerm || filterDay || filterClass) && (
-                          <span className="text-blue-600 ml-1">(difilter)</span>
+                          <span className="text-blue-300 ml-1">(difilter)</span>
                         )}
                       </div>
                     </div>
                   </CardTitle>
                   
                   {/* Search dan Filter */}
-                  <div className="flex gap-2 flex-wrap">
+                  <div className="flex gap-3 flex-wrap">
                     <div className="relative">
                       <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
                       <Input 
                         placeholder="Cari jadwal..." 
-                        className="pl-10 w-64"
+                        className="pl-10 w-64 bg-white/90 border-white/20 focus:bg-white focus:border-white/40"
                         value={searchTerm}
                         onChange={(e) => setSearchTerm(e.target.value)}
                       />
                     </div>
                     
                     <Select value={filterDay} onValueChange={setFilterDay}>
-                      <SelectTrigger className="w-32">
+                      <SelectTrigger className="w-32 bg-white/90 border-white/20 focus:bg-white focus:border-white/40">
                         <SelectValue placeholder="Hari" />
                       </SelectTrigger>
                       <SelectContent>
@@ -3980,7 +4083,7 @@ const ManageSchedulesView = ({ onBack, onLogout }: { onBack: () => void; onLogou
                     </Select>
                     
                     <Select value={filterClass} onValueChange={setFilterClass}>
-                      <SelectTrigger className="w-40">
+                      <SelectTrigger className="w-40 bg-white/90 border-white/20 focus:bg-white focus:border-white/40">
                         <SelectValue placeholder="Kelas" />
                       </SelectTrigger>
                       <SelectContent>
@@ -4000,6 +4103,7 @@ const ManageSchedulesView = ({ onBack, onLogout }: { onBack: () => void; onLogou
                       <Button 
                         variant="outline" 
                         size="sm"
+                        className="bg-white/90 border-white/20 hover:bg-white hover:border-white/40"
                         onClick={() => {
                           setSearchTerm('');
                           setFilterDay('');
@@ -4016,28 +4120,32 @@ const ManageSchedulesView = ({ onBack, onLogout }: { onBack: () => void; onLogou
               <CardContent className="p-0">
                 <div className="max-h-[600px] overflow-y-auto">
                   {filteredSchedules.length === 0 ? (
-                    <div className="text-center py-12">
+                    <div className="text-center py-16">
                       {ensureArray<Schedule>(schedules).length === 0 ? (
                         <>
-                          <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                            <Calendar className="w-8 h-8 text-gray-400" />
+                          <div className="w-20 h-20 bg-gradient-to-br from-blue-100 to-indigo-100 rounded-full flex items-center justify-center mx-auto mb-6">
+                            <Calendar className="w-10 h-10 text-blue-600" />
                           </div>
-                          <h3 className="text-lg font-medium text-gray-900 mb-2">Belum ada jadwal</h3>
-                          <p className="text-gray-500 mb-4">Mulai dengan menambahkan jadwal pelajaran pertama</p>
-                          <Button onClick={() => document.getElementById('kelas_id')?.scrollIntoView({ behavior: 'smooth' })}>
+                          <h3 className="text-xl font-semibold text-gray-900 mb-3">Belum ada jadwal</h3>
+                          <p className="text-gray-500 mb-6 max-w-md mx-auto">Mulai dengan menambahkan jadwal pelajaran pertama untuk mengatur kegiatan belajar mengajar</p>
+                          <Button 
+                            onClick={() => document.getElementById('kelas_id')?.scrollIntoView({ behavior: 'smooth' })}
+                            className="bg-blue-600 hover:bg-blue-700"
+                          >
                             <Plus className="w-4 h-4 mr-2" />
                             Tambah Jadwal
                           </Button>
                         </>
                       ) : (
                         <>
-                          <div className="w-16 h-16 bg-yellow-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                            <Search className="w-8 h-8 text-yellow-600" />
+                          <div className="w-20 h-20 bg-gradient-to-br from-yellow-100 to-orange-100 rounded-full flex items-center justify-center mx-auto mb-6">
+                            <Search className="w-10 h-10 text-yellow-600" />
                           </div>
-                          <h3 className="text-lg font-medium text-gray-900 mb-2">Tidak ada jadwal yang cocok</h3>
-                          <p className="text-gray-500 mb-4">Coba ubah kata kunci pencarian atau filter</p>
+                          <h3 className="text-xl font-semibold text-gray-900 mb-3">Tidak ada jadwal yang cocok</h3>
+                          <p className="text-gray-500 mb-6 max-w-md mx-auto">Coba ubah kata kunci pencarian atau filter untuk menemukan jadwal yang Anda cari</p>
                           <Button 
                             variant="outline"
+                            className="border-gray-300 hover:bg-gray-50"
                             onClick={() => {
                               setSearchTerm('');
                               setFilterDay('');
@@ -4051,52 +4159,72 @@ const ManageSchedulesView = ({ onBack, onLogout }: { onBack: () => void; onLogou
                       )}
                     </div>
                   ) : (
-                    <div className="divide-y divide-gray-200">
+                    <div className="divide-y divide-gray-100">
                       {filteredSchedules.map((schedule) => (
-                        <div key={schedule.id} className={`p-4 hover:bg-gray-50 transition-colors ${schedule.has_conflict ? 'bg-red-50 border-l-4 border-red-500' : ''}`}>
+                        <div key={schedule.id} className={`p-6 hover:bg-gradient-to-r hover:from-blue-50 hover:to-indigo-50 transition-all duration-200 ${schedule.has_conflict ? 'bg-red-50 border-l-4 border-red-500' : 'bg-white'}`}>
                           <div className="flex items-start justify-between">
                             <div className="flex-1">
-                              <div className="flex items-center gap-3 mb-2">
-                    <div className="flex items-center gap-2">
-                                  <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
-                                  <h4 className="font-semibold text-gray-900">{schedule.nama_kelas}</h4>
+                              <div className="flex items-center gap-4 mb-3">
+                                <div className="flex items-center gap-3">
+                                  <div className="w-3 h-3 bg-gradient-to-r from-blue-500 to-indigo-500 rounded-full"></div>
+                                  <h4 className="font-bold text-gray-900 text-lg">{schedule.nama_kelas}</h4>
                                 </div>
-                      {schedule.has_conflict && (
-                        <Badge variant="destructive" className="text-xs">
-                          <AlertTriangle className="w-3 h-3 mr-1" />
-                          Bentrok
-                        </Badge>
-                      )}
-                    </div>
+                                {schedule.has_conflict && (
+                                  <Badge variant="destructive" className="text-xs px-3 py-1">
+                                    <AlertTriangle className="w-3 h-3 mr-1" />
+                                    Bentrok
+                                  </Badge>
+                                )}
+                              </div>
                               
-                              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-3">
-                                <div className="space-y-2">
-                                  <div className="flex items-center gap-2">
-                                    <BookOpen className="w-4 h-4 text-blue-500" />
-                                    <span className="text-sm font-medium text-gray-700">{schedule.nama_mapel}</span>
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-4">
+                                <div className="space-y-3">
+                                  <div className="flex items-center gap-3 p-3 bg-blue-50 rounded-lg">
+                                    <div className="p-2 bg-blue-100 rounded-lg">
+                                      <BookOpen className="w-4 h-4 text-blue-600" />
+                                    </div>
+                                    <div>
+                                      <p className="text-xs text-blue-600 font-medium">Mata Pelajaran</p>
+                                      <p className="text-sm font-semibold text-gray-900">{schedule.nama_mapel}</p>
+                                    </div>
                                   </div>
-                                  <div className="flex items-center gap-2">
-                                    <Users className="w-4 h-4 text-green-500" />
-                                    <span className="text-sm text-gray-600">{schedule.nama_guru}</span>
+                                  <div className="flex items-center gap-3 p-3 bg-green-50 rounded-lg">
+                                    <div className="p-2 bg-green-100 rounded-lg">
+                                      <Users className="w-4 h-4 text-green-600" />
+                                    </div>
+                                    <div>
+                                      <p className="text-xs text-green-600 font-medium">Guru</p>
+                                      <p className="text-sm font-semibold text-gray-900">{schedule.guru_names || schedule.nama_guru}</p>
+                                    </div>
                                   </div>
                                 </div>
                                 
-                                <div className="space-y-2">
-                                  <div className="flex items-center gap-2">
-                                    <Clock className="w-4 h-4 text-orange-500" />
-                                    <span className="text-sm text-gray-600">
-                                      {schedule.hari}, Jam {schedule.jam_ke}: {schedule.jam_mulai}-{schedule.jam_selesai}
-                                    </span>
+                                <div className="space-y-3">
+                                  <div className="flex items-center gap-3 p-3 bg-orange-50 rounded-lg">
+                                    <div className="p-2 bg-orange-100 rounded-lg">
+                                      <Clock className="w-4 h-4 text-orange-600" />
+                                    </div>
+                                    <div>
+                                      <p className="text-xs text-orange-600 font-medium">Waktu</p>
+                                      <p className="text-sm font-semibold text-gray-900">
+                                        {schedule.hari}, Jam {schedule.jam_ke}
+                                      </p>
+                                      <p className="text-xs text-gray-600">{schedule.jam_mulai}-{schedule.jam_selesai}</p>
+                                    </div>
                                   </div>
-                    {schedule.nama_ruang && (
-                                    <div className="flex items-center gap-2">
-                                      <MapPin className="w-4 h-4 text-purple-500" />
-                                      <span className="text-sm text-gray-600">
-                                        {schedule.nama_ruang} ({schedule.kode_ruang})
-                                      </span>
+                                  {schedule.nama_ruang && (
+                                    <div className="flex items-center gap-3 p-3 bg-purple-50 rounded-lg">
+                                      <div className="p-2 bg-purple-100 rounded-lg">
+                                        <MapPin className="w-4 h-4 text-purple-600" />
+                                      </div>
+                                      <div>
+                                        <p className="text-xs text-purple-600 font-medium">Ruang</p>
+                                        <p className="text-sm font-semibold text-gray-900">{schedule.nama_ruang}</p>
+                                        <p className="text-xs text-gray-600">({schedule.kode_ruang})</p>
+                                      </div>
                                     </div>
                                   )}
-                  </div>
+                                </div>
                               </div>
                             </div>
                             
@@ -4105,21 +4233,21 @@ const ManageSchedulesView = ({ onBack, onLogout }: { onBack: () => void; onLogou
                                 size="sm" 
                                 variant="outline" 
                                 onClick={() => handleEdit(schedule)}
-                                className="hover:bg-blue-50 hover:border-blue-300"
+                                className="hover:bg-blue-50 hover:border-blue-300 hover:text-blue-700 transition-colors"
                               >
                                 <Edit className="w-4 h-4 mr-1" />
-                      Edit
-                    </Button>
+                                Edit
+                              </Button>
                               <Button 
                                 size="sm" 
                                 variant="destructive" 
                                 onClick={() => handleDelete(schedule.id)}
-                                className="hover:bg-red-600"
+                                className="hover:bg-red-600 transition-colors"
                               >
                                 <Trash2 className="w-4 h-4 mr-1" />
-                      Delete
-                    </Button>
-                  </div>
+                                Delete
+                              </Button>
+                            </div>
                 </div>
                         </div>
                       ))}
@@ -4796,76 +4924,6 @@ const BandingAbsenReportView = ({ onBack, onLogout }: { onBack: () => void; onLo
       }
     };
 
-    const downloadExcel = async () => {
-      try {
-        const params = new URLSearchParams();
-        
-        if (dateRange.startDate && dateRange.endDate) {
-          params.append('startDate', dateRange.startDate);
-          params.append('endDate', dateRange.endDate);
-        }
-        
-        if (selectedKelas && selectedKelas !== "all") {
-          params.append('kelas_id', selectedKelas);
-        }
-        
-        if (selectedStatus) {
-          params.append('status', selectedStatus);
-        }
-
-        console.log('Downloading banding absen report with params:', params.toString());
-
-        const response = await fetch(`/api/admin/download-banding-absen?${params}`, {
-          credentials: 'include',
-          headers: {
-            'Accept': 'text/csv, application/vnd.ms-excel',
-            'Authorization': `Bearer ${localStorage.getItem('token') || ''}`
-          }
-        });
-
-        if (response.ok) {
-          const blob = await response.blob();
-          const url = window.URL.createObjectURL(blob);
-          const a = document.createElement('a');
-          a.style.display = 'none';
-          a.href = url;
-          a.download = `riwayat-banding-absen-${dateRange.startDate || 'all'}-${dateRange.endDate || 'all'}.csv`;
-          document.body.appendChild(a);
-          a.click();
-          document.body.removeChild(a);
-          window.URL.revokeObjectURL(url);
-          
-          toast({
-            title: "Berhasil",
-            description: "Laporan berhasil didownload dalam format CSV"
-          });
-        } else {
-          if (response.status === 401) {
-            toast({
-              title: "Error",
-              description: "Sesi Anda telah berakhir. Silakan login ulang.",
-              variant: "destructive"
-            });
-            setTimeout(() => onLogout(), 2000);
-          } else {
-            const errorData = await response.json().catch(() => ({ error: 'Gagal mendownload laporan' }));
-            console.error('Download error:', errorData);
-            toast({
-              title: "Error",
-              description: errorData.error || "Gagal mendownload laporan", 
-              variant: "destructive"
-            });
-          }
-        }
-      } catch (error) {
-        console.error('Download network error:', error);
-        toast({
-          title: "Error",
-          description: "Terjadi kesalahan jaringan saat download. Pastikan server berjalan.",
-          variant: "destructive" 
-        });
-      }
-    };
 
     const downloadSMKN13Format = async (exportType: string) => {
       if (reportData.length === 0) {
@@ -5022,10 +5080,6 @@ const BandingAbsenReportView = ({ onBack, onLogout }: { onBack: () => void; onLo
             <Button onClick={fetchReportData} disabled={loading}>
               {loading ? 'Memuat...' : 'Tampilkan Laporan'}
             </Button>
-            <Button onClick={downloadExcel} variant="outline" disabled={loading || reportData.length === 0}>
-              <Download className="w-4 h-4 mr-2" />
-              Download CSV
-            </Button>
           </div>
         </Card>
 
@@ -5084,7 +5138,6 @@ const BandingAbsenReportView = ({ onBack, onLogout }: { onBack: () => void; onLo
               { key: 'catatan_guru', label: 'Catatan Guru', width: 200, align: 'left' },
               { key: 'tanggal_keputusan', label: 'Tanggal Keputusan', width: 120, align: 'center', format: 'date' }
             ]}
-            onExport={downloadExcel}
             onExportSMKN13={() => downloadSMKN13Format('banding-absen')}
           />
         )}
@@ -6246,86 +6299,6 @@ const RiwayatIzinReportView = ({ onBack, onLogout }: { onBack: () => void; onLog
     }
   };
 
-  const downloadCSV = async () => {
-    if (!dateRange || !dateRange.startDate || !dateRange.endDate) {
-      setError('Mohon pilih tanggal mulai dan tanggal selesai');
-      toast({
-        title: "Error",
-        description: "Mohon pilih tanggal mulai dan tanggal selesai",
-        variant: "destructive"
-      });
-      return;
-    }
-
-    try {
-      const params = new URLSearchParams();
-      
-      if (dateRange && dateRange.startDate) {
-        params.append('startDate', dateRange.startDate);
-      }
-      
-      if (dateRange && dateRange.endDate) {
-        params.append('endDate', dateRange.endDate);
-      }
-      
-      if (selectedKelas && selectedKelas !== "all") {
-        params.append('kelas_id', selectedKelas);
-      }
-      
-      if (selectedJenisIzin && selectedJenisIzin !== 'all-jenis') {
-        params.append('jenis_izin', selectedJenisIzin);
-      }
-      
-      if (selectedStatus && selectedStatus !== 'all-status') {
-        params.append('status', selectedStatus);
-      }
-
-      console.log('Downloading riwayat izin report with params:', params.toString());
-
-      const response = await fetch(`/api/admin/download-riwayat-izin?${params}`, {
-        credentials: 'include',
-        headers: {
-          'Accept': 'text/csv, application/vnd.ms-excel',
-          'Authorization': `Bearer ${localStorage.getItem('token') || ''}`
-        }
-      });
-
-      if (response.ok) {
-        const blob = await response.blob();
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.style.display = 'none';
-        a.href = url;
-        a.download = `riwayat-pengajuan-izin-${dateRange.startDate || 'all'}-${dateRange.endDate || 'all'}.csv`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        window.URL.revokeObjectURL(url);
-        
-        toast({
-          title: "Berhasil",
-          description: "Laporan berhasil didownload dalam format CSV"
-        });
-      } else {
-        if (response.status === 401) {
-          toast({
-            title: "Error",
-            description: "Sesi Anda telah berakhir. Silakan login ulang.",
-            variant: "destructive"
-          });
-          setTimeout(() => onLogout(), 2000);
-        }
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-    } catch (error) {
-      console.error('❌ Error downloading riwayat izin report:', error);
-      toast({
-        title: "Error",
-        description: 'Gagal download CSV: ' + error.message,
-        variant: "destructive"
-      });
-    }
-  };
 
 
   const getStatusBadge = (status: string) => {
@@ -6560,10 +6533,6 @@ const RiwayatIzinReportView = ({ onBack, onLogout }: { onBack: () => void; onLog
               )}
             </Button>
             
-            <Button onClick={downloadCSV} disabled={loading || reportData.length === 0} variant="outline" className="border-green-200 hover:bg-green-50">
-              <Download className="w-4 h-4 mr-2" />
-              Download CSV
-            </Button>
           </div>
         </CardContent>
       </Card>
@@ -6609,7 +6578,6 @@ const RiwayatIzinReportView = ({ onBack, onLogout }: { onBack: () => void; onLog
             { key: 'keterangan_guru', label: 'Keterangan Guru', width: 200, align: 'left' },
             { key: 'tanggal_respon', label: 'Tanggal Respon', width: 120, align: 'center', format: 'date' }
           ]}
-          onExport={downloadCSV}
           onExportSMKN13={() => downloadSMKN13Format('pengajuan-izin')}
         />
       )}
@@ -6884,10 +6852,6 @@ const StudentAttendanceSummaryView = ({ onBack, onLogout }: { onBack: () => void
           <Button onClick={fetchReportData} disabled={loading}>
             {loading ? 'Memuat...' : 'Tampilkan Laporan'}
           </Button>
-          <Button onClick={downloadExcel} variant="outline" disabled={loading || reportData.length === 0}>
-            <Download className="w-4 h-4 mr-2" />
-            Download CSV
-          </Button>
         </div>
       </Card>
 
@@ -6939,7 +6903,6 @@ const StudentAttendanceSummaryView = ({ onBack, onLogout }: { onBack: () => void
             { key: 'dispen', label: 'D', width: 80, align: 'center', format: 'number' },
             { key: 'presentase', label: 'Presentase', width: 100, align: 'center', format: 'percentage' }
           ]}
-          onExport={downloadExcel}
           onExportSMKN13={() => downloadSMKN13Format('student-summary')}
         />
       )}
@@ -7172,10 +7135,6 @@ const TeacherAttendanceSummaryView = ({ onBack, onLogout }: { onBack: () => void
               )}
             </Button>
             
-            <Button onClick={downloadExcel} disabled={loading || reportData.length === 0} variant="outline" className="border-green-200 hover:bg-green-50">
-              <Download className="w-4 h-4 mr-2" />
-              Download CSV
-            </Button>
           </div>
         </CardContent>
       </Card>
@@ -7213,7 +7172,6 @@ const TeacherAttendanceSummaryView = ({ onBack, onLogout }: { onBack: () => void
             { key: 'alpa', label: 'A', width: 80, align: 'center', format: 'number' },
             { key: 'presentase', label: 'Presentase', width: 100, align: 'center', format: 'percentage' }
           ]}
-          onExport={downloadExcel}
           onExportSMKN13={() => downloadSMKN13Format('teacher-summary')}
           showLetterhead={true}
           reportPeriod={`${new Date(dateRange.startDate).toLocaleDateString('id-ID')} - ${new Date(dateRange.endDate).toLocaleDateString('id-ID')}`}

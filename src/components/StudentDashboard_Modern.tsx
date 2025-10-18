@@ -757,6 +757,23 @@ const StudentDashboardComponent = ({ userData, onLogout }: StudentDashboardProps
     }
   }, [siswaId]);
 
+  // Load banding absen data
+  const loadBandingAbsen = useCallback(async () => {
+    if (!siswaId) return;
+
+    try {
+      console.log('📊 Loading banding absen data for siswa:', siswaId);
+      const data = await apiCall(`/api/siswa/${siswaId}/banding-absen`);
+      setBandingAbsen(data);
+    } catch (error) {
+      console.error('Error loading banding absen:', error);
+      toast({
+        title: "Error",
+        description: "Gagal memuat data banding absen",
+        variant: "destructive"
+      });
+    }
+  }, [siswaId]);
 
   // Create refs for functions to avoid dependency issues
   const loadJadwalHariIniRef = useRef(loadJadwalHariIni);

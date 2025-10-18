@@ -174,7 +174,7 @@ app.post('/api/login', async (req, res) => {
             const [guruData] = await db.execute(
                 `SELECT g.*, m.nama_mapel 
                  FROM guru g 
-                 JOIN mapel m ON g.mapel_id = m.id_mapel 
+                 LEFT JOIN mapel m ON g.mapel_id = m.id_mapel 
                  WHERE g.user_id = ?`,
                 [user.id]
             );
@@ -212,7 +212,7 @@ app.post('/api/login', async (req, res) => {
             id: user.id,
             username: user.username,
             nama: user.nama,
-            role: user.role.toLowerCase(), // Normalize role to lowercase
+            role: user.role === 'perwakilan' ? 'siswa' : user.role.toLowerCase(), // Normalize perwakilan to siswa
             ...additionalData
         };
 
@@ -292,12 +292,329 @@ app.post('/api/debug-jwt', (req, res) => {
 });
 
 // Admin info endpoint
-app.get('/api/admin/info', authenticateToken, requireRole(['admin']), (req, res) => {
-    res.json({
-        success: true,
-        user: req.user,
-        message: 'Admin info retrieved successfully'
-    });
+app.get('/api/admin/info', authenticateToken, requireRole(['admin']), async (req, res) => {
+    try {
+        const userId = req.user.id;
+        console.log(`📋 Getting admin info for user_id: ${userId}`);
+        
+        const [userData] = await db.execute(
+            `SELECT * FROM users WHERE id = ?`,
+            [userId]
+        );
+        
+        if (userData.length === 0) {
+            return res.status(404).json({ error: 'Data admin tidak ditemukan' });
+        }
+        
+        const user = userData[0];
+        res.json({
+            success: true,
+            data: {
+                id: user.id,
+                username: user.username,
+                nama: user.nama,
+                email: user.email,
+                role: user.role,
+                alamat: user.alamat,
+                no_telepon: user.nomor_telepon,
+                jenis_kelamin: user.jenis_kelamin,
+                created_at: user.created_at,
+                updated_at: user.updated_at
+            },
+            message: 'Admin info retrieved successfully'
+        });
+    } catch (error) {
+        console.error('❌ Error getting admin info:', error);
+        res.status(500).json({ error: 'Gagal mengambil informasi admin' });
+    }
+});
+
+// Guru info endpoint
+app.get('/api/guru/info', authenticateToken, requireRole(['guru', 'admin']), async (req, res) => {
+    try {
+        const guruId = req.user.guru_id;
+        console.log(`📋 Getting guru info for guru_id: ${guruId} (user_id: ${req.user.id})`);
+
+        if (!guruId) {
+            return res.status(400).json({ error: 'guru_id tidak ditemukan pada token pengguna' });
+        }
+
+        const [guruData] = await db.execute(
+            `SELECT g.*, m.nama_mapel, u.username, u.email, u.nama as user_nama
+             FROM guru g 
+             LEFT JOIN mapel m ON g.mapel_id = m.id_mapel 
+             LEFT JOIN users u ON g.user_id = u.id
+             WHERE g.id_guru = ?`,
+            [guruId]
+        );
+
+        if (guruData.length === 0) {
+            return res.status(404).json({ error: 'Data guru tidak ditemukan' });
+        }
+
+        const guru = guruData[0];
+        res.json({
+            success: true,
+            data: {
+                id: guru.id_guru,
+                guru_id: guru.id_guru,
+                nama: guru.nama || guru.user_nama,
+                nip: guru.nip,
+                email: guru.email,
+                mata_pelajaran: guru.nama_mapel,
+                no_telepon: guru.no_telp,
+                alamat: guru.alamat,
+                jenis_kelamin: guru.jenis_kelamin,
+                status: guru.status,
+                created_at: guru.created_at,
+                updated_at: guru.updated_at
+            },
+            message: 'Guru info retrieved successfully'
+        });
+    } catch (error) {
+        console.error('❌ Error getting guru info:', error);
+        res.status(500).json({ error: 'Gagal mengambil informasi guru' });
+    }
+});
+
+// Siswa info endpoint
+app.get('/api/siswa/info', authenticateToken, requireRole(['siswa', 'admin']), async (req, res) => {
+    try {
+        const siswaId = req.user.siswa_id;
+        console.log(`📋 Getting siswa info for siswa_id: ${siswaId} (user_id: ${req.user.id})`);
+
+        if (!siswaId) {
+            return res.status(400).json({ error: 'siswa_id tidak ditemukan pada token pengguna' });
+        }
+
+        const [siswaData] = await db.execute(
+            `SELECT s.*, k.nama_kelas, u.username, u.email, u.nama as user_nama
+             FROM siswa s 
+             LEFT JOIN kelas k ON s.kelas_id = k.id_kelas 
+             LEFT JOIN users u ON s.user_id = u.id
+             WHERE s.id_siswa = ?`,
+            [siswaId]
+        );
+
+        if (siswaData.length === 0) {
+            return res.status(404).json({ error: 'Data siswa tidak ditemukan' });
+        }
+
+        const siswa = siswaData[0];
+        res.json({
+            success: true,
+            data: {
+                id: siswa.id_siswa,
+                siswa_id: siswa.id_siswa,
+                nama: siswa.nama || siswa.user_nama,
+                nis: siswa.nis,
+                email: siswa.email,
+                kelas: siswa.nama_kelas,
+                kelas_id: siswa.kelas_id,
+                alamat: siswa.alamat,
+                telepon_siswa: siswa.telepon_siswa,
+                jenis_kelamin: siswa.jenis_kelamin,
+                jabatan: siswa.jabatan,
+                status: siswa.status,
+                created_at: siswa.created_at,
+                updated_at: siswa.updated_at
+            },
+            message: 'Siswa info retrieved successfully'
+        });
+    } catch (error) {
+        console.error('❌ Error getting siswa info:', error);
+        res.status(500).json({ error: 'Gagal mengambil informasi siswa' });
+    }
+});
+
+// Update profile endpoints for all roles
+app.put('/api/admin/update-profile', authenticateToken, requireRole(['admin']), async (req, res) => {
+    try {
+        const userId = req.user.id;
+        const { nama, username, email, no_telepon } = req.body;
+        
+        console.log(`📝 Updating admin profile for user_id: ${userId}`);
+        
+        await db.execute(
+            `UPDATE users SET 
+                nama = ?, username = ?, email = ?, nomor_telepon = ?, updated_at = NOW()
+             WHERE id = ?`,
+            [nama, username, email, no_telepon, userId]
+        );
+        
+        res.json({
+            success: true,
+            message: 'Profil admin berhasil diperbarui',
+            data: { nama, username, email, no_telepon }
+        });
+    } catch (error) {
+        console.error('❌ Error updating admin profile:', error);
+        res.status(500).json({ error: 'Gagal memperbarui profil admin' });
+    }
+});
+
+app.put('/api/guru/update-profile', authenticateToken, requireRole(['guru', 'admin']), async (req, res) => {
+    try {
+        const userId = req.user.id;
+        const guruId = req.user.guru_id;
+        const { nama, username, email, no_telepon, mata_pelajaran } = req.body;
+        
+        console.log(`📝 Updating guru profile for user_id: ${userId}, guru_id: ${guruId}`);
+        
+        if (!guruId) {
+            return res.status(400).json({ error: 'guru_id tidak ditemukan pada token pengguna' });
+        }
+        
+        // Update users table
+        await db.execute(
+            `UPDATE users SET 
+                nama = ?, username = ?, email = ?, nomor_telepon = ?, updated_at = NOW()
+             WHERE id = ?`,
+            [nama, username, email, no_telepon, userId]
+        );
+        
+        // Update guru table
+        await db.execute(
+            `UPDATE guru SET 
+                nama = ?, no_telp = ?, updated_at = NOW()
+             WHERE id_guru = ?`,
+            [nama, no_telepon, guruId]
+        );
+        
+        res.json({
+            success: true,
+            message: 'Profil guru berhasil diperbarui',
+            data: { nama, username, email, no_telepon }
+        });
+    } catch (error) {
+        console.error('❌ Error updating guru profile:', error);
+        res.status(500).json({ error: 'Gagal memperbarui profil guru' });
+    }
+});
+
+app.put('/api/siswa/update-profile', authenticateToken, requireRole(['siswa', 'admin']), async (req, res) => {
+    try {
+        const userId = req.user.id;
+        const siswaId = req.user.siswa_id;
+        const { nama, username, email, no_telepon, telepon_siswa, jabatan } = req.body;
+        
+        console.log(`📝 Updating siswa profile for user_id: ${userId}, siswa_id: ${siswaId}`);
+        
+        if (!siswaId) {
+            return res.status(400).json({ error: 'siswa_id tidak ditemukan pada token pengguna' });
+        }
+        
+        // Update users table
+        await db.execute(
+            `UPDATE users SET 
+                nama = ?, username = ?, email = ?, nomor_telepon = ?, updated_at = NOW()
+             WHERE id = ?`,
+            [nama, username, email, no_telepon, userId]
+        );
+        
+        // Update siswa table
+        await db.execute(
+            `UPDATE siswa SET 
+                nama = ?, telepon_orangtua = ?, telepon_siswa = ?, 
+                jabatan = ?, updated_at = NOW()
+             WHERE id_siswa = ?`,
+            [nama, no_telepon, telepon_siswa, jabatan, siswaId]
+        );
+        
+        res.json({
+            success: true,
+            message: 'Profil siswa berhasil diperbarui',
+            data: { nama, username, email, no_telepon, telepon_siswa, jabatan }
+        });
+    } catch (error) {
+        console.error('❌ Error updating siswa profile:', error);
+        res.status(500).json({ error: 'Gagal memperbarui profil siswa' });
+    }
+});
+
+// Change password endpoints for all roles
+app.put('/api/admin/change-password', authenticateToken, requireRole(['admin']), async (req, res) => {
+    try {
+        const userId = req.user.id;
+        const { newPassword } = req.body;
+        
+        console.log(`🔐 Changing password for admin user_id: ${userId}`);
+        
+        if (!newPassword || newPassword.length < 6) {
+            return res.status(400).json({ error: 'Password minimal 6 karakter' });
+        }
+        
+        const hashedPassword = await bcrypt.hash(newPassword, 10);
+        
+        await db.execute(
+            `UPDATE users SET password = ?, updated_at = NOW() WHERE id = ?`,
+            [hashedPassword, userId]
+        );
+        
+        res.json({
+            success: true,
+            message: 'Password admin berhasil diubah'
+        });
+    } catch (error) {
+        console.error('❌ Error changing admin password:', error);
+        res.status(500).json({ error: 'Gagal mengubah password admin' });
+    }
+});
+
+app.put('/api/guru/change-password', authenticateToken, requireRole(['guru', 'admin']), async (req, res) => {
+    try {
+        const userId = req.user.id;
+        const { newPassword } = req.body;
+        
+        console.log(`🔐 Changing password for guru user_id: ${userId}`);
+        
+        if (!newPassword || newPassword.length < 6) {
+            return res.status(400).json({ error: 'Password minimal 6 karakter' });
+        }
+        
+        const hashedPassword = await bcrypt.hash(newPassword, 10);
+        
+        await db.execute(
+            `UPDATE users SET password = ?, updated_at = NOW() WHERE id = ?`,
+            [hashedPassword, userId]
+        );
+        
+        res.json({
+            success: true,
+            message: 'Password guru berhasil diubah'
+        });
+    } catch (error) {
+        console.error('❌ Error changing guru password:', error);
+        res.status(500).json({ error: 'Gagal mengubah password guru' });
+    }
+});
+
+app.put('/api/siswa/change-password', authenticateToken, requireRole(['siswa', 'admin']), async (req, res) => {
+    try {
+        const userId = req.user.id;
+        const { newPassword } = req.body;
+        
+        console.log(`🔐 Changing password for siswa user_id: ${userId}`);
+        
+        if (!newPassword || newPassword.length < 6) {
+            return res.status(400).json({ error: 'Password minimal 6 karakter' });
+        }
+        
+        const hashedPassword = await bcrypt.hash(newPassword, 10);
+        
+        await db.execute(
+            `UPDATE users SET password = ?, updated_at = NOW() WHERE id = ?`,
+            [hashedPassword, userId]
+        );
+        
+        res.json({
+            success: true,
+            message: 'Password siswa berhasil diubah'
+        });
+    } catch (error) {
+        console.error('❌ Error changing siswa password:', error);
+        res.status(500).json({ error: 'Gagal mengubah password siswa' });
+    }
 });
 
 // Verify token endpoint (alias for compatibility)
@@ -1051,6 +1368,8 @@ app.get('/api/admin/jadwal', authenticateToken, requireRole(['admin']), async (r
                 j.kelas_id,
                 j.mapel_id, 
                 j.guru_id,
+                j.guru_ids,
+                j.is_multi_guru,
                 j.hari,
                 j.jam_ke,
                 j.jam_mulai,
@@ -1072,7 +1391,33 @@ app.get('/api/admin/jadwal', authenticateToken, requireRole(['admin']), async (r
         
         const [rows] = await db.execute(query);
         console.log(`✅ Schedules retrieved: ${rows.length} items`);
-        res.json(rows);
+        
+        // Enrich dengan guru_list untuk setiap jadwal
+        for (const schedule of rows) {
+            let guruIds = [];
+            
+            // Dual-mode: cek guru_ids dulu, fallback ke guru_id
+            if (schedule.guru_ids && schedule.is_multi_guru) {
+                guruIds = JSON.parse(schedule.guru_ids);
+            } else {
+                guruIds = [schedule.guru_id];
+            }
+            
+            // Fetch nama semua guru
+            if (guruIds.length > 0) {
+                const [guruList] = await db.execute(
+                    `SELECT id_guru, nama FROM guru WHERE id_guru IN (${guruIds.join(',')})` 
+                );
+                
+                schedule.guru_list = guruList;
+                schedule.guru_names = guruList.map(g => g.nama).join(', ');
+            } else {
+                schedule.guru_list = [];
+                schedule.guru_names = schedule.nama_guru;
+            }
+        }
+        
+        res.json({ success: true, data: rows });
     } catch (error) {
         console.error('❌ Error getting schedules:', error);
         res.status(500).json({ error: 'Internal server error' });
@@ -1082,14 +1427,28 @@ app.get('/api/admin/jadwal', authenticateToken, requireRole(['admin']), async (r
 // Add new schedule
 app.post('/api/admin/jadwal', authenticateToken, requireRole(['admin']), async (req, res) => {
     try {
-        const { kelas_id, mapel_id, guru_id, ruang_id, hari, jam_ke, jam_mulai, jam_selesai } = req.body;
-        console.log('➕ Adding schedule:', { kelas_id, mapel_id, guru_id, ruang_id, hari, jam_ke, jam_mulai, jam_selesai });
+        const { kelas_id, mapel_id, guru_id, guru_ids, is_multi_guru, ruang_id, hari, jam_ke, jam_mulai, jam_selesai } = req.body;
+        console.log('➕ Adding schedule:', { kelas_id, mapel_id, guru_id, guru_ids, is_multi_guru, ruang_id, hari, jam_ke, jam_mulai, jam_selesai });
 
         // Validation
-        if (!kelas_id || !mapel_id || !guru_id || !hari || !jam_ke || !jam_mulai || !jam_selesai) {
+        if (!kelas_id || !mapel_id || !hari || !jam_ke || !jam_mulai || !jam_selesai) {
             return res.status(400).json({ 
                 error: 'Semua field wajib diisi',
-                details: 'Pastikan kelas, mata pelajaran, guru, hari, jam ke, jam mulai, dan jam selesai telah diisi'
+                details: 'Pastikan kelas, mata pelajaran, hari, jam ke, jam mulai, dan jam selesai telah diisi'
+            });
+        }
+
+        // Validate guru_ids
+        if (!guru_ids || !Array.isArray(guru_ids) || guru_ids.length === 0) {
+            return res.status(400).json({ 
+                error: 'Minimal 1 guru harus dipilih',
+                details: 'Pilih setidaknya satu guru untuk jadwal ini'
+            });
+        }
+        if (guru_ids.length > 3) {
+            return res.status(400).json({ 
+                error: 'Maksimal 3 guru per jadwal',
+                details: 'Pilih maksimal 3 guru untuk jadwal ini'
             });
         }
 
@@ -1107,18 +1466,25 @@ app.post('/api/admin/jadwal', authenticateToken, requireRole(['admin']), async (
             });
         }
 
-        // Check teacher availability - same day and time slot
-        const [teacherConflicts] = await db.execute(
-            `SELECT id_jadwal FROM jadwal 
-             WHERE guru_id = ? AND hari = ? AND jam_ke = ? AND status = 'aktif'`,
-            [guru_id, hari, jam_ke]
-        );
+        // Check teacher availability - same day and time slot for EACH guru
+        for (const currentGuruId of guru_ids) {
+            const [teacherConflicts] = await db.execute(
+                `SELECT id_jadwal FROM jadwal 
+                 WHERE (guru_id = ? OR JSON_CONTAINS(guru_ids, CAST(? AS JSON))) 
+                 AND hari = ? AND jam_ke = ? AND status = 'aktif'`,
+                [currentGuruId, JSON.stringify(currentGuruId), hari, jam_ke]
+            );
 
-        if (teacherConflicts.length > 0) {
-            return res.status(400).json({ 
-                error: `Guru sudah memiliki jadwal mengajar pada ${hari} jam ke-${jam_ke}`,
-                details: 'Pilih guru lain atau waktu yang berbeda'
-            });
+            if (teacherConflicts.length > 0) {
+                // Get guru name for better error message
+                const [guruInfo] = await db.execute('SELECT nama FROM guru WHERE id_guru = ?', [currentGuruId]);
+                const guruName = guruInfo.length > 0 ? guruInfo[0].nama : `Guru ID ${currentGuruId}`;
+                
+                return res.status(400).json({ 
+                    error: `Guru ${guruName} sudah memiliki jadwal mengajar pada ${hari} jam ke-${jam_ke}`,
+                    details: 'Pilih guru lain atau waktu yang berbeda'
+                });
+            }
         }
 
         // Check room availability - same room, day, and time slot (if ruang_id is provided)
@@ -1158,9 +1524,9 @@ app.post('/api/admin/jadwal', authenticateToken, requireRole(['admin']), async (
         }
 
         const [result] = await db.execute(
-            `INSERT INTO jadwal (kelas_id, mapel_id, guru_id, ruang_id, hari, jam_ke, jam_mulai, jam_selesai, status)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'aktif')`,
-            [kelas_id, mapel_id, guru_id, ruang_id || null, hari, jam_ke, jam_mulai, jam_selesai]
+            `INSERT INTO jadwal (kelas_id, mapel_id, guru_id, guru_ids, is_multi_guru, ruang_id, hari, jam_ke, jam_mulai, jam_selesai, status)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'aktif')`,
+            [kelas_id, mapel_id, guru_id, JSON.stringify(guru_ids), is_multi_guru || false, ruang_id || null, hari, jam_ke, jam_mulai, jam_selesai]
         );
 
         console.log('✅ Schedule added successfully');
@@ -1178,12 +1544,26 @@ app.post('/api/admin/jadwal', authenticateToken, requireRole(['admin']), async (
 app.put('/api/admin/jadwal/:id', authenticateToken, requireRole(['admin']), async (req, res) => {
     try {
         const { id } = req.params;
-        const { kelas_id, mapel_id, guru_id, ruang_id, hari, jam_ke, jam_mulai, jam_selesai } = req.body;
-        console.log('✏️ Updating schedule:', { id, kelas_id, mapel_id, guru_id, ruang_id, hari, jam_ke, jam_mulai, jam_selesai });
+        const { kelas_id, mapel_id, guru_id, guru_ids, is_multi_guru, ruang_id, hari, jam_ke, jam_mulai, jam_selesai } = req.body;
+        console.log('✏️ Updating schedule:', { id, kelas_id, mapel_id, guru_id, guru_ids, is_multi_guru, ruang_id, hari, jam_ke, jam_mulai, jam_selesai });
 
         // Validation
-        if (!kelas_id || !mapel_id || !guru_id || !hari || !jam_ke || !jam_mulai || !jam_selesai) {
+        if (!kelas_id || !mapel_id || !hari || !jam_ke || !jam_mulai || !jam_selesai) {
             return res.status(400).json({ error: 'Semua field wajib diisi' });
+        }
+
+        // Validate guru_ids
+        if (!guru_ids || !Array.isArray(guru_ids) || guru_ids.length === 0) {
+            return res.status(400).json({ 
+                error: 'Minimal 1 guru harus dipilih',
+                details: 'Pilih setidaknya satu guru untuk jadwal ini'
+            });
+        }
+        if (guru_ids.length > 3) {
+            return res.status(400).json({ 
+                error: 'Maksimal 3 guru per jadwal',
+                details: 'Pilih maksimal 3 guru untuk jadwal ini'
+            });
         }
 
         // Check for schedule conflicts (excluding current schedule)
@@ -1197,15 +1577,25 @@ app.put('/api/admin/jadwal/:id', authenticateToken, requireRole(['admin']), asyn
             return res.status(400).json({ error: `Kelas sudah memiliki jadwal pada ${hari} jam ke-${jam_ke}` });
         }
 
-        // Check teacher availability (excluding current schedule)
-        const [teacherConflicts] = await db.execute(
-            `SELECT id_jadwal FROM jadwal 
-             WHERE guru_id = ? AND hari = ? AND jam_ke = ? AND status = 'aktif' AND id_jadwal != ?`,
-            [guru_id, hari, jam_ke, id]
-        );
+        // Check teacher availability (excluding current schedule) for EACH guru
+        for (const currentGuruId of guru_ids) {
+            const [teacherConflicts] = await db.execute(
+                `SELECT id_jadwal FROM jadwal 
+                 WHERE ((guru_id = ? OR JSON_CONTAINS(guru_ids, CAST(? AS JSON))) 
+                 AND hari = ? AND jam_ke = ? AND status = 'aktif' AND id_jadwal != ?)`,
+                [currentGuruId, JSON.stringify(currentGuruId), hari, jam_ke, id]
+            );
 
-        if (teacherConflicts.length > 0) {
-            return res.status(400).json({ error: `Guru sudah memiliki jadwal mengajar pada ${hari} jam ke-${jam_ke}` });
+            if (teacherConflicts.length > 0) {
+                // Get guru name for better error message
+                const [guruInfo] = await db.execute('SELECT nama FROM guru WHERE id_guru = ?', [currentGuruId]);
+                const guruName = guruInfo.length > 0 ? guruInfo[0].nama : `Guru ID ${currentGuruId}`;
+                
+                return res.status(400).json({ 
+                    error: `Guru ${guruName} sudah memiliki jadwal mengajar pada ${hari} jam ke-${jam_ke}`,
+                    details: 'Pilih guru lain atau waktu yang berbeda'
+                });
+            }
         }
 
         // Check room availability (excluding current schedule)
@@ -1242,9 +1632,9 @@ app.put('/api/admin/jadwal/:id', authenticateToken, requireRole(['admin']), asyn
 
         const [result] = await db.execute(
             `UPDATE jadwal 
-             SET kelas_id = ?, mapel_id = ?, guru_id = ?, ruang_id = ?, hari = ?, jam_ke = ?, jam_mulai = ?, jam_selesai = ?
+             SET kelas_id = ?, mapel_id = ?, guru_id = ?, guru_ids = ?, is_multi_guru = ?, ruang_id = ?, hari = ?, jam_ke = ?, jam_mulai = ?, jam_selesai = ?
              WHERE id_jadwal = ?`,
-            [kelas_id, mapel_id, guru_id, ruang_id || null, hari, jam_ke, jam_mulai, jam_selesai, id]
+            [kelas_id, mapel_id, guru_id, JSON.stringify(guru_ids), is_multi_guru || false, ruang_id || null, hari, jam_ke, jam_mulai, jam_selesai, id]
         );
 
         if (result.affectedRows === 0) {
@@ -1522,9 +1912,9 @@ app.post('/api/attendance/submit', authenticateToken, requireRole(['guru', 'admi
         console.log(`📊 Attendance data:`, JSON.stringify(attendance, null, 2));
         console.log(`📝 Notes data:`, JSON.stringify(notes, null, 2));
 
-        // Get the schedule details to verify it exists
+        // Get the schedule details to verify it exists and get guru_ids
         const [scheduleData] = await db.execute(
-            'SELECT kelas_id, mapel_id FROM jadwal WHERE id_jadwal = ? AND status = "aktif"',
+            'SELECT kelas_id, mapel_id, guru_id, guru_ids, is_multi_guru FROM jadwal WHERE id_jadwal = ? AND status = "aktif"',
             [scheduleId]
         );
 
@@ -1532,8 +1922,15 @@ app.post('/api/attendance/submit', authenticateToken, requireRole(['guru', 'admi
             return res.status(404).json({ error: 'Jadwal tidak ditemukan' });
         }
 
-        const kelasId = scheduleData[0].kelas_id;
-        const mapelId = scheduleData[0].mapel_id;
+        const { kelas_id, mapel_id, guru_id, guru_ids, is_multi_guru } = scheduleData[0];
+        
+        // Determine semua guru yang terlibat
+        let allGuruIds = [];
+        if (guru_ids && is_multi_guru) {
+            allGuruIds = JSON.parse(guru_ids);
+        } else {
+            allGuruIds = [guru_id];
+        }
 
         // Insert attendance records for each student
         const attendanceEntries = Object.entries(attendance);
@@ -1585,10 +1982,39 @@ app.post('/api/attendance/submit', authenticateToken, requireRole(['guru', 'admi
             }
         }
 
-        console.log(`✅ Attendance submitted successfully for ${attendanceEntries.length} students`);
+        // Fan-out ke absensi_guru untuk SEMUA guru (mirroring)
+        console.log(`🔄 Fan-out attendance to ${allGuruIds.length} teachers: ${allGuruIds.join(', ')}`);
+        
+        for (const currentGuruId of allGuruIds) {
+            const [existingGuru] = await db.execute(
+                'SELECT id_absensi FROM absensi_guru WHERE jadwal_id = ? AND guru_id = ? AND tanggal = ?',
+                [scheduleId, currentGuruId, currentDate]
+            );
+            
+            if (existingGuru.length > 0) {
+                // Update existing: sync status = 'Hadir' karena ada yang submit
+                await db.execute(
+                    'UPDATE absensi_guru SET status = ?, keterangan = ?, waktu_catat = NOW() WHERE id_absensi = ?',
+                    ['Hadir', 'Absensi siswa tercatat', existingGuru[0].id_absensi]
+                );
+                console.log(`✅ Updated absensi_guru for guru ${currentGuruId}`);
+            } else {
+                // Insert new: create entry untuk guru ini
+                await db.execute(`
+                    INSERT INTO absensi_guru 
+                    (jadwal_id, guru_id, kelas_id, tanggal, jam_ke, status, keterangan, metode_absen)
+                    SELECT ?, ?, kelas_id, ?, jam_ke, 'Hadir', 'Absensi siswa tercatat', 'manual'
+                    FROM jadwal WHERE id_jadwal = ?
+                `, [scheduleId, currentGuruId, currentDate, scheduleId]);
+                console.log(`✅ Created absensi_guru for guru ${currentGuruId}`);
+            }
+        }
+
+        console.log(`✅ Attendance submitted successfully for ${attendanceEntries.length} students and mirrored to ${allGuruIds.length} teachers`);
         res.json({ 
-            message: 'Absensi berhasil disimpan',
+            message: 'Absensi berhasil disimpan dan disinkronkan ke semua guru',
             processed: attendanceEntries.length,
+            mirrored_to: allGuruIds.length,
             date: currentDate,
             scheduleId: scheduleId
         });
@@ -1961,70 +2387,6 @@ app.get('/api/admin/teacher-attendance-report', authenticateToken, requireRole([
     }
 });
 
-// Download teacher attendance report as Excel
-app.get('/api/admin/download-teacher-attendance', authenticateToken, requireRole(['admin']), async (req, res) => {
-    try {
-        const { startDate, endDate, kelas_id } = req.query;
-        console.log('📊 Downloading teacher attendance report:', { startDate, endDate, kelas_id });
-
-        if (!startDate || !endDate) {
-            return res.status(400).json({ error: 'Tanggal mulai dan tanggal selesai wajib diisi' });
-        }
-
-        let query = `
-            SELECT 
-                COALESCE(DATE_FORMAT(ag.tanggal, '%d/%m/%Y'), DATE_FORMAT(CURDATE(), '%d/%m/%Y')) as tanggal,
-                k.nama_kelas,
-                g.nama as nama_guru,
-                g.nip as nip_guru,
-                m.nama_mapel,
-                CASE 
-                    WHEN ag.jam_ke IS NOT NULL THEN CONCAT('Jam ke-', ag.jam_ke)
-                    ELSE CONCAT(j.jam_mulai, ' - ', j.jam_selesai)
-                END as jam_hadir,
-                j.jam_mulai,
-                j.jam_selesai,
-                CONCAT(j.jam_mulai, ' - ', j.jam_selesai) as jadwal,
-                COALESCE(ag.status, 'Tidak Ada Data') as status,
-                COALESCE(ag.keterangan, '-') as keterangan
-            FROM jadwal j
-            JOIN kelas k ON j.kelas_id = k.id_kelas
-            JOIN guru g ON j.guru_id = g.id_guru
-            JOIN mapel m ON j.mapel_id = m.id_mapel
-            LEFT JOIN absensi_guru ag ON j.id_jadwal = ag.jadwal_id 
-                AND ag.tanggal BETWEEN ? AND ?
-            WHERE j.status = 'aktif'
-        `;
-        
-        const params = [startDate, endDate];
-        
-        if (kelas_id && kelas_id !== '') {
-            query += ' AND k.id_kelas = ?';
-            params.push(kelas_id);
-        }
-        
-        query += ' ORDER BY ag.tanggal DESC, k.nama_kelas, j.jam_ke';
-        
-        const [rows] = await db.execute(query, params);
-
-        // Enhanced CSV format with UTF-8 BOM for Excel compatibility
-        let csvContent = '\uFEFF'; // UTF-8 BOM
-        csvContent += 'Tanggal,Kelas,Guru,NIP,Mata Pelajaran,Jam Hadir,Jam Mulai,Jam Selesai,Jadwal,Status,Keterangan\n';
-        
-        rows.forEach(row => {
-            csvContent += `"${row.tanggal}","${row.nama_kelas}","${row.nama_guru}","${row.nip_guru || ''}","${row.nama_mapel}","${row.jam_hadir || ''}","${row.jam_mulai}","${row.jam_selesai}","${row.jadwal}","${row.status}","${row.keterangan || ''}"\n`;
-        });
-
-        res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-        res.setHeader('Content-Disposition', `attachment; filename="laporan-kehadiran-guru-${startDate}-${endDate}.csv"`);
-        res.send(csvContent);
-        
-        console.log(`✅ Teacher attendance report downloaded successfully: ${rows.length} records`);
-    } catch (error) {
-        console.error('❌ Error downloading teacher attendance report:', error);
-        res.status(500).json({ error: 'Internal server error' });
-    }
-});
 
 // Get student attendance report
 app.get('/api/admin/student-attendance-report', authenticateToken, requireRole(['admin']), async (req, res) => {
@@ -2074,65 +2436,6 @@ app.get('/api/admin/student-attendance-report', authenticateToken, requireRole([
     }
 });
 
-// Download student attendance report as CSV
-app.get('/api/admin/download-student-attendance', authenticateToken, requireRole(['admin']), async (req, res) => {
-    try {
-        const { startDate, endDate, kelas_id } = req.query;
-        console.log('📊 Downloading student attendance report:', { startDate, endDate, kelas_id });
-
-        if (!startDate || !endDate) {
-            return res.status(400).json({ error: 'Tanggal mulai dan tanggal selesai wajib diisi' });
-        }
-
-        let query = `
-            SELECT 
-                DATE_FORMAT(a.waktu_absen, '%d/%m/%Y') as tanggal,
-                k.nama_kelas,
-                s.nama as nama_siswa,
-                s.nis as nis_siswa,
-                'Absensi Harian' as nama_mapel,
-                'Siswa Perwakilan' as nama_guru,
-                DATE_FORMAT(a.waktu_absen, '%H:%i:%s') as waktu_absen,
-                '07:00' as jam_mulai,
-                '17:00' as jam_selesai,
-                '07:00 - 17:00' as jadwal,
-                COALESCE(a.status, 'Tidak Hadir') as status,
-                COALESCE(a.keterangan, '-') as keterangan
-            FROM absensi_siswa a
-            JOIN siswa s ON a.siswa_id = s.id_siswa
-            JOIN kelas k ON s.kelas_id = k.id_kelas
-            WHERE DATE(a.waktu_absen) BETWEEN ? AND ?
-        `;
-        
-        const params = [startDate, endDate];
-        
-        if (kelas_id && kelas_id !== '') {
-            query += ' AND k.id_kelas = ?';
-            params.push(kelas_id);
-        }
-        
-        query += ' ORDER BY a.waktu_absen DESC, k.nama_kelas, s.nama';
-        
-        const [rows] = await db.execute(query, params);
-
-        // Enhanced CSV format with UTF-8 BOM for Excel compatibility
-        let csvContent = '\uFEFF'; // UTF-8 BOM
-        csvContent += 'Tanggal,Kelas,Nama Siswa,NIS,Mata Pelajaran,Guru,Waktu Absen,Jam Mulai,Jam Selesai,Jadwal,Status,Keterangan\n';
-        
-        rows.forEach(row => {
-            csvContent += `"${row.tanggal}","${row.nama_kelas}","${row.nama_siswa}","${row.nis_siswa || ''}","${row.nama_mapel || ''}","${row.nama_guru || ''}","${row.waktu_absen || ''}","${row.jam_mulai || ''}","${row.jam_selesai || ''}","${row.jadwal || ''}","${row.status}","${row.keterangan || ''}"\n`;
-        });
-
-        res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-        res.setHeader('Content-Disposition', `attachment; filename="laporan-kehadiran-siswa-${startDate}-${endDate}.csv"`);
-        res.send(csvContent);
-        
-        console.log(`✅ Student attendance report downloaded successfully: ${rows.length} records`);
-    } catch (error) {
-        console.error('❌ Error downloading student attendance report:', error);
-        res.status(500).json({ error: 'Internal server error' });
-    }
-});
 
 // ===================== NEW: SUMMARY REPORTS (ADMIN) =====================
 // Student attendance summary (H/I/S/A/D + percentage) grouped by student
@@ -2607,80 +2910,6 @@ app.get('/api/admin/banding-absen-report', authenticateToken, requireRole(['admi
     }
 });
 
-// Download banding absen report as CSV
-app.get('/api/admin/download-banding-absen', authenticateToken, requireRole(['admin']), async (req, res) => {
-    try {
-        const { startDate, endDate, kelas_id, status } = req.query;
-        console.log('📊 Downloading banding absen report:', { startDate, endDate, kelas_id, status });
-
-        let query = `
-            SELECT 
-                DATE_FORMAT(pba.tanggal_pengajuan, '%d/%m/%Y') as tanggal_pengajuan,
-                DATE_FORMAT(pba.tanggal_absen, '%d/%m/%Y') as tanggal_absen,
-                s.nama as nama_pengaju,
-                COALESCE(k.nama_kelas, '-') as nama_kelas,
-                COALESCE(m.nama_mapel, 'Umum') as nama_mapel,
-                COALESCE(g.nama, 'Belum Ditentukan') as nama_guru,
-                COALESCE(CONCAT(j.jam_mulai, ' - ', j.jam_selesai), '-') as jadwal,
-                pba.status_asli,
-                pba.status_diajukan,
-                pba.alasan_banding,
-                pba.status_banding,
-                COALESCE(pba.catatan_guru, '-') as catatan_guru,
-                COALESCE(DATE_FORMAT(pba.tanggal_keputusan, '%d/%m/%Y %H:%i'), '-') as tanggal_keputusan,
-                COALESCE(guru_proses.nama, 'Belum Diproses') as diproses_oleh,
-                pba.jenis_banding,
-                COALESCE(COUNT(bad.id_detail), 0) as jumlah_siswa_banding
-            FROM pengajuan_banding_absen pba
-            JOIN siswa s ON pba.siswa_id = s.id_siswa
-            LEFT JOIN kelas k ON s.kelas_id = k.id_kelas OR pba.kelas_id = k.id_kelas
-            LEFT JOIN jadwal j ON pba.jadwal_id = j.id_jadwal
-            LEFT JOIN guru g ON j.guru_id = g.id_guru
-            LEFT JOIN mapel m ON j.mapel_id = m.id_mapel
-            LEFT JOIN guru guru_proses ON pba.diproses_oleh = guru_proses.id_guru
-            LEFT JOIN banding_absen_detail bad ON pba.id_banding = bad.banding_id
-            WHERE 1=1
-        `;
-        
-        const params = [];
-        
-        if (startDate && endDate) {
-            query += ' AND DATE(pba.tanggal_pengajuan) BETWEEN ? AND ?';
-            params.push(startDate, endDate);
-        }
-        
-        if (kelas_id && kelas_id !== '') {
-            query += ' AND k.id_kelas = ?';
-            params.push(kelas_id);
-        }
-        
-        if (status && status !== '') {
-            query += ' AND pba.status_banding = ?';
-            params.push(status);
-        }
-        
-        query += ' GROUP BY pba.id_banding ORDER BY pba.tanggal_pengajuan DESC';
-        
-        const [rows] = await db.execute(query, params);
-
-        // Enhanced CSV format with UTF-8 BOM for Excel compatibility
-        let csvContent = '\uFEFF'; // UTF-8 BOM
-        csvContent += 'Tanggal Pengajuan,Tanggal Absen,Pengaju,Kelas,Mata Pelajaran,Guru,Jadwal,Status Asli,Status Diajukan,Alasan Banding,Status Banding,Catatan Guru,Tanggal Keputusan,Diproses Oleh,Jenis Banding,Jumlah Siswa\n';
-        
-        rows.forEach(row => {
-            csvContent += `"${row.tanggal_pengajuan}","${row.tanggal_absen}","${row.nama_pengaju}","${row.nama_kelas}","${row.nama_mapel}","${row.nama_guru}","${row.jadwal}","${row.status_asli}","${row.status_diajukan}","${row.alasan_banding}","${row.status_banding}","${row.catatan_guru}","${row.tanggal_keputusan}","${row.diproses_oleh}","${row.jenis_banding}","${row.jumlah_siswa_banding}"\n`;
-        });
-
-        res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-        res.setHeader('Content-Disposition', `attachment; filename="riwayat-banding-absen-${startDate || 'all'}-${endDate || 'all'}.csv"`);
-        res.send(csvContent);
-        
-        console.log(`✅ Banding absen report downloaded successfully: ${rows.length} records`);
-    } catch (error) {
-        console.error('❌ Error downloading banding absen report:', error);
-        res.status(500).json({ error: 'Internal server error' });
-    }
-});
 
 // ================================================
 // PENGAJUAN IZIN SISWA ENDPOINTS
@@ -3016,11 +3245,17 @@ app.get('/api/guru/jadwal', authenticateToken, requireRole(['guru', 'admin']), a
                 j.status,
                 mp.nama_mapel,
                 mp.kode_mapel,
-                k.nama_kelas
+                k.nama_kelas,
+                CASE
+                    WHEN j.guru_id = ? THEN 'primary'
+                    WHEN JSON_CONTAINS(j.guru_ids, CAST(? AS JSON)) THEN 'secondary'
+                    ELSE 'assistant'
+                END as teacher_role
             FROM jadwal j
             JOIN mapel mp ON j.mapel_id = mp.id_mapel
             JOIN kelas k ON j.kelas_id = k.id_kelas
-            WHERE j.guru_id = ? AND j.status = 'aktif'
+            WHERE (j.guru_id = ? OR JSON_CONTAINS(j.guru_ids, CAST(? AS JSON))) 
+            AND j.status = 'aktif'
             ORDER BY CASE j.hari 
                 WHEN 'Senin' THEN 1
                 WHEN 'Selasa' THEN 2
@@ -3030,7 +3265,7 @@ app.get('/api/guru/jadwal', authenticateToken, requireRole(['guru', 'admin']), a
                 WHEN 'Sabtu' THEN 6
                 WHEN 'Minggu' THEN 7
             END, j.jam_mulai
-        `, [guruId]);
+        `, [guruId, JSON.stringify(guruId), guruId, JSON.stringify(guruId)]);
 
         console.log(`✅ Found ${jadwal.length} schedule entries for guru_id: ${guruId}`);
         res.json({ success: true, data: jadwal });
@@ -4071,27 +4306,44 @@ app.post('/api/siswa/submit-kehadiran-guru', authenticateToken, requireRole(['si
         // Insert/update attendance for each jadwal
         for (const [jadwalId, data] of Object.entries(kehadiran_data)) {
             const { status, keterangan } = data;
-
-            // Check if attendance record already exists
-            const [existingRecord] = await db.execute(
-                'SELECT id_absensi FROM absensi_guru WHERE jadwal_id = ? AND tanggal = ?',
-                [jadwalId, today]
+            
+            // Get guru_ids dari jadwal
+            const [scheduleData] = await db.execute(
+                'SELECT guru_id, guru_ids, is_multi_guru FROM jadwal WHERE id_jadwal = ?',
+                [jadwalId]
             );
-
-            if (existingRecord.length > 0) {
-                // Update existing record
-                await db.execute(`
-                    UPDATE absensi_guru 
-                    SET status = ?, keterangan = ?, waktu_pencatatan = ?, siswa_pencatat_id = ?
-                    WHERE jadwal_id = ? AND tanggal = ?
-                `, [status, keterangan || null, currentTime, siswa_id, jadwalId, today]);
+            
+            if (scheduleData.length === 0) continue;
+            
+            const { guru_id, guru_ids, is_multi_guru } = scheduleData[0];
+            let allGuruIds = [];
+            
+            if (guru_ids && is_multi_guru) {
+                allGuruIds = JSON.parse(guru_ids);
             } else {
-                // Insert new record
-                await db.execute(`
-                    INSERT INTO absensi_guru 
-                    (jadwal_id, tanggal, status, keterangan, waktu_pencatatan, siswa_pencatat_id) 
-                    VALUES (?, ?, ?, ?, ?, ?)
-                `, [jadwalId, today, status, keterangan || null, currentTime, siswa_id]);
+                allGuruIds = [guru_id];
+            }
+            
+            // Loop dan upsert untuk SETIAP guru
+            for (const currentGuruId of allGuruIds) {
+                const [existing] = await db.execute(
+                    'SELECT id_absensi FROM absensi_guru WHERE jadwal_id = ? AND guru_id = ? AND tanggal = ?',
+                    [jadwalId, currentGuruId, today]
+                );
+                
+                if (existing.length > 0) {
+                    await db.execute(
+                        'UPDATE absensi_guru SET status = ?, keterangan = ?, siswa_pencatat_id = ? WHERE id_absensi = ?',
+                        [status, keterangan, siswa_id, existing[0].id_absensi]
+                    );
+                } else {
+                    await db.execute(`
+                        INSERT INTO absensi_guru 
+                        (jadwal_id, guru_id, kelas_id, siswa_pencatat_id, tanggal, jam_ke, status, keterangan, metode_absen)
+                        SELECT ?, ?, kelas_id, ?, ?, jam_ke, ?, ?, 'manual'
+                        FROM jadwal WHERE id_jadwal = ?
+                    `, [jadwalId, currentGuruId, siswa_id, today, status, keterangan, jadwalId]);
+                }
             }
         }
 

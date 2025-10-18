@@ -304,7 +304,12 @@ const Index = () => {
         
       default:
         console.error('❌ Unknown user role:', userData.role);
-        setError('Role pengguna tidak dikenali');
+        setError(`Role pengguna '${userData.role}' tidak dikenali. Hubungi administrator.`);
+        toast({
+          title: "Error Role",
+          description: `Role '${userData.role}' tidak valid. Silakan hubungi administrator.`,
+          variant: "destructive",
+        });
         handleLogout();
         return null;
     }
