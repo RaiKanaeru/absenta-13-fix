@@ -2704,8 +2704,8 @@ app.get('/api/guru/classes', authenticateToken, requireRole(['guru']), async (re
         const [rows] = await db.execute(
             `SELECT DISTINCT k.id_kelas as id, k.nama_kelas 
              FROM jadwal j JOIN kelas k ON j.kelas_id = k.id_kelas 
-             WHERE j.guru_id = ? AND j.status = 'aktif' ORDER BY k.nama_kelas`,
-            [guruId]
+             WHERE (j.guru_id = ? OR JSON_CONTAINS(j.guru_ids, CAST(? AS JSON))) AND j.status = 'aktif' ORDER BY k.nama_kelas`,
+            [guruId, JSON.stringify(guruId)]
         );
         res.json(rows);
     } catch (error) {
@@ -2741,9 +2741,9 @@ app.get('/api/guru/attendance-summary', authenticateToken, requireRole(['guru'])
             LEFT JOIN absensi_siswa a ON s.id_siswa = a.siswa_id AND DATE(a.waktu_absen) BETWEEN ? AND ?
             JOIN kelas k ON s.kelas_id = k.id_kelas
             LEFT JOIN jadwal j ON a.jadwal_id = j.id_jadwal
-            WHERE s.status = 'aktif' AND (j.guru_id = ? OR j.guru_id IS NULL)
+            WHERE s.status = 'aktif' AND ((j.guru_id = ? OR JSON_CONTAINS(j.guru_ids, CAST(? AS JSON))) OR j.guru_id IS NULL)
         `;
-        const params = [startDate, endDate, guruId];
+        const params = [startDate, endDate, guruId, JSON.stringify(guruId)];
         if (kelas_id && kelas_id !== '') {
             query += ' AND k.id_kelas = ?';
             params.push(kelas_id);
@@ -2783,9 +2783,9 @@ app.get('/api/guru/download-attendance-excel', authenticateToken, requireRole(['
             LEFT JOIN absensi_siswa a ON s.id_siswa = a.siswa_id AND DATE(a.waktu_absen) BETWEEN ? AND ?
             JOIN kelas k ON s.kelas_id = k.id_kelas
             LEFT JOIN jadwal j ON a.jadwal_id = j.id_jadwal
-            WHERE s.status = 'aktif' AND (j.guru_id = ? OR j.guru_id IS NULL)
+            WHERE s.status = 'aktif' AND ((j.guru_id = ? OR JSON_CONTAINS(j.guru_ids, CAST(? AS JSON))) OR j.guru_id IS NULL)
         `;
-        const params = [startDate, endDate, guruId];
+        const params = [startDate, endDate, guruId, JSON.stringify(guruId)];
         if (kelas_id && kelas_id !== '') {
             query += ' AND k.id_kelas = ?';
             params.push(kelas_id);
@@ -2992,10 +2992,10 @@ app.get('/api/jadwal/today', authenticateToken, async (req, res) => {
                 FROM jadwal j
                 JOIN kelas k ON j.kelas_id = k.id_kelas
                 JOIN mapel m ON j.mapel_id = m.id_mapel
-                WHERE j.guru_id = ? AND j.hari = DAYNAME(CURDATE()) AND j.status = 'aktif'
+                WHERE (j.guru_id = ? OR JSON_CONTAINS(j.guru_ids, CAST(? AS JSON))) AND j.hari = DAYNAME(CURDATE()) AND j.status = 'aktif'
                 ORDER BY j.jam_ke
             `;
-            params = [req.user.guru_id];
+            params = [req.user.guru_id, JSON.stringify(req.user.guru_id)];
         } else if (req.user.role === 'siswa') {
             query = `
                 SELECT j.*, g.nama as nama_guru, m.nama_mapel
@@ -3291,15 +3291,20 @@ app.get('/api/guru/history', authenticateToken, requireRole(['guru', 'admin']), 
                 ag.status, 
                 ag.keterangan, 
                 k.nama_kelas, 
-                mp.nama_mapel
+                mp.nama_mapel,
+                CASE
+                    WHEN j.guru_id = ? THEN 'primary'
+                    WHEN JSON_CONTAINS(j.guru_ids, CAST(? AS JSON)) THEN 'secondary'
+                    ELSE 'assistant'
+                END as teacher_role
             FROM absensi_guru ag
             JOIN jadwal j ON ag.jadwal_id = j.id_jadwal
             JOIN kelas k ON j.kelas_id = k.id_kelas
             JOIN mapel mp ON j.mapel_id = mp.id_mapel
-            WHERE j.guru_id = ?
+            WHERE (j.guru_id = ? OR JSON_CONTAINS(j.guru_ids, CAST(? AS JSON)))
             ORDER BY ag.tanggal DESC, j.jam_mulai ASC
             LIMIT 50
-        `, [guruId]);
+        `, [guruId, JSON.stringify(guruId), guruId, JSON.stringify(guruId)]);
 
         console.log(`✅ Found ${history.length} attendance history records for guru_id ${guruId}`);
         res.json({ success: true, data: history });
@@ -3342,12 +3347,12 @@ app.get('/api/guru/student-attendance-history', authenticateToken, requireRole([
             INNER JOIN siswa siswa ON absensi.siswa_id = siswa.id_siswa
             LEFT JOIN absensi_guru guru_absen ON jadwal.id_jadwal = guru_absen.jadwal_id 
                 AND DATE(guru_absen.tanggal) = DATE(absensi.waktu_absen)
-            WHERE jadwal.guru_id = ? 
+            WHERE (jadwal.guru_id = ? OR JSON_CONTAINS(jadwal.guru_ids, CAST(? AS JSON)))
                 AND absensi.waktu_absen >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)
             ORDER BY absensi.waktu_absen DESC, jadwal.jam_ke ASC
             LIMIT 1000`;
 
-        const [history] = await db.execute(query, [guruId]);
+        const [history] = await db.execute(query, [guruId, JSON.stringify(guruId)]);
 
         console.log(`✅ Found ${history.length} student attendance records for guru_id ${guruId}`);
         
@@ -3388,8 +3393,8 @@ app.get('/api/guru/student-attendance-simple', authenticateToken, requireRole(['
         const [result] = await db.execute(`
             SELECT COUNT(*) as total
             FROM jadwal j
-            WHERE j.guru_id = ?
-        `, [guruId]);
+            WHERE (j.guru_id = ? OR JSON_CONTAINS(j.guru_ids, CAST(? AS JSON)))
+        `, [guruId, JSON.stringify(guruId)]);
 
         console.log(`✅ Simple query result:`, result);
         res.json({ success: true, data: result, message: 'Simple endpoint working' });
@@ -5707,11 +5712,11 @@ app.get('/api/guru/:guruId/banding-absen', authenticateToken, requireRole(['guru
             JOIN mapel m ON j.mapel_id = m.id_mapel
             JOIN siswa s ON ba.siswa_id = s.id_siswa
             JOIN kelas k ON s.kelas_id = k.id_kelas
-            WHERE j.guru_id = ?
+            WHERE (j.guru_id = ? OR JSON_CONTAINS(j.guru_ids, CAST(? AS JSON)))
             ORDER BY ba.tanggal_pengajuan DESC, ba.status_banding ASC
         `;
 
-        const [rows] = await db.execute(query, [guruId]);
+        const [rows] = await db.execute(query, [guruId, JSON.stringify(guruId)]);
         console.log(`✅ Banding absen for guru retrieved: ${rows.length} items`);
         res.json(rows);
     } catch (error) {
