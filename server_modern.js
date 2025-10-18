@@ -163,42 +163,53 @@ app.post('/api/login', async (req, res) => {
         // Get additional user data based on role
         let additionalData = {};
         
-        if (user.role === 'guru' || user.role === 'GURU' || user.role.toLowerCase() === 'guru') {
-            console.log('🔍 Debug: Looking for guru data for user_id:', user.id);
-            const [guruData] = await db.execute(
-                `SELECT g.*, m.nama_mapel 
-                 FROM guru g 
-                 LEFT JOIN mapel m ON g.mapel_id = m.id_mapel 
-                 WHERE g.id_pengguna = ?`,
-                [user.id]
-            );
-            console.log('🔍 Debug: Guru data found:', guruData.length, 'records');
-            if (guruData.length > 0) {
-                additionalData = {
-                    guru_id: guruData[0].id_guru,
-                    nip: guruData[0].nip,
-                    mapel: guruData[0].nama_mapel
-                };
-                console.log('🔍 Debug: Additional data set:', additionalData);
-            } else {
-                console.log('❌ Debug: No guru data found for user_id:', user.id);
+        try {
+            if (user.role === 'guru' || user.role === 'GURU' || user.role.toLowerCase() === 'guru') {
+                console.log('🔍 Debug: Looking for guru data for user_id:', user.id);
+                const [guruData] = await db.execute(
+                    `SELECT g.*, m.nama_mapel 
+                     FROM guru g 
+                     LEFT JOIN mapel m ON g.mapel_id = m.id_mapel 
+                     WHERE g.id_pengguna = ?`,
+                    [user.id]
+                );
+                console.log('🔍 Debug: Guru data found:', guruData.length, 'records');
+                if (guruData.length > 0) {
+                    additionalData = {
+                        guru_id: guruData[0].id_guru,
+                        nip: guruData[0].nip,
+                        mapel: guruData[0].nama_mapel
+                    };
+                    console.log('🔍 Debug: Additional data set:', additionalData);
+                } else {
+                    console.log('❌ Debug: No guru data found for user_id:', user.id);
+                }
+            } else if (user.role === 'siswa' || user.role === 'perwakilan') {
+                console.log('🔍 Debug: Looking for siswa data for user_id:', user.id);
+                const [siswaData] = await db.execute(
+                    `SELECT s.*, k.nama_kelas 
+                     FROM siswa s 
+                     JOIN kelas k ON s.kelas_id = k.id_kelas 
+                     WHERE s.id_pengguna = ?`,
+                    [user.id]
+                );
+                console.log('🔍 Debug: Siswa data found:', siswaData.length, 'records');
+                if (siswaData.length > 0) {
+                    additionalData = {
+                        siswa_id: siswaData[0].id_siswa,
+                        nis: siswaData[0].nis,
+                        kelas: siswaData[0].nama_kelas,
+                        kelas_id: siswaData[0].kelas_id
+                    };
+                    console.log('🔍 Debug: Siswa additional data set:', additionalData);
+                } else {
+                    console.log('❌ Debug: No siswa data found for user_id:', user.id);
+                }
             }
-        } else if (user.role === 'siswa' || user.role === 'perwakilan') {
-            const [siswaData] = await db.execute(
-                `SELECT s.*, k.nama_kelas 
-                 FROM siswa s 
-                 JOIN kelas k ON s.kelas_id = k.id_kelas 
-                 WHERE s.user_id = ?`,
-                [user.id]
-            );
-            if (siswaData.length > 0) {
-                additionalData = {
-                    siswa_id: siswaData[0].id_siswa,
-                    nis: siswaData[0].nis,
-                    kelas: siswaData[0].nama_kelas,
-                    kelas_id: siswaData[0].kelas_id
-                };
-            }
+        } catch (dataError) {
+            console.error('❌ Error fetching additional user data:', dataError);
+            // Continue with login even if additional data fails
+            console.log('⚠️ Continuing login without additional data');
         }
 
         // Generate JWT token

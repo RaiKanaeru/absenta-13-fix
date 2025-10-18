@@ -38,9 +38,16 @@ const Index = () => {
   // Helper function to normalize user data with lowercase role
   const normalizeUserData = (data: any): UserData | null => {
     if (!data) return null;
+    
+    // Normalize role: convert 'perwakilan' to 'siswa' for compatibility
+    let normalizedRole = data.role?.toLowerCase();
+    if (normalizedRole === 'perwakilan') {
+      normalizedRole = 'siswa';
+    }
+    
     return {
       ...data,
-      role: data.role?.toLowerCase() // Ensure role is always lowercase
+      role: normalizedRole // Ensure role is normalized
     };
   };
 
