@@ -4150,9 +4150,11 @@ app.get('/api/siswa-perwakilan/info', authenticateToken, requireRole(['siswa', '
         console.log('📋 Getting siswa perwakilan info for user:', req.user.id);
 
         const [siswaData] = await db.execute(
-            `SELECT s.id_siswa, s.nis, s.nama, s.kelas_id, k.nama_kelas 
+            `SELECT s.id_siswa, s.nis, s.nama, s.kelas_id, s.alamat, s.telepon_orangtua, s.telepon_siswa, s.jenis_kelamin, s.jabatan,
+                    k.nama_kelas, u.username, u.email, u.id as user_id
              FROM siswa s 
              JOIN kelas k ON s.kelas_id = k.id_kelas 
+             JOIN users u ON s.user_id = u.id
              WHERE s.user_id = ?`,
             [req.user.id]
         );
@@ -4166,11 +4168,19 @@ app.get('/api/siswa-perwakilan/info', authenticateToken, requireRole(['siswa', '
 
         res.json({
             success: true,
+            id: info.user_id, // Add user ID
             id_siswa: info.id_siswa,
             nis: info.nis,
             nama: info.nama,
+            username: info.username, // Add username
+            email: info.email, // Add email
             kelas_id: info.kelas_id,
-            nama_kelas: info.nama_kelas
+            nama_kelas: info.nama_kelas,
+            alamat: info.alamat, // Add alamat
+            telepon_orangtua: info.telepon_orangtua, // Add telepon_orangtua
+            telepon_siswa: info.telepon_siswa, // Add telepon_siswa
+            jenis_kelamin: info.jenis_kelamin, // Add jenis_kelamin
+            jabatan: info.jabatan // Add jabatan
         });
 
     } catch (error) {
