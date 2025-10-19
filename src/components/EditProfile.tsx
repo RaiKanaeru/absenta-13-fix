@@ -251,6 +251,12 @@ export const EditProfile = ({ userData, onUpdate, onClose, role }: EditProfilePr
         throw new Error('Token tidak ditemukan');
       }
 
+      console.log('🔐 Change password request:', {
+        role,
+        endpoint: `/api/${role}/change-password`,
+        hasToken: !!token
+      });
+      
       const response = await fetch(`/api/${role}/change-password`, {
         method: 'PUT',
         headers: {
@@ -261,6 +267,12 @@ export const EditProfile = ({ userData, onUpdate, onClose, role }: EditProfilePr
         body: JSON.stringify({
           newPassword: passwordData.newPassword
         })
+      });
+      
+      console.log('🔐 Change password response:', {
+        status: response.status,
+        statusText: response.statusText,
+        ok: response.ok
       });
 
       if (response.ok) {
@@ -276,6 +288,11 @@ export const EditProfile = ({ userData, onUpdate, onClose, role }: EditProfilePr
         });
       } else {
         const errorData = await response.json();
+        console.error('🔐 Change password error:', {
+          status: response.status,
+          statusText: response.statusText,
+          error: errorData
+        });
         throw new Error(errorData.error || 'Gagal mengubah password');
       }
     } catch (error) {

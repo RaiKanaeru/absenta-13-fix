@@ -652,6 +652,8 @@ app.put('/api/siswa/change-password', authenticateToken, requireRole(['siswa', '
         const { newPassword } = req.body;
         
         console.log(`🔐 Changing password for siswa user_id: ${userId}`);
+        console.log(`🔐 Request body:`, req.body);
+        console.log(`🔐 User role:`, req.user.role);
         
         if (!newPassword || newPassword.length < 6) {
             return res.status(400).json({ error: 'Password minimal 6 karakter' });
