@@ -235,7 +235,11 @@ export const EditProfile = ({ userData, onUpdate, onClose, role }: EditProfilePr
   };
 
   const handleChangePassword = async () => {
+    console.log('🔐 handleChangePassword called');
+    console.log('🔐 passwordData:', passwordData);
+    
     if (!validatePassword()) {
+      console.log('🔐 Password validation failed');
       toast({
         title: "Error Validasi",
         description: "Mohon perbaiki error password yang ada",
@@ -243,6 +247,8 @@ export const EditProfile = ({ userData, onUpdate, onClose, role }: EditProfilePr
       });
       return;
     }
+    
+    console.log('🔐 Password validation passed, proceeding with request');
 
     setLoading(true);
     try {
@@ -674,7 +680,12 @@ export const EditProfile = ({ userData, onUpdate, onClose, role }: EditProfilePr
               </Button>
               
               <Button
-                onClick={handleChangePassword}
+                onClick={() => {
+                  console.log('🔐 Change password button clicked');
+                  console.log('🔐 Button disabled state:', loading || !passwordData.newPassword || !passwordData.confirmPassword);
+                  console.log('🔐 passwordData:', passwordData);
+                  handleChangePassword();
+                }}
                 disabled={loading || !passwordData.newPassword || !passwordData.confirmPassword}
                 variant="outline"
                 className="flex-1"
