@@ -835,6 +835,14 @@ const StudentDashboardComponent = ({ userData, onLogout }: StudentDashboardProps
     });
   }, [kehadiranData]);
 
+  // Debug useEffect untuk memantau perubahan jadwalBerdasarkanTanggal
+  useEffect(() => {
+    console.log('📅 jadwalBerdasarkanTanggal changed:', jadwalBerdasarkanTanggal);
+    console.log('📅 jadwalBerdasarkanTanggal length:', jadwalBerdasarkanTanggal.length);
+    console.log('📅 isEditMode:', isEditMode);
+    console.log('📅 selectedDate:', selectedDate);
+  }, [jadwalBerdasarkanTanggal, isEditMode, selectedDate]);
+
   // Update refs when functions change - using direct assignment to avoid re-render
   loadJadwalHariIniRef.current = loadJadwalHariIni;
   loadRiwayatDataRef.current = loadRiwayatData;
@@ -1074,8 +1082,10 @@ const StudentDashboardComponent = ({ userData, onLogout }: StudentDashboardProps
 
   // Handle date change
   const handleDateChange = useCallback((newDate: string) => {
+    console.log('📅 handleDateChange called with:', newDate, 'isEditMode:', isEditMode);
     setSelectedDate(newDate);
     if (isEditMode) {
+      console.log('📅 Calling loadJadwalByDate for edit mode');
       loadJadwalByDate(newDate);
     }
   }, [isEditMode, loadJadwalByDate]);
@@ -1113,7 +1123,7 @@ const StudentDashboardComponent = ({ userData, onLogout }: StudentDashboardProps
       );
     }
 
-    if (jadwalHariIni.length === 0) {
+    if ((isEditMode ? jadwalBerdasarkanTanggal : jadwalHariIni).length === 0) {
       return (
         <div className="space-y-6">
           <Card>
