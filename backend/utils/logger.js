@@ -1,357 +1,294 @@
 /**
- * Centralized Logging System
- * Sistem logging terpusat untuk aplikasi Absenta
+ * Logger Utility - Centralized logging system
+ * Provides structured logging with different levels and formats
  */
 
 import fs from 'fs';
 import path from 'path';
-import { fileURLToPath } from 'url';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
-// Log levels
-export const LOG_LEVELS = {
-  ERROR: 0,
-  WARN: 1,
-  INFO: 2,
-  DEBUG: 3,
-  TRACE: 4
+/**
+ * Log levels
+ */
+const LOG_LEVELS = {
+    ERROR: 0,
+    WARN: 1,
+    INFO: 2,
+    DEBUG: 3
 };
 
-// Log categories
-export const LOG_CATEGORIES = {
-  AUTH: 'auth',
-  API: 'api',
-  DATABASE: 'database',
-  SECURITY: 'security',
-  PERFORMANCE: 'performance',
-  SYSTEM: 'system',
-  BUSINESS: 'business',
-  ERROR: 'error'
-};
-
+/**
+ * Logger class
+ */
 class Logger {
-  constructor() {
-    this.logLevel = process.env.LOG_LEVEL || 'INFO';
-    this.logDir = process.env.LOG_DIR || path.join(__dirname, '../../logs');
-    this.maxFileSize = parseInt(process.env.LOG_MAX_FILE_SIZE) || 10 * 1024 * 1024; // 10MB
-    this.maxFiles = parseInt(process.env.LOG_MAX_FILES) || 5;
-    this.enableConsole = process.env.LOG_ENABLE_CONSOLE !== 'false';
-    this.enableFile = process.env.LOG_ENABLE_FILE !== 'false';
-    
-    // Ensure log directory exists
-    this.ensureLogDirectory();
-    
-    // Initialize log files
-    this.initializeLogFiles();
-  }
-
-  ensureLogDirectory() {
-    if (!fs.existsSync(this.logDir)) {
-      fs.mkdirSync(this.logDir, { recursive: true });
-    }
-  }
-
-  initializeLogFiles() {
-    const logFiles = [
-      'application.log',
-      'error.log',
-      'security.log',
-      'performance.log',
-      'database.log'
-    ];
-
-    logFiles.forEach(file => {
-      const filePath = path.join(this.logDir, file);
-      if (!fs.existsSync(filePath)) {
-        fs.writeFileSync(filePath, '');
-      }
-    });
-  }
-
-  getLogLevel(level) {
-    return LOG_LEVELS[level.toUpperCase()] || LOG_LEVELS.INFO;
-  }
-
-  shouldLog(level) {
-    return this.getLogLevel(level) <= this.getLogLevel(this.logLevel);
-  }
-
-  formatMessage(level, category, message, meta = {}) {
-    const timestamp = new Date().toISOString();
-    const logEntry = {
-      timestamp,
-      level: level.toUpperCase(),
-      category,
-      message,
-      meta: {
-        ...meta,
-        pid: process.pid,
-        hostname: process.env.HOSTNAME || 'localhost'
-      }
-    };
-
-    return JSON.stringify(logEntry);
-  }
-
-  writeToFile(filename, message) {
-    if (!this.enableFile) return;
-
-    const filePath = path.join(this.logDir, filename);
-    
-    try {
-      // Check file size and rotate if necessary
-      if (fs.existsSync(filePath)) {
-        const stats = fs.statSync(filePath);
-        if (stats.size > this.maxFileSize) {
-          this.rotateLogFile(filePath);
-        }
-      }
-
-      fs.appendFileSync(filePath, message + '\n');
-    } catch (error) {
-      console.error('Error writing to log file:', error);
-    }
-  }
-
-  rotateLogFile(filePath) {
-    try {
-      // Move current file to .1, .1 to .2, etc.
-      for (let i = this.maxFiles - 1; i > 0; i--) {
-        const oldFile = `${filePath}.${i}`;
-        const newFile = `${filePath}.${i + 1}`;
+    constructor(options = {}) {
+        this.level = options.level || 'info';
+        this.format = options.format || 'combined';
+        this.file = options.file || null;
+        this.console = options.console !== false;
         
-        if (fs.existsSync(oldFile)) {
-          if (i === this.maxFiles - 1) {
-            fs.unlinkSync(oldFile); // Delete oldest file
-          } else {
-            fs.renameSync(oldFile, newFile);
-          }
-        }
-      }
-
-      // Move current file to .1
-      if (fs.existsSync(filePath)) {
-        fs.renameSync(filePath, `${filePath}.1`);
-      }
-    } catch (error) {
-      console.error('Error rotating log file:', error);
-    }
-  }
-
-  log(level, category, message, meta = {}) {
-    if (!this.shouldLog(level)) return;
-
-    const formattedMessage = this.formatMessage(level, category, message, meta);
-
-    // Console output
-    if (this.enableConsole) {
-      const consoleMessage = `[${new Date().toISOString()}] ${level.toUpperCase()} [${category}] ${message}`;
-      
-      switch (level.toUpperCase()) {
-        case 'ERROR':
-          console.error(consoleMessage, meta);
-          break;
-        case 'WARN':
-          console.warn(consoleMessage, meta);
-          break;
-        case 'DEBUG':
-        case 'TRACE':
-          console.debug(consoleMessage, meta);
-          break;
-        default:
-          console.log(consoleMessage, meta);
-      }
-    }
-
-    // File output
-    if (this.enableFile) {
-      // Write to specific log files based on category and level
-      if (level.toUpperCase() === 'ERROR') {
-        this.writeToFile('error.log', formattedMessage);
-      }
-      
-      if (category === LOG_CATEGORIES.SECURITY) {
-        this.writeToFile('security.log', formattedMessage);
-      }
-      
-      if (category === LOG_CATEGORIES.PERFORMANCE) {
-        this.writeToFile('performance.log', formattedMessage);
-      }
-      
-      if (category === LOG_CATEGORIES.DATABASE) {
-        this.writeToFile('database.log', formattedMessage);
-      }
-      
-      // Always write to main application log
-      this.writeToFile('application.log', formattedMessage);
-    }
-  }
-
-  // Convenience methods
-  error(category, message, meta = {}) {
-    this.log('ERROR', category, message, meta);
-  }
-
-  warn(category, message, meta = {}) {
-    this.log('WARN', category, message, meta);
-  }
-
-  info(category, message, meta = {}) {
-    this.log('INFO', category, message, meta);
-  }
-
-  debug(category, message, meta = {}) {
-    this.log('DEBUG', category, message, meta);
-  }
-
-  trace(category, message, meta = {}) {
-    this.log('TRACE', category, message, meta);
-  }
-
-  // Specialized logging methods
-  logAuth(action, username, ip, success, meta = {}) {
-    this.info(LOG_CATEGORIES.AUTH, `Authentication ${action}`, {
-      username,
-      ip,
-      success,
-      ...meta
-    });
-  }
-
-  logApi(method, url, statusCode, responseTime, ip, meta = {}) {
-    const level = statusCode >= 400 ? 'WARN' : 'INFO';
-    this.log(level, LOG_CATEGORIES.API, `API Request`, {
-      method,
-      url,
-      statusCode,
-      responseTime,
-      ip,
-      ...meta
-    });
-  }
-
-  logDatabase(operation, table, query, duration, meta = {}) {
-    this.info(LOG_CATEGORIES.DATABASE, `Database ${operation}`, {
-      table,
-      query: query.substring(0, 200), // Truncate long queries
-      duration,
-      ...meta
-    });
-  }
-
-  logSecurity(event, severity, username, ip, meta = {}) {
-    const level = severity === 'critical' ? 'ERROR' : 
-                  severity === 'high' ? 'WARN' : 'INFO';
-    
-    this.log(level, LOG_CATEGORIES.SECURITY, `Security Event: ${event}`, {
-      severity,
-      username,
-      ip,
-      ...meta
-    });
-  }
-
-  logPerformance(operation, duration, meta = {}) {
-    const level = duration > 5000 ? 'WARN' : 'INFO'; // Warn if > 5 seconds
-    
-    this.log(level, LOG_CATEGORIES.PERFORMANCE, `Performance: ${operation}`, {
-      duration,
-      ...meta
-    });
-  }
-
-  logBusiness(action, entity, entityId, meta = {}) {
-    this.info(LOG_CATEGORIES.BUSINESS, `Business Action: ${action}`, {
-      entity,
-      entityId,
-      ...meta
-    });
-  }
-
-  // Log analysis methods
-  getLogStats() {
-    const stats = {
-      totalLogs: 0,
-      errors: 0,
-      warnings: 0,
-      info: 0,
-      debug: 0,
-      categories: {}
-    };
-
-    try {
-      const logFiles = fs.readdirSync(this.logDir);
-      
-      logFiles.forEach(file => {
-        if (file.endsWith('.log')) {
-          const filePath = path.join(this.logDir, file);
-          const content = fs.readFileSync(filePath, 'utf8');
-          const lines = content.split('\n').filter(line => line.trim());
-          
-          lines.forEach(line => {
-            try {
-              const logEntry = JSON.parse(line);
-              stats.totalLogs++;
-              
-              switch (logEntry.level) {
-                case 'ERROR':
-                  stats.errors++;
-                  break;
-                case 'WARN':
-                  stats.warnings++;
-                  break;
-                case 'INFO':
-                  stats.info++;
-                  break;
-                case 'DEBUG':
-                  stats.debug++;
-                  break;
-              }
-              
-              if (logEntry.category) {
-                stats.categories[logEntry.category] = (stats.categories[logEntry.category] || 0) + 1;
-              }
-            } catch (error) {
-              // Skip invalid JSON lines
+        // Create logs directory if file logging is enabled
+        if (this.file) {
+            const logDir = path.dirname(this.file);
+            if (!fs.existsSync(logDir)) {
+                fs.mkdirSync(logDir, { recursive: true });
             }
-          });
         }
-      });
-    } catch (error) {
-      console.error('Error analyzing logs:', error);
     }
 
-    return stats;
-  }
+    /**
+     * Get current timestamp
+     * @returns {string} Formatted timestamp
+     */
+    getTimestamp() {
+        return new Date().toISOString();
+    }
 
-  // Cleanup old logs
-  cleanupOldLogs(daysToKeep = 30) {
-    try {
-      const cutoffDate = new Date();
-      cutoffDate.setDate(cutoffDate.getDate() - daysToKeep);
-      
-      const logFiles = fs.readdirSync(this.logDir);
-      
-      logFiles.forEach(file => {
-        const filePath = path.join(this.logDir, file);
-        const stats = fs.statSync(filePath);
+    /**
+     * Format log message
+     * @param {string} level - Log level
+     * @param {string} message - Log message
+     * @param {Object} meta - Additional metadata
+     * @returns {string} Formatted log message
+     */
+    formatMessage(level, message, meta = {}) {
+        const timestamp = this.getTimestamp();
+        const metaStr = Object.keys(meta).length > 0 ? ` ${JSON.stringify(meta)}` : '';
         
-        if (stats.mtime < cutoffDate) {
-          fs.unlinkSync(filePath);
-          console.log(`Deleted old log file: ${file}`);
+        switch (this.format) {
+            case 'json':
+                return JSON.stringify({
+                    timestamp,
+                    level,
+                    message,
+                    ...meta
+                });
+                
+            case 'combined':
+                return `${timestamp} [${level.toUpperCase()}] ${message}${metaStr}`;
+                
+            case 'simple':
+                return `[${level.toUpperCase()}] ${message}`;
+                
+            default:
+                return `${timestamp} [${level.toUpperCase()}] ${message}${metaStr}`;
         }
-      });
-    } catch (error) {
-      console.error('Error cleaning up old logs:', error);
     }
-  }
+
+    /**
+     * Write log to file
+     * @param {string} message - Formatted log message
+     */
+    writeToFile(message) {
+        if (this.file) {
+            try {
+                fs.appendFileSync(this.file, message + '\n');
+            } catch (error) {
+                console.error('❌ Error writing to log file:', error);
+            }
+        }
+    }
+
+    /**
+     * Write log to console
+     * @param {string} level - Log level
+     * @param {string} message - Formatted log message
+     */
+    writeToConsole(level, message) {
+        if (this.console) {
+            const colors = {
+                error: '\x1b[31m', // Red
+                warn: '\x1b[33m',  // Yellow
+                info: '\x1b[36m',  // Cyan
+                debug: '\x1b[90m'  // Gray
+            };
+            
+            const reset = '\x1b[0m';
+            const color = colors[level] || '';
+            
+            console.log(`${color}${message}${reset}`);
+        }
+    }
+
+    /**
+     * Log message
+     * @param {string} level - Log level
+     * @param {string} message - Log message
+     * @param {Object} meta - Additional metadata
+     */
+    log(level, message, meta = {}) {
+        const currentLevel = LOG_LEVELS[this.level.toUpperCase()] || LOG_LEVELS.INFO;
+        const messageLevel = LOG_LEVELS[level.toUpperCase()] || LOG_LEVELS.INFO;
+        
+        if (messageLevel <= currentLevel) {
+            const formattedMessage = this.formatMessage(level, message, meta);
+            
+            this.writeToConsole(level, formattedMessage);
+            this.writeToFile(formattedMessage);
+        }
+    }
+
+    /**
+     * Error log
+     * @param {string} message - Error message
+     * @param {Object} meta - Additional metadata
+     */
+    error(message, meta = {}) {
+        this.log('error', message, meta);
+    }
+
+    /**
+     * Warning log
+     * @param {string} message - Warning message
+     * @param {Object} meta - Additional metadata
+     */
+    warn(message, meta = {}) {
+        this.log('warn', message, meta);
+    }
+
+    /**
+     * Info log
+     * @param {string} message - Info message
+     * @param {Object} meta - Additional metadata
+     */
+    info(message, meta = {}) {
+        this.log('info', message, meta);
+    }
+
+    /**
+     * Debug log
+     * @param {string} message - Debug message
+     * @param {Object} meta - Additional metadata
+     */
+    debug(message, meta = {}) {
+        this.log('debug', message, meta);
+    }
+
+    /**
+     * HTTP request log
+     * @param {Object} req - Express request object
+     * @param {Object} res - Express response object
+     * @param {number} responseTime - Response time in ms
+     */
+    http(req, res, responseTime) {
+        const meta = {
+            method: req.method,
+            url: req.url,
+            status: res.statusCode,
+            responseTime: `${responseTime}ms`,
+            ip: req.ip,
+            userAgent: req.get('User-Agent')
+        };
+        
+        const level = res.statusCode >= 400 ? 'error' : 'info';
+        this.log(level, `${req.method} ${req.url} ${res.statusCode}`, meta);
+    }
+
+    /**
+     * Database query log
+     * @param {string} query - SQL query
+     * @param {Array} params - Query parameters
+     * @param {number} duration - Query duration in ms
+     */
+    query(query, params = [], duration = 0) {
+        const meta = {
+            query: query.substring(0, 100) + (query.length > 100 ? '...' : ''),
+            params: params.length > 0 ? params : undefined,
+            duration: `${duration}ms`
+        };
+        
+        this.debug('Database query executed', meta);
+    }
+
+    /**
+     * Authentication log
+     * @param {string} action - Auth action
+     * @param {string} username - Username
+     * @param {string} ip - IP address
+     * @param {boolean} success - Success status
+     */
+    auth(action, username, ip, success = true) {
+        const meta = {
+            action,
+            username,
+            ip,
+            success,
+            timestamp: this.getTimestamp()
+        };
+        
+        const level = success ? 'info' : 'warn';
+        this.log(level, `Auth ${action}: ${username}`, meta);
+    }
+
+    /**
+     * Performance log
+     * @param {string} operation - Operation name
+     * @param {number} duration - Duration in ms
+     * @param {Object} meta - Additional metadata
+     */
+    performance(operation, duration, meta = {}) {
+        const level = duration > 1000 ? 'warn' : 'info';
+        this.log(level, `Performance: ${operation}`, {
+            duration: `${duration}ms`,
+            ...meta
+        });
+    }
 }
 
-// Create singleton instance
-const logger = new Logger();
+/**
+ * Create logger instance
+ * @param {Object} options - Logger options
+ * @returns {Logger} Logger instance
+ */
+export const createLogger = (options = {}) => {
+    return new Logger(options);
+};
 
-// Export both as default and named export for compatibility
-export { logger };
+/**
+ * Default logger instance
+ */
+export const logger = createLogger({
+    level: process.env.LOG_LEVEL || 'info',
+    format: process.env.LOG_FORMAT || 'combined',
+    file: process.env.LOG_FILE || './logs/app.log',
+    console: true
+});
+
+/**
+ * Request logger middleware
+ * @param {Logger} loggerInstance - Logger instance
+ * @returns {Function} Express middleware
+ */
+export const requestLogger = (loggerInstance = logger) => {
+    return (req, res, next) => {
+        const startTime = Date.now();
+        
+        res.on('finish', () => {
+            const responseTime = Date.now() - startTime;
+            loggerInstance.http(req, res, responseTime);
+        });
+        
+        next();
+    };
+};
+
+/**
+ * Error logger middleware
+ * @param {Logger} loggerInstance - Logger instance
+ * @returns {Function} Express middleware
+ */
+export const errorLogger = (loggerInstance = logger) => {
+    return (error, req, res, next) => {
+        loggerInstance.error('Unhandled error', {
+            error: error.message,
+            stack: error.stack,
+            url: req.url,
+            method: req.method,
+            ip: req.ip,
+            userAgent: req.get('User-Agent')
+        });
+        
+        next(error);
+    };
+};
+
 export default logger;

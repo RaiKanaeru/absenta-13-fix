@@ -23,7 +23,7 @@ import MonitoringDashboard from "./MonitoringDashboard";
 import SchedulePreviewGrid from "./SchedulePreviewGrid";
 import SimpleRestoreView from "./SimpleRestoreView";
 import RuangKelasManagement from "./RuangKelasManagement";
-import { printReport } from "../utils/printLayouts";
+import { printReport } from "@/utils/printLayouts";
 import ExcelPreview from './ExcelPreview';
 // import ReportHeader from './ReportHeader';
 import PresensiSiswaView from './PresensiSiswaView';
@@ -31,11 +31,11 @@ import RekapKetidakhadiranView from './RekapKetidakhadiranView';
 import RekapKetidakhadiranGuruView from './RekapKetidakhadiranGuruView';
 import ExcelImportView from './ExcelImportView';
 import JadwalAdvancedImportView from './JadwalAdvancedImportView';
-import { VIEW_TO_REPORT_KEY } from '../utils/reportKeys';
+import { VIEW_TO_REPORT_KEY } from '@/utils/reportKeys';
 import { EditProfile } from './EditProfile';
 import ReportLetterheadSettings from './ReportLetterheadSettings';
-import { ensureArray, normalizeList, getSelectValue, hasValidId } from '../utils/normalize';
-import { httpGet, handleResponseError } from '../utils/http';
+import { ensureArray, normalizeList, getSelectValue, hasValidId } from '@/utils/normalize';
+import { httpGet, handleResponseError } from '@/utils/http';
 import { 
   UserPlus, BookOpen, Calendar, BarChart3, LogOut, ArrowLeft, ArrowRight, Users, GraduationCap, 
   Eye, Download, FileText, Edit, Trash2, Plus, Search, Filter, Settings, Bell, Menu, X,

@@ -19,7 +19,7 @@ import {
 } from "lucide-react";
 import ExcelPreview from './ExcelPreview';
 import { EditProfile } from './EditProfile';
-import { VIEW_TO_REPORT_KEY } from '../utils/reportKeys';
+import { VIEW_TO_REPORT_KEY } from '@/utils/reportKeys';
 import { apiCall } from '@/utils/api';
 
 interface TeacherDashboardProps {

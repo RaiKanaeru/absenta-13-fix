@@ -5,7 +5,7 @@
   "type": "module",
   "description": "## Project info",
   "scripts": {
-    "dev": "cd frontend && vite",
+    "dev": "vite",
     "dev:full": "concurrently \"npm run start:modern\" \"npm run dev\"",
     "dev:setup": "node setup-database-modern.js && concurrently \"npm run start:modern\" \"npm run dev\"",
     "build": "vite build",
