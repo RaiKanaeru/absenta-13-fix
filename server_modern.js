@@ -4325,6 +4325,7 @@ app.get('/api/siswa/:siswaId/jadwal-rentang', authenticateToken, requireRole(['s
                 j.jam_ke,
                 j.jam_mulai,
                 j.jam_selesai,
+                j.kelas_id,
                 mp.nama_mapel,
                 mp.kode_mapel,
                 g.nama as nama_guru,
