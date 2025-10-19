@@ -1,308 +1,146 @@
-// tests/utils/testUtils.js
-import React from 'react';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { BrowserRouter } from 'react-router-dom';
-import { FontSizeProvider } from '../../src/contexts/FontSizeContext';
+// tests/utils/testUtils.js - Test utilities for Jest
+const mysql = require('mysql2/promise');
+const jwt = require('jsonwebtoken');
 
-// Create a test query client
-export const createTestQueryClient = () => new QueryClient({
-  defaultOptions: {
-    queries: {
-      retry: false,
-      cacheTime: 0,
-    },
-    mutations: {
-      retry: false,
-    },
-  },
-});
+class TestUtils {
+  constructor() {
+    this.db = null;
+    this.testDbName = 'absenta_test';
+  }
 
-// Custom render function with providers
-export const renderWithProviders = (
-  ui,
-  {
-    preloadedState = {},
-    store = null,
-    ...renderOptions
-  } = {}
-) => {
-  const queryClient = createTestQueryClient();
-  
-  const Wrapper = ({ children }) => (
-    <QueryClientProvider client={queryClient}>
-      <BrowserRouter>
-        <FontSizeProvider>
-          {children}
-        </FontSizeProvider>
-      </BrowserRouter>
-    </QueryClientProvider>
-  );
+  // Get test database connection
+  async getTestDb() {
+    if (!this.db) {
+      this.db = await mysql.createConnection({
+        host: process.env.DB_HOST || 'localhost',
+        port: process.env.DB_PORT || 3306,
+        user: process.env.DB_USER || 'root',
+        password: process.env.DB_PASSWORD || '',
+        database: this.testDbName,
+        multipleStatements: true
+      });
+    }
+    return this.db;
+  }
 
-  return {
-    ...render(ui, { wrapper: Wrapper, ...renderOptions }),
-    queryClient,
-  };
-};
+  // Generate test JWT token
+  generateTestToken(payload = {}) {
+    const defaultPayload = {
+      id: 1,
+      username: 'testuser',
+      role: 'guru',
+      nama: 'Test User',
+      iat: Math.floor(Date.now() / 1000),
+      exp: Math.floor(Date.now() / 1000) + (60 * 60) // 1 hour
+    };
 
-// Mock API response
-export const mockApiResponse = (data, success = true, error = null) => ({
-  success,
-  data,
-  error,
-  message: success ? 'Success' : 'Error',
-});
+    const tokenPayload = { ...defaultPayload, ...payload };
+    const secret = process.env.JWT_SECRET || 'test-secret-key';
+    
+    return jwt.sign(tokenPayload, secret);
+  }
 
-// Mock API call
-export const mockApiCall = (response) => {
-  const { apiCall } = require('../../src/lib/api');
-  apiCall.mockResolvedValue(response);
-};
+  // Create test user data
+  createTestUser(overrides = {}) {
+    return {
+      id: 1,
+      username: 'testuser',
+      password: '$2b$10$test.hash.for.testing',
+      role: 'guru',
+      nama: 'Test User',
+      email: 'test@example.com',
+      status: 'aktif',
+      created_at: new Date(),
+      updated_at: new Date(),
+      ...overrides
+    };
+  }
 
-// Mock API error
-export const mockApiError = (error) => {
-  const { apiCall } = require('../../src/lib/api');
-  apiCall.mockRejectedValue(new Error(error));
-};
+  // Create test schedule data
+  createTestSchedule(overrides = {}) {
+    return {
+      id_jadwal: 1,
+      kelas_id: 1,
+      mapel_id: 1,
+      guru_id: 1,
+      hari: 'Senin',
+      jam_ke: 1,
+      jam_mulai: '07:00:00',
+      jam_selesai: '08:00:00',
+      status: 'aktif',
+      created_at: new Date(),
+      ...overrides
+    };
+  }
 
-// Create mock user
-export const createMockUser = (overrides = {}) => ({
-  id: 1,
-  username: 'testuser',
-  nama: 'Test User',
-  role: 'admin',
-  email: 'test@example.com',
-  ...overrides,
-});
+  // Create test attendance data
+  createTestAttendance(overrides = {}) {
+    return {
+      id_absensi: 1,
+      jadwal_id: 1,
+      guru_id: 1,
+      kelas_id: 1,
+      siswa_pencatat_id: 1,
+      tanggal: new Date().toISOString().split('T')[0],
+      jam_ke: 1,
+      status: 'Hadir',
+      keterangan: null,
+      waktu_catat: new Date(),
+      metode_absen: 'manual',
+      ...overrides
+    };
+  }
 
-// Create mock student
-export const createMockStudent = (overrides = {}) => ({
-  id: 1,
-  nama: 'Test Student',
-  nis: '12345',
-  kelas: 'X AK 1',
-  ...overrides,
-});
+  // Setup test database
+  async setupTestDatabase() {
+    const connection = await mysql.createConnection({
+      host: process.env.DB_HOST || 'localhost',
+      port: process.env.DB_PORT || 3306,
+      user: process.env.DB_USER || 'root',
+      password: process.env.DB_PASSWORD || ''
+    });
 
-// Create mock teacher
-export const createMockTeacher = (overrides = {}) => ({
-  id: 1,
-  nama: 'Test Teacher',
-  nip: '12345',
-  mata_pelajaran: 'Matematika',
-  ...overrides,
-});
+    // Create test database if not exists
+    await connection.execute(`CREATE DATABASE IF NOT EXISTS ${this.testDbName}`);
+    await connection.end();
 
-// Create mock class
-export const createMockClass = (overrides = {}) => ({
-  id: 1,
-  nama_kelas: 'X AK 1',
-  tingkat: 'X',
-  ruang: 'Ruang 101',
-  ...overrides,
-});
+    // Connect to test database
+    this.db = await this.getTestDb();
+  }
 
-// Create mock subject
-export const createMockSubject = (overrides = {}) => ({
-  id: 1,
-  nama_mapel: 'Matematika',
-  kode_mapel: 'MAT',
-  ...overrides,
-});
+  // Cleanup test database
+  async cleanup() {
+    if (this.db) {
+      await this.db.end();
+      this.db = null;
+    }
+  }
 
-// Create mock schedule
-export const createMockSchedule = (overrides = {}) => ({
-  id: 1,
-  hari: 'Senin',
-  jam_mulai: '08:00',
-  jam_selesai: '09:00',
-  kelas_id: 1,
-  mapel_id: 1,
-  guru_id: 1,
-  ...overrides,
-});
+  // Seed test data
+  async seedTestData() {
+    const db = await this.getTestDb();
+    
+    // Clear existing data
+    await db.execute('DELETE FROM absensi_guru');
+    await db.execute('DELETE FROM absensi_siswa');
+    await db.execute('DELETE FROM jadwal');
+    await db.execute('DELETE FROM guru');
+    await db.execute('DELETE FROM users');
 
-// Create mock attendance
-export const createMockAttendance = (overrides = {}) => ({
-  id: 1,
-  tanggal: '2024-01-01',
-  status: 'hadir',
-  siswa_id: 1,
-  jadwal_id: 1,
-  ...overrides,
-});
+    // Insert test users
+    await db.execute(
+      'INSERT INTO users (username, password, role, nama, email, status) VALUES (?, ?, ?, ?, ?, ?)',
+      ['testadmin', '$2b$10$test.hash', 'admin', 'Test Admin', 'admin@test.com', 'aktif']
+    );
 
-// Wait for element to appear
-export const waitForElement = async (selector, timeout = 5000) => {
-  return await waitFor(() => screen.getByTestId(selector), { timeout });
-};
+    await db.execute(
+      'INSERT INTO users (username, password, role, nama, email, status) VALUES (?, ?, ?, ?, ?, ?)',
+      ['testguru', '$2b$10$test.hash', 'guru', 'Test Guru', 'guru@test.com', 'aktif']
+    );
 
-// Wait for text to appear
-export const waitForText = async (text, timeout = 5000) => {
-  return await waitFor(() => screen.getByText(text), { timeout });
-};
+    // Insert test data
+    // Add more seed data as needed
+  }
+}
 
-// Simulate user typing
-export const typeInInput = async (input, text) => {
-  fireEvent.change(input, { target: { value: text } });
-  await waitFor(() => expect(input.value).toBe(text));
-};
-
-// Simulate form submission
-export const submitForm = async (form) => {
-  fireEvent.submit(form);
-  await waitFor(() => expect(form).toBeInTheDocument());
-};
-
-// Mock localStorage
-export const mockLocalStorage = (data = {}) => {
-  const store = { ...data };
-  
-  Object.defineProperty(window, 'localStorage', {
-    value: {
-      getItem: jest.fn((key) => store[key] || null),
-      setItem: jest.fn((key, value) => {
-        store[key] = value;
-      }),
-      removeItem: jest.fn((key) => {
-        delete store[key];
-      }),
-      clear: jest.fn(() => {
-        Object.keys(store).forEach(key => delete store[key]);
-      }),
-    },
-    writable: true,
-  });
-  
-  return store;
-};
-
-// Mock sessionStorage
-export const mockSessionStorage = (data = {}) => {
-  const store = { ...data };
-  
-  Object.defineProperty(window, 'sessionStorage', {
-    value: {
-      getItem: jest.fn((key) => store[key] || null),
-      setItem: jest.fn((key, value) => {
-        store[key] = value;
-      }),
-      removeItem: jest.fn((key) => {
-        delete store[key];
-      }),
-      clear: jest.fn(() => {
-        Object.keys(store).forEach(key => delete store[key]);
-      }),
-    },
-    writable: true,
-  });
-  
-  return store;
-};
-
-// Mock fetch with response
-export const mockFetch = (response, ok = true, status = 200) => {
-  global.fetch = jest.fn(() =>
-    Promise.resolve({
-      ok,
-      status,
-      json: () => Promise.resolve(response),
-      text: () => Promise.resolve(JSON.stringify(response)),
-    })
-  );
-};
-
-// Mock fetch with error
-export const mockFetchError = (error = 'Network error') => {
-  global.fetch = jest.fn(() => Promise.reject(new Error(error)));
-};
-
-// Create test data factory
-export const createTestData = {
-  user: createMockUser,
-  student: createMockStudent,
-  teacher: createMockTeacher,
-  class: createMockClass,
-  subject: createMockSubject,
-  schedule: createMockSchedule,
-  attendance: createMockAttendance,
-};
-
-// Assertion helpers
-export const expectElementToBeInDocument = (element) => {
-  expect(element).toBeInTheDocument();
-};
-
-export const expectElementNotToBeInDocument = (element) => {
-  expect(element).not.toBeInDocument();
-};
-
-export const expectElementToHaveText = (element, text) => {
-  expect(element).toHaveTextContent(text);
-};
-
-export const expectElementToHaveClass = (element, className) => {
-  expect(element).toHaveClass(className);
-};
-
-export const expectElementToBeDisabled = (element) => {
-  expect(element).toBeDisabled();
-};
-
-export const expectElementToBeEnabled = (element) => {
-  expect(element).toBeEnabled();
-};
-
-// Test data generators
-export const generateMockData = (count, factory) => {
-  return Array.from({ length: count }, (_, index) => factory({ id: index + 1 }));
-};
-
-// Mock console methods
-export const mockConsole = () => {
-  const originalConsole = { ...console };
-  
-  beforeEach(() => {
-    console.log = jest.fn();
-    console.warn = jest.fn();
-    console.error = jest.fn();
-  });
-  
-  afterEach(() => {
-    Object.assign(console, originalConsole);
-  });
-  
-  return originalConsole;
-};
-
-export default {
-  renderWithProviders,
-  createTestQueryClient,
-  mockApiResponse,
-  mockApiCall,
-  mockApiError,
-  createMockUser,
-  createMockStudent,
-  createMockTeacher,
-  createMockClass,
-  createMockSubject,
-  createMockSchedule,
-  createMockAttendance,
-  waitForElement,
-  waitForText,
-  typeInInput,
-  submitForm,
-  mockLocalStorage,
-  mockSessionStorage,
-  mockFetch,
-  mockFetchError,
-  createTestData,
-  expectElementToBeInDocument,
-  expectElementNotToBeInDocument,
-  expectElementToHaveText,
-  expectElementToHaveClass,
-  expectElementToBeDisabled,
-  expectElementToBeEnabled,
-  generateMockData,
-  mockConsole,
-};
+module.exports = new TestUtils();

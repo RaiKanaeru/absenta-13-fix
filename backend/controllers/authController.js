@@ -111,21 +111,26 @@ export const debugJWT = asyncHandler(async (req, res, next) => {
         return sendError(res, 'Token diperlukan', 400);
     }
     
+    let jwtModule;
+    
     try {
-        const jwt = await import('jsonwebtoken');
-        const decoded = jwt.decode(token, { complete: true });
-        const isValid = jwt.verify(token, process.env.JWT_SECRET);
+        jwtModule = await import('jsonwebtoken');
+        const decoded = jwtModule.default.decode(token, { complete: true });
+        const isValid = jwtModule.default.verify(token, process.env.JWT_SECRET);
         
         return sendSuccess(res, {
             decoded,
             isValid,
-            secret: process.env.JWT_SECRET.substring(0, 10) + '...'
+            secret: process.env.JWT_SECRET ? process.env.JWT_SECRET.substring(0, 10) + '...' : 'Not set'
         }, 'JWT debug info', 200);
     } catch (error) {
+        // Use jwtModule if available, otherwise use fallback
+        const decoded = jwtModule ? jwtModule.default.decode(token, { complete: true }) : null;
+        
         return sendSuccess(res, {
             error: error.message,
-            decoded: jwt.decode(token, { complete: true }),
-            secret: process.env.JWT_SECRET.substring(0, 10) + '...'
+            decoded,
+            secret: process.env.JWT_SECRET ? process.env.JWT_SECRET.substring(0, 10) + '...' : 'Not set'
         }, 'JWT debug info (error)', 200);
     }
 });
