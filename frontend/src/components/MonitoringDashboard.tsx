@@ -562,7 +562,7 @@ const MonitoringDashboard: React.FC = () => {
                                 <Clock className="h-4 w-4 text-muted-foreground" />
                             </CardHeader>
                             <CardContent>
-                                <div className="text-2xl font-bold">{alertStats?.last24h || 0}</div>
+                                <div className="text-2xl font-bold">{(alertStats && 'last24h' in alertStats) ? alertStats.last24h : 0}</div>
                             </CardContent>
                         </Card>
                     </div>

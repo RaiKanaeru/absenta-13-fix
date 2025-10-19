@@ -1,0 +1,490 @@
+---
+globs: frontend/src/**/*.tsx,frontend/src/**/*.ts
+description: Frontend development patterns and conventions for Absenta React application
+---
+
+# Absenta Frontend Development Patterns
+
+## 🎨 Component Architecture
+
+### Component Structure Standards
+```typescript
+// Standard Component Template
+import React, { useState, useEffect } from 'react';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+
+interface ComponentProps {
+  title: string;
+  onAction: (data: any) => void;
+  isLoading?: boolean;
+}
+
+const ComponentName: React.FC<ComponentProps> = ({ 
+  title, 
+  onAction, 
+  isLoading = false 
+}) => {
+  const [state, setState] = useState<StateType>(initialValue);
+  
+  useEffect(() => {
+    // Side effects
+  }, [dependencies]);
+  
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>{title}</CardTitle>
+      </CardHeader>
+      <CardContent>
+        {/* Component content */}
+      </CardContent>
+    </Card>
+  );
+};
+
+export default ComponentName;
+```
+
+### Dashboard Component Patterns
+```typescript
+// Dashboard Component Structure
+const DashboardComponent = () => {
+  const [data, setData] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  
+  const fetchData = async () => {
+    setLoading(true);
+    try {
+      const response = await api.get('/endpoint');
+      setData(response.data);
+    } catch (err) {
+      setError('Failed to fetch data');
+    } finally {
+      setLoading(false);
+    }
+  };
+  
+  useEffect(() => {
+    fetchData();
+  }, []);
+  
+  if (loading) return <LoadingSpinner />;
+  if (error) return <ErrorMessage message={error} />;
+  
+  return (
+    <div className="space-y-6">
+      {/* Dashboard content */}
+    </div>
+  );
+};
+```
+
+## 🔄 State Management Patterns
+
+### Local State Management
+```typescript
+// useState for Local State
+const [formData, setFormData] = useState({
+  username: '',
+  password: '',
+  role: 'siswa'
+});
+
+const handleInputChange = (field: string, value: string) => {
+  setFormData(prev => ({
+    ...prev,
+    [field]: value
+  }));
+};
+```
+
+### Context for Global State
+```typescript
+// Context Provider Pattern
+interface AppContextType {
+  user: User | null;
+  setUser: (user: User | null) => void;
+  theme: 'light' | 'dark';
+  setTheme: (theme: 'light' | 'dark') => void;
+}
+
+const AppContext = createContext<AppContextType | undefined>(undefined);
+
+export const useAppContext = () => {
+  const context = useContext(AppContext);
+  if (!context) {
+    throw new Error('useAppContext must be used within AppProvider');
+  }
+  return context;
+};
+```
+
+## 🌐 API Integration Patterns
+
+### API Client Configuration
+```typescript
+// API Client Setup
+import axios from 'axios';
+
+const api = axios.create({
+  baseURL: '/api',
+  timeout: 10000,
+  headers: {
+    'Content-Type': 'application/json',
+  },
+});
+
+// Request Interceptor
+api.interceptors.request.use(
+  (config) => {
+    const token = localStorage.getItem('token');
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`;
+    }
+    return config;
+  },
+  (error) => Promise.reject(error)
+);
+
+// Response Interceptor
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response?.status === 401) {
+      localStorage.removeItem('token');
+      window.location.href = '/login';
+    }
+    return Promise.reject(error);
+  }
+);
+```
+
+### API Hook Patterns
+```typescript
+// Custom API Hooks
+const useApi = <T>(url: string, options?: RequestOptions) => {
+  const [data, setData] = useState<T | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  
+  const fetchData = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    
+    try {
+      const response = await api.get(url);
+      setData(response.data);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'An error occurred');
+    } finally {
+      setLoading(false);
+    }
+  }, [url]);
+  
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
+  
+  return { data, loading, error, refetch: fetchData };
+};
+```
+
+## 🎯 Form Handling Patterns
+
+### React Hook Form Integration
+```typescript
+// Form Component with Validation
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { z } from 'zod';
+
+const schema = z.object({
+  username: z.string().min(3, 'Username must be at least 3 characters'),
+  password: z.string().min(6, 'Password must be at least 6 characters'),
+  role: z.enum(['admin', 'guru', 'siswa'])
+});
+
+type FormData = z.infer<typeof schema>;
+
+const LoginForm = () => {
+  const { register, handleSubmit, formState: { errors } } = useForm<FormData>({
+    resolver: zodResolver(schema)
+  });
+  
+  const onSubmit = async (data: FormData) => {
+    try {
+      const response = await api.post('/login', data);
+      // Handle success
+    } catch (error) {
+      // Handle error
+    }
+  };
+  
+  return (
+    <form onSubmit={handleSubmit(onSubmit)}>
+      <Input
+        {...register('username')}
+        placeholder="Username"
+        error={errors.username?.message}
+      />
+      <Input
+        {...register('password')}
+        type="password"
+        placeholder="Password"
+        error={errors.password?.message}
+      />
+      <Button type="submit">Login</Button>
+    </form>
+  );
+};
+```
+
+## 🎨 UI Component Patterns
+
+### Shadcn/ui Component Usage
+```typescript
+// Card Component Pattern
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+
+const DataCard = ({ title, value, status }: DataCardProps) => (
+  <Card>
+    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+      <CardTitle className="text-sm font-medium">{title}</CardTitle>
+      <Badge variant={status === 'active' ? 'default' : 'secondary'}>
+        {status}
+      </Badge>
+    </CardHeader>
+    <CardContent>
+      <div className="text-2xl font-bold">{value}</div>
+    </CardContent>
+  </Card>
+);
+```
+
+### Table Component Patterns
+```typescript
+// Data Table Pattern
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+
+const DataTable = ({ data, columns }: DataTableProps) => (
+  <Table>
+    <TableHeader>
+      <TableRow>
+        {columns.map((column) => (
+          <TableHead key={column.key}>{column.label}</TableHead>
+        ))}
+      </TableRow>
+    </TableHeader>
+    <TableBody>
+      {data.map((row, index) => (
+        <TableRow key={index}>
+          {columns.map((column) => (
+            <TableCell key={column.key}>
+              {column.render ? column.render(row) : row[column.key]}
+            </TableCell>
+          ))}
+        </TableRow>
+      ))}
+    </TableBody>
+  </Table>
+);
+```
+
+## 🔄 Error Handling Patterns
+
+### Error Boundary Implementation
+```typescript
+// Error Boundary Component
+class ErrorBoundary extends React.Component<Props, State> {
+  constructor(props: Props) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+  
+  static getDerivedStateFromError(error: Error): State {
+    return { hasError: true, error };
+  }
+  
+  componentDidCatch(error: Error, errorInfo: ErrorInfo) {
+    console.error('Error caught by boundary:', error, errorInfo);
+  }
+  
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="flex items-center justify-center min-h-screen">
+          <Card>
+            <CardContent className="text-center">
+              <h2 className="text-xl font-semibold mb-2">Something went wrong</h2>
+              <p className="text-gray-600 mb-4">Please refresh the page and try again</p>
+              <Button onClick={() => window.location.reload()}>
+                Refresh Page
+              </Button>
+            </CardContent>
+          </Card>
+        </div>
+      );
+    }
+    
+    return this.props.children;
+  }
+}
+```
+
+### Error Handling in Components
+```typescript
+// Error Handling Hook
+const useErrorHandler = () => {
+  const [error, setError] = useState<string | null>(null);
+  
+  const handleError = useCallback((error: Error) => {
+    console.error('Error:', error);
+    setError(error.message);
+  }, []);
+  
+  const clearError = useCallback(() => {
+    setError(null);
+  }, []);
+  
+  return { error, handleError, clearError };
+};
+```
+
+## 🎨 Styling Patterns
+
+### Tailwind CSS Usage
+```typescript
+// Responsive Design Pattern
+const ResponsiveCard = () => (
+  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+    <Card className="p-4 hover:shadow-lg transition-shadow">
+      <CardContent>
+        <h3 className="text-lg font-semibold mb-2">Card Title</h3>
+        <p className="text-gray-600">Card content</p>
+      </CardContent>
+    </Card>
+  </div>
+);
+```
+
+### Dark Mode Support
+```typescript
+// Theme-aware Component
+const ThemedComponent = () => (
+  <div className="bg-white dark:bg-gray-900 text-gray-900 dark:text-white">
+    <h1 className="text-2xl font-bold">Themed Content</h1>
+  </div>
+);
+```
+
+## 🔧 Performance Optimization Patterns
+
+### React.memo Usage
+```typescript
+// Memoized Component
+const ExpensiveComponent = React.memo(({ data }: Props) => {
+  const processedData = useMemo(() => {
+    return data.map(item => ({
+      ...item,
+      processed: true
+    }));
+  }, [data]);
+  
+  return (
+    <div>
+      {processedData.map(item => (
+        <div key={item.id}>{item.name}</div>
+      ))}
+    </div>
+  );
+});
+```
+
+### Lazy Loading Pattern
+```typescript
+// Lazy Component Loading
+const LazyDashboard = lazy(() => import('./Dashboard'));
+
+const App = () => (
+  <Suspense fallback={<LoadingSpinner />}>
+    <LazyDashboard />
+  </Suspense>
+);
+```
+
+## 🧪 Testing Patterns
+
+### Component Testing
+```typescript
+// Component Test Example
+import { render, screen, fireEvent } from '@testing-library/react';
+import { LoginForm } from './LoginForm';
+
+describe('LoginForm', () => {
+  it('should render login form', () => {
+    render(<LoginForm />);
+    expect(screen.getByLabelText('Username')).toBeInTheDocument();
+    expect(screen.getByLabelText('Password')).toBeInTheDocument();
+  });
+  
+  it('should handle form submission', async () => {
+    const mockSubmit = jest.fn();
+    render(<LoginForm onSubmit={mockSubmit} />);
+    
+    fireEvent.change(screen.getByLabelText('Username'), {
+      target: { value: 'admin123' }
+    });
+    fireEvent.change(screen.getByLabelText('Password'), {
+      target: { value: 'admin123' }
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Login' }));
+    
+    expect(mockSubmit).toHaveBeenCalledWith({
+      username: 'admin123',
+      password: 'admin123'
+    });
+  });
+});
+```
+
+## 📱 Mobile Responsiveness Patterns
+
+### Mobile-First Design
+```typescript
+// Mobile-First Component
+const MobileFirstCard = () => (
+  <div className="w-full sm:w-1/2 md:w-1/3 lg:w-1/4">
+    <Card className="p-2 sm:p-4">
+      <CardContent className="text-sm sm:text-base">
+        <h3 className="font-semibold mb-2">Card Title</h3>
+        <p className="text-gray-600">Card content</p>
+      </CardContent>
+    </Card>
+  </div>
+);
+```
+
+## 🔧 Development Best Practices
+
+### Code Organization
+- **Component Separation**: Keep components focused and single-purpose
+- **Custom Hooks**: Extract reusable logic into custom hooks
+- **Type Safety**: Use TypeScript interfaces for all props and state
+- **Error Boundaries**: Implement error boundaries for better error handling
+
+### Performance Best Practices
+- **Memoization**: Use React.memo, useMemo, and useCallback appropriately
+- **Lazy Loading**: Implement code splitting for large components
+- **Bundle Optimization**: Use dynamic imports for heavy libraries
+- **Image Optimization**: Optimize images and use appropriate formats
+
+### Accessibility Best Practices
+- **Semantic HTML**: Use proper HTML elements
+- **ARIA Labels**: Add appropriate ARIA labels
+- **Keyboard Navigation**: Ensure keyboard accessibility
+- **Screen Reader Support**: Test with screen readers

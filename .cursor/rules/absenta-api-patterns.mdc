@@ -1,114 +1,326 @@
 ---
-globs: *.js
+globs: backend/routes/*.js,backend/controllers/*.js,backend/services/*.js
 description: API development patterns and conventions for Absenta backend
 ---
 
 # Absenta API Development Patterns
 
-## Authentication & Authorization
+## 🚀 API Endpoint Conventions
+
+### Standard HTTP Methods
 ```javascript
-// Always use these middleware for protected routes
-app.get('/api/admin/endpoint', authenticateToken, requireRole(['admin']), async (req, res) => {
-    // Endpoint logic
+// GET - Retrieve data
+app.get('/api/admin/siswa-perwakilan', getSiswaPerwakilan);
+
+// POST - Create new resources
+app.post('/api/attendance/submit', submitAttendance);
+
+// PUT - Update existing resources
+app.put('/api/admin/update-siswa/:id', updateSiswa);
+
+// DELETE - Remove resources
+app.delete('/api/admin/delete-siswa/:id', deleteSiswa);
+```
+
+### Response Format Standards
+```javascript
+// Success Response
+{
+  "success": true,
+  "message": "Operation successful",
+  "data": { /* response data */ },
+  "timestamp": "2025-01-13T10:30:00Z"
+}
+
+// Error Response
+{
+  "success": false,
+  "error": "Error description",
+  "message": "User-friendly message",
+  "details": { /* error details */ },
+  "timestamp": "2025-01-13T10:30:00Z"
+}
+```
+
+## 🔐 Authentication Patterns
+
+### JWT Token Implementation
+```javascript
+// Token Generation
+const token = jwt.sign(
+  { 
+    id: user.id, 
+    username: user.username, 
+    role: user.role 
+  },
+  JWT_SECRET,
+  { expiresIn: '24h' }
+);
+
+// Token Verification Middleware
+const authenticateToken = (req, res, next) => {
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1];
+  
+  if (!token) {
+    return res.status(401).json({ error: 'Access token required' });
+  }
+  
+  jwt.verify(token, JWT_SECRET, (err, user) => {
+    if (err) return res.status(403).json({ error: 'Invalid token' });
+    req.user = user;
+    next();
+  });
+};
+```
+
+### Role-Based Access Control
+```javascript
+// Admin Only Access
+const requireAdmin = (req, res, next) => {
+  if (req.user.role !== 'admin') {
+    return res.status(403).json({ error: 'Admin access required' });
+  }
+  next();
+};
+
+// Teacher or Admin Access
+const requireTeacherOrAdmin = (req, res, next) => {
+  if (!['admin', 'guru'].includes(req.user.role)) {
+    return res.status(403).json({ error: 'Teacher or admin access required' });
+  }
+  next();
+};
+```
+
+## 📊 Database Query Patterns
+
+### Repository Pattern Implementation
+```javascript
+// User Repository Example
+class UserRepository {
+  async findByUsername(username) {
+    const [rows] = await db.execute(
+      'SELECT * FROM pengguna WHERE username = ?',
+      [username]
+    );
+    return rows[0];
+  }
+  
+  async createUser(userData) {
+    const { username, password, role, status } = userData;
+    const hashedPassword = await bcrypt.hash(password, saltRounds);
+    
+    const [result] = await db.execute(
+      'INSERT INTO pengguna (username, password, role, status) VALUES (?, ?, ?, ?)',
+      [username, hashedPassword, role, status]
+    );
+    
+    return result.insertId;
+  }
+}
+```
+
+### Transaction Handling
+```javascript
+// Database Transaction Example
+const connection = await db.getConnection();
+try {
+  await connection.beginTransaction();
+  
+  // Multiple operations
+  await connection.execute('INSERT INTO table1 ...');
+  await connection.execute('INSERT INTO table2 ...');
+  
+  await connection.commit();
+} catch (error) {
+  await connection.rollback();
+  throw error;
+} finally {
+  connection.release();
+}
+```
+
+## 🛡️ Error Handling Patterns
+
+### Centralized Error Handler
+```javascript
+// Global Error Handler
+app.use((error, req, res, next) => {
+  console.error('Error:', error);
+  
+  if (error.type === 'entity.too.large') {
+    return res.status(413).json({
+      error: 'Payload terlalu besar',
+      code: 'PAYLOAD_TOO_LARGE'
+    });
+  }
+  
+  res.status(500).json({
+    error: 'Internal server error',
+    message: 'Terjadi kesalahan pada server'
+  });
 });
 ```
 
-## Response Patterns
+### Validation Error Handling
 ```javascript
-// Success responses
-res.success(data, 'Operation successful');
-
-// Error responses
-res.error('Error message', 'Operation failed');
-res.unauthorized('Invalid credentials');
-res.notFound('Resource not found');
+// Input Validation
+const validateInput = (req, res, next) => {
+  const { username, password } = req.body;
+  
+  if (!username || !password) {
+    return res.status(400).json({
+      error: 'Validation failed',
+      message: 'Username dan password diperlukan'
+    });
+  }
+  
+  next();
+};
 ```
 
-## Database Query Patterns (Based on absenta13.sql)
+## 📈 Performance Optimization Patterns
+
+### Database Query Optimization
 ```javascript
-// User queries - use users table (not pengguna)
-const [rows] = await db.execute(
-    'SELECT * FROM users WHERE username = ? AND role = ?',
-    [username, role]
-);
+// Indexed Queries
+const getSiswaWithPagination = async (page = 1, limit = 10) => {
+  const offset = (page - 1) * limit;
+  
+  const [rows] = await db.execute(`
+    SELECT s.*, p.username, p.status 
+    FROM siswa_perwakilan s
+    JOIN pengguna p ON s.user_id = p.id
+    WHERE p.role = 'siswa'
+    ORDER BY s.nama_siswa
+    LIMIT ? OFFSET ?
+  `, [limit, offset]);
+  
+  return rows;
+};
+```
 
-// Subject queries - use mapel table with id_mapel
-const [subjects] = await db.execute(
-    'SELECT * FROM mapel WHERE status = "aktif" ORDER BY nama_mapel'
-);
-
-// JOIN patterns with users table
-const [data] = await db.execute(`
-    SELECT g.*, u.username, u.status as user_status
-    FROM guru g
-    LEFT JOIN users u ON g.user_id = u.id
-`);
-
-// Schedule queries with multi-teacher support
-const [schedules] = await db.execute(`
-    SELECT 
-        j.*,
-        m.nama_mapel,
-        k.nama_kelas,
-        g.nama as nama_guru,
-        'primary' as role
-    FROM jadwal j
-    JOIN mapel m ON j.mapel_id = m.id_mapel
-    JOIN kelas k ON j.kelas_id = k.id_kelas
-    JOIN guru g ON j.guru_id = g.id_guru
-    WHERE j.status = 'aktif'
+### Caching Implementation
+```javascript
+// Redis Caching
+const cacheMiddleware = (duration = 300) => {
+  return async (req, res, next) => {
+    const key = `cache:${req.originalUrl}`;
+    const cached = await redis.get(key);
     
-    UNION ALL
-    
-    SELECT 
-        j.*,
-        m.nama_mapel,
-        k.nama_kelas,
-        g.nama as nama_guru,
-        jgt.role
-    FROM jadwal j
-    JOIN mapel m ON j.mapel_id = m.id_mapel
-    JOIN kelas k ON j.kelas_id = k.id_kelas
-    JOIN jadwal_guru_tambahan jgt ON j.id_jadwal = jgt.jadwal_id
-    JOIN guru g ON jgt.guru_id = g.id_guru
-    WHERE j.status = 'aktif' AND jgt.status = 'aktif'
-`);
-```
-
-## Error Handling
-```javascript
-try {
-    // Database operations
-    const [result] = await db.execute(query, params);
-    console.log('✅ Operation successful');
-    res.success(result, 'Operation completed');
-} catch (error) {
-    console.error('❌ Operation failed:', error);
-    res.error('Internal server error', 'Operation failed');
-}
-```
-
-## Validation Patterns
-```javascript
-// Required field validation
-if (!username || !password) {
-    return res.status(400).json({ error: 'Username and password are required' });
-}
-
-// Uniqueness validation
-const [existing] = await db.execute('SELECT id FROM pengguna WHERE nama_pengguna = ?', [username]);
-if (existing.length > 0) {
-    return res.status(400).json({ error: 'Username already exists' });
-}
-```
-
-## Caching Patterns
-```javascript
-// Use cache middleware for GET endpoints
-app.get('/api/endpoint', 
-    cacheMiddleware(300, (req) => `cache:key:${JSON.stringify(req.query)}`), 
-    async (req, res) => {
-        // Endpoint logic
+    if (cached) {
+      return res.json(JSON.parse(cached));
     }
-);
+    
+    res.sendResponse = res.json;
+    res.json = (body) => {
+      redis.setex(key, duration, JSON.stringify(body));
+      res.sendResponse(body);
+    };
+    
+    next();
+  };
+};
 ```
+
+## 🔄 API Versioning Patterns
+
+### URL Versioning
+```javascript
+// Version 1 API
+app.use('/api/v1/admin', adminRouter);
+app.use('/api/v1/attendance', attendanceRouter);
+
+// Version 2 API (Future)
+app.use('/api/v2/admin', adminV2Router);
+```
+
+### Header Versioning
+```javascript
+// API Version Detection
+const apiVersion = (req, res, next) => {
+  const version = req.headers['api-version'] || 'v1';
+  req.apiVersion = version;
+  next();
+};
+```
+
+## 📝 Logging Patterns
+
+### Request Logging
+```javascript
+// Request Logger Middleware
+const requestLogger = (req, res, next) => {
+  const start = Date.now();
+  
+  res.on('finish', () => {
+    const duration = Date.now() - start;
+    console.log(`${req.method} ${req.url} - ${res.statusCode} - ${duration}ms`);
+  });
+  
+  next();
+};
+```
+
+### Error Logging
+```javascript
+// Error Logger
+const logError = (error, req) => {
+  console.error('API Error:', {
+    message: error.message,
+    stack: error.stack,
+    url: req.url,
+    method: req.method,
+    timestamp: new Date().toISOString()
+  });
+};
+```
+
+## 🧪 Testing Patterns
+
+### API Testing Structure
+```javascript
+// Test Setup
+describe('Authentication API', () => {
+  beforeEach(async () => {
+    // Setup test database
+    await setupTestData();
+  });
+  
+  afterEach(async () => {
+    // Cleanup test data
+    await cleanupTestData();
+  });
+  
+  it('should authenticate valid user', async () => {
+    const response = await request(app)
+      .post('/api/login')
+      .send({ username: 'admin123', password: 'admin123' });
+    
+    expect(response.status).toBe(200);
+    expect(response.body.success).toBe(true);
+    expect(response.body.token).toBeDefined();
+  });
+});
+```
+
+## 🔧 Development Best Practices
+
+### Code Organization
+- **Single Responsibility**: Each function has one purpose
+- **DRY Principle**: Don't repeat yourself
+- **Consistent Naming**: Use clear, descriptive names
+- **Error Handling**: Always handle errors gracefully
+
+### Security Best Practices
+- **Input Validation**: Validate all inputs
+- **SQL Injection Prevention**: Use parameterized queries
+- **Rate Limiting**: Implement request throttling
+- **CORS Configuration**: Proper cross-origin setup
+
+### Performance Best Practices
+- **Database Indexing**: Optimize query performance
+- **Connection Pooling**: Efficient database connections
+- **Caching**: Implement appropriate caching
+- **Compression**: Use gzip compression

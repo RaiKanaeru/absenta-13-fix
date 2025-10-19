@@ -331,8 +331,8 @@ const LoadBalancerView: React.FC = () => {
     const { loadBalancer, queryOptimizer, system } = performance;
     
     // Get query cache stats from load balancer (integrated)
-    const queryCacheStats = loadBalancer?.queryCache || { size: 0, entries: [] };
-    const queryStats = loadBalancer?.queryStats || {};
+    const queryCacheStats = (loadBalancer as any)?.queryCache || { size: 0, entries: [] };
+    const queryStats = (loadBalancer as any)?.queryStats || {};
 
     return (
         <div className="space-y-6">
@@ -444,7 +444,7 @@ const LoadBalancerView: React.FC = () => {
 
             {/* Data Simulasi Warning Badge */}
             {performance && (
-                <Alert variant="warning" className="mb-4">
+                <Alert variant="destructive" className="mb-4">
                     <Info className="h-4 w-4" />
                     <AlertDescription>
                         <strong>Mode Simulasi:</strong> Data performa sistem menggunakan data placeholder. 
@@ -704,8 +704,8 @@ const LoadBalancerView: React.FC = () => {
                                             <div key={queryName} className="border rounded p-2">
                                                 <div className="font-medium text-sm">{queryName}</div>
                                                 <div className="text-xs text-gray-600 space-y-1">
-                                                    <div>Count: {stats && typeof stats.count === 'number' && !isNaN(stats.count) ? stats.count : 0} | Avg: {stats && typeof stats.averageTime === 'number' && !isNaN(stats.averageTime) ? stats.averageTime.toFixed(2) : '0.00'}ms</div>
-                                                    <div>Success: {stats && typeof stats.successCount === 'number' && !isNaN(stats.successCount) ? stats.successCount : 0} | Failed: {stats && typeof stats.failureCount === 'number' && !isNaN(stats.failureCount) ? stats.failureCount : 0}</div>
+                                                    <div>Count: {stats && typeof (stats as any).count === 'number' && !isNaN((stats as any).count) ? (stats as any).count : 0} | Avg: {stats && typeof (stats as any).averageTime === 'number' && !isNaN((stats as any).averageTime) ? (stats as any).averageTime.toFixed(2) : '0.00'}ms</div>
+                                                    <div>Success: {stats && typeof (stats as any).successCount === 'number' && !isNaN((stats as any).successCount) ? (stats as any).successCount : 0} | Failed: {stats && typeof (stats as any).failureCount === 'number' && !isNaN((stats as any).failureCount) ? (stats as any).failureCount : 0}</div>
                                                 </div>
                                             </div>
                                         )) : 

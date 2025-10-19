@@ -1,25 +1,120 @@
 ---
-globs: *.js,*.tsx
+globs: backend/**/*.js,frontend/src/**/*.tsx,frontend/src/**/*.ts
 description: Error handling patterns and best practices for Absenta system
 ---
 
-# Absenta Error Handling - Complete Guide
+# Absenta Error Handling Patterns
 
-## 🚨 Error Handling Overview
+## 🚨 Error Classification System
 
-**Absenta** menggunakan sistem error handling yang komprehensif untuk memastikan stabilitas dan keandalan sistem dengan graceful degradation dan user-friendly error messages.
+### Error Types and Severity Levels
+```javascript
+// Error classification
+const ERROR_TYPES = {
+  VALIDATION_ERROR: 'VALIDATION_ERROR',
+  AUTHENTICATION_ERROR: 'AUTHENTICATION_ERROR',
+  AUTHORIZATION_ERROR: 'AUTHORIZATION_ERROR',
+  DATABASE_ERROR: 'DATABASE_ERROR',
+  NETWORK_ERROR: 'NETWORK_ERROR',
+  BUSINESS_LOGIC_ERROR: 'BUSINESS_LOGIC_ERROR',
+  SYSTEM_ERROR: 'SYSTEM_ERROR'
+};
 
-## 🔧 Backend Error Handling
+const ERROR_SEVERITY = {
+  LOW: 'LOW',
+  MEDIUM: 'MEDIUM',
+  HIGH: 'HIGH',
+  CRITICAL: 'CRITICAL'
+};
+
+// Error severity mapping
+const ERROR_SEVERITY_MAP = {
+  [ERROR_TYPES.VALIDATION_ERROR]: ERROR_SEVERITY.LOW,
+  [ERROR_TYPES.AUTHENTICATION_ERROR]: ERROR_SEVERITY.MEDIUM,
+  [ERROR_TYPES.AUTHORIZATION_ERROR]: ERROR_SEVERITY.MEDIUM,
+  [ERROR_TYPES.DATABASE_ERROR]: ERROR_SEVERITY.HIGH,
+  [ERROR_TYPES.NETWORK_ERROR]: ERROR_SEVERITY.MEDIUM,
+  [ERROR_TYPES.BUSINESS_LOGIC_ERROR]: ERROR_SEVERITY.MEDIUM,
+  [ERROR_TYPES.SYSTEM_ERROR]: ERROR_SEVERITY.CRITICAL
+};
+```
+
+## 🔧 Custom Error Classes
+
+### Base Error Class
+```javascript
+// Base error class
+class AbsentaError extends Error {
+  constructor(message, type, severity, statusCode, details = null) {
+    super(message);
+    this.name = 'AbsentaError';
+    this.type = type;
+    this.severity = severity;
+    this.statusCode = statusCode;
+    this.details = details;
+    this.timestamp = new Date().toISOString();
+    this.stack = this.stack;
+  }
+  
+  toJSON() {
+    return {
+      name: this.name,
+      message: this.message,
+      type: this.type,
+      severity: this.severity,
+      statusCode: this.statusCode,
+      details: this.details,
+      timestamp: this.timestamp
+    };
+  }
+}
+
+// Specific error classes
+class ValidationError extends AbsentaError {
+  constructor(message, details = null) {
+    super(message, ERROR_TYPES.VALIDATION_ERROR, ERROR_SEVERITY.LOW, 400, details);
+    this.name = 'ValidationError';
+  }
+}
+
+class AuthenticationError extends AbsentaError {
+  constructor(message, details = null) {
+    super(message, ERROR_TYPES.AUTHENTICATION_ERROR, ERROR_SEVERITY.MEDIUM, 401, details);
+    this.name = 'AuthenticationError';
+  }
+}
+
+class AuthorizationError extends AbsentaError {
+  constructor(message, details = null) {
+    super(message, ERROR_TYPES.AUTHORIZATION_ERROR, ERROR_SEVERITY.MEDIUM, 403, details);
+    this.name = 'AuthorizationError';
+  }
+}
+
+class DatabaseError extends AbsentaError {
+  constructor(message, details = null) {
+    super(message, ERROR_TYPES.DATABASE_ERROR, ERROR_SEVERITY.HIGH, 500, details);
+    this.name = 'DatabaseError';
+  }
+}
+
+class BusinessLogicError extends AbsentaError {
+  constructor(message, details = null) {
+    super(message, ERROR_TYPES.BUSINESS_LOGIC_ERROR, ERROR_SEVERITY.MEDIUM, 422, details);
+    this.name = 'BusinessLogicError';
+  }
+}
+```
+
+## 🛡️ Backend Error Handling
 
 ### Global Error Handler
 ```javascript
-// Global error handler untuk Express.js
-app.use((error, req, res, next) => {
-  console.error('Global Error Handler:', error);
-  
-  // Log error dengan context
-  logger.error('Unhandled Error', {
-    error: error.message,
+// Global error handler middleware
+const globalErrorHandler = (error, req, res, next) => {
+  // Log error
+  console.error('Error occurred:', {
+    message: error.message,
     stack: error.stack,
     url: req.url,
     method: req.method,
@@ -28,186 +123,94 @@ app.use((error, req, res, next) => {
     timestamp: new Date().toISOString()
   });
   
-  // Determine error type and response
-  if (error.name === 'ValidationError') {
-    return res.status(400).json({
-      success: false,
-      error: 'Data tidak valid',
-      details: error.details,
-      code: 'VALIDATION_ERROR'
-    });
-  }
-  
-  if (error.name === 'UnauthorizedError') {
-    return res.status(401).json({
-      success: false,
-      error: 'Sesi Anda telah berakhir. Silakan login kembali.',
-      code: 'UNAUTHORIZED'
-    });
-  }
-  
-  if (error.name === 'ForbiddenError') {
-    return res.status(403).json({
-      success: false,
-      error: 'Anda tidak memiliki izin untuk mengakses resource ini.',
-      code: 'FORBIDDEN'
-    });
-  }
-  
-  if (error.name === 'NotFoundError') {
-    return res.status(404).json({
-      success: false,
-      error: 'Resource tidak ditemukan.',
-      code: 'NOT_FOUND'
-    });
-  }
-  
-  // Database errors
-  if (error.code === 'ER_DUP_ENTRY') {
-    return res.status(409).json({
-      success: false,
-      error: 'Data sudah ada dalam sistem.',
-      code: 'DUPLICATE_ENTRY'
-    });
-  }
-  
-  if (error.code === 'ER_NO_REFERENCED_ROW_2') {
-    return res.status(400).json({
-      success: false,
-      error: 'Data referensi tidak ditemukan.',
-      code: 'FOREIGN_KEY_CONSTRAINT'
-    });
-  }
-  
-  // Default server error
-  return res.status(500).json({
+  // Determine error response
+  let statusCode = 500;
+  let errorResponse = {
     success: false,
-    error: 'Terjadi kesalahan pada server. Silakan coba lagi.',
-    code: 'INTERNAL_SERVER_ERROR',
-    ...(process.env.NODE_ENV === 'development' && { details: error.message })
-  });
-});
-```
-
-### Custom Error Classes
-```javascript
-// Custom error classes untuk Absenta
-class AbsentaError extends Error {
-  constructor(message, code, statusCode = 500, details = null) {
-    super(message);
-    this.name = 'AbsentaError';
-    this.code = code;
-    this.statusCode = statusCode;
-    this.details = details;
-    this.timestamp = new Date().toISOString();
+    error: 'Internal server error',
+    message: 'Terjadi kesalahan pada server'
+  };
+  
+  if (error instanceof AbsentaError) {
+    statusCode = error.statusCode;
+    errorResponse = {
+      success: false,
+      error: error.message,
+      type: error.type,
+      details: error.details
+    };
+  } else if (error.name === 'ValidationError') {
+    statusCode = 400;
+    errorResponse = {
+      success: false,
+      error: 'Validation failed',
+      message: error.message,
+      details: error.details
+    };
+  } else if (error.name === 'JsonWebTokenError') {
+    statusCode = 401;
+    errorResponse = {
+      success: false,
+      error: 'Invalid token',
+      message: 'Token tidak valid'
+    };
+  } else if (error.name === 'TokenExpiredError') {
+    statusCode = 401;
+    errorResponse = {
+      success: false,
+      error: 'Token expired',
+      message: 'Token telah kedaluwarsa'
+    };
   }
-}
-
-class ValidationError extends AbsentaError {
-  constructor(message, details = null) {
-    super(message, 'VALIDATION_ERROR', 400, details);
-    this.name = 'ValidationError';
-  }
-}
-
-class AuthenticationError extends AbsentaError {
-  constructor(message = 'Autentikasi gagal') {
-    super(message, 'AUTHENTICATION_ERROR', 401);
-    this.name = 'AuthenticationError';
-  }
-}
-
-class AuthorizationError extends AbsentaError {
-  constructor(message = 'Anda tidak memiliki izin untuk melakukan aksi ini') {
-    super(message, 'AUTHORIZATION_ERROR', 403);
-    this.name = 'AuthorizationError';
-  }
-}
-
-class NotFoundError extends AbsentaError {
-  constructor(resource = 'Resource') {
-    super(`${resource} tidak ditemukan`, 'NOT_FOUND', 404);
-    this.name = 'NotFoundError';
-  }
-}
-
-class DatabaseError extends AbsentaError {
-  constructor(message, originalError = null) {
-    super(message, 'DATABASE_ERROR', 500, originalError);
-    this.name = 'DatabaseError';
-  }
-}
-
-class AttendanceError extends AbsentaError {
-  constructor(message, details = null) {
-    super(message, 'ATTENDANCE_ERROR', 400, details);
-    this.name = 'AttendanceError';
-  }
-}
-
-// Export error classes
-module.exports = {
-  AbsentaError,
-  ValidationError,
-  AuthenticationError,
-  AuthorizationError,
-  NotFoundError,
-  DatabaseError,
-  AttendanceError
+  
+  // Send error response
+  res.status(statusCode).json(errorResponse);
 };
 ```
 
 ### Database Error Handling
 ```javascript
-// Database error handling utilities
-const handleDatabaseError = (error, operation = 'database operation') => {
-  console.error(`Database Error in ${operation}:`, error);
+// Database error handler
+const handleDatabaseError = (error, operation) => {
+  console.error(`Database error in ${operation}:`, error);
   
-  // MySQL specific error handling
-  switch (error.code) {
-    case 'ER_DUP_ENTRY':
-      throw new ValidationError('Data sudah ada dalam sistem', {
-        field: error.sqlMessage.match(/for key '(.+)'/)?.[1],
-        value: error.sqlMessage.match(/Duplicate entry '(.+)'/)?.[1]
-      });
-    
-    case 'ER_NO_REFERENCED_ROW_2':
-      throw new ValidationError('Data referensi tidak ditemukan', {
-        constraint: error.sqlMessage.match(/FOREIGN KEY constraint fails/)?.[0]
-      });
-    
-    case 'ER_ROW_IS_REFERENCED_2':
-      throw new ValidationError('Data tidak dapat dihapus karena masih digunakan', {
-        constraint: error.sqlMessage.match(/FOREIGN KEY constraint fails/)?.[0]
-      });
-    
-    case 'ER_BAD_FIELD_ERROR':
-      throw new DatabaseError('Field tidak ditemukan dalam tabel', error);
-    
-    case 'ER_TABLE_DOESNT_EXIST':
-      throw new DatabaseError('Tabel tidak ditemukan', error);
-    
-    case 'ER_ACCESS_DENIED_ERROR':
-      throw new DatabaseError('Akses database ditolak', error);
-    
-    case 'ER_CON_COUNT_ERROR':
-      throw new DatabaseError('Terlalu banyak koneksi database', error);
-    
-    case 'ER_LOCK_WAIT_TIMEOUT':
-      throw new DatabaseError('Timeout menunggu lock database', error);
-    
-    default:
-      throw new DatabaseError(`Database error: ${error.message}`, error);
+  if (error.code === 'ER_DUP_ENTRY') {
+    throw new ValidationError('Data sudah ada', {
+      field: error.sqlMessage.match(/for key '(.+)'/)?.[1],
+      operation
+    });
   }
+  
+  if (error.code === 'ER_NO_REFERENCED_ROW_2') {
+    throw new ValidationError('Data referensi tidak ditemukan', {
+      operation
+    });
+  }
+  
+  if (error.code === 'ER_ROW_IS_REFERENCED_2') {
+    throw new BusinessLogicError('Data tidak dapat dihapus karena masih digunakan', {
+      operation
+    });
+  }
+  
+  if (error.code === 'ER_CONNECTION_LOST') {
+    throw new DatabaseError('Koneksi database terputus', {
+      operation
+    });
+  }
+  
+  throw new DatabaseError('Database error occurred', {
+    operation,
+    code: error.code
+  });
 };
 
-// Safe database execution wrapper
-const safeDbExecute = async (query, params = [], operation = 'database operation') => {
+// Database operation wrapper
+const safeDatabaseOperation = async (operation, ...args) => {
   try {
-    const [result] = await db.execute(query, params);
-    return result;
+    return await operation(...args);
   } catch (error) {
-    handleDatabaseError(error, operation);
+    handleDatabaseError(error, operation.name);
   }
 };
 ```
@@ -216,46 +219,35 @@ const safeDbExecute = async (query, params = [], operation = 'database operation
 ```javascript
 // API error handling middleware
 const apiErrorHandler = (req, res, next) => {
-  // Wrap async functions to catch errors
-  const wrapAsync = (fn) => {
+  // Handle async errors
+  const asyncHandler = (fn) => {
     return (req, res, next) => {
       Promise.resolve(fn(req, res, next)).catch(next);
     };
   };
   
-  return wrapAsync;
-};
-
-// Attendance API error handling
-const handleAttendanceErrors = async (req, res, next) => {
-  try {
-    // Validate required fields
-    const { scheduleId, attendance } = req.body;
-    
-    if (!scheduleId) {
-      throw new ValidationError('Schedule ID diperlukan');
+  // Handle specific API errors
+  const handleAPIError = (error, req, res, next) => {
+    if (error.type === 'entity.too.large') {
+      return res.status(413).json({
+        success: false,
+        error: 'Payload too large',
+        message: 'Ukuran data terlalu besar'
+      });
     }
     
-    if (!attendance || Object.keys(attendance).length === 0) {
-      throw new ValidationError('Data absensi diperlukan');
+    if (error.code === 'LIMIT_FILE_SIZE') {
+      return res.status(413).json({
+        success: false,
+        error: 'File too large',
+        message: 'Ukuran file terlalu besar'
+      });
     }
     
-    // Validate attendance data
-    const validStatuses = ['Hadir', 'Izin', 'Sakit', 'Alpa', 'Dispen'];
-    for (const [studentId, status] of Object.entries(attendance)) {
-      if (!validStatuses.includes(status)) {
-        throw new ValidationError(`Status tidak valid: ${status}`, {
-          studentId,
-          status,
-          validStatuses
-        });
-      }
-    }
-    
-    next();
-  } catch (error) {
     next(error);
-  }
+  };
+  
+  return { asyncHandler, handleAPIError };
 };
 ```
 
@@ -263,174 +255,161 @@ const handleAttendanceErrors = async (req, res, next) => {
 
 ### Error Boundary Component
 ```typescript
-// React Error Boundary untuk menangkap error di komponen
-import React, { Component, ErrorInfo, ReactNode } from 'react';
-
-interface Props {
-  children: ReactNode;
-  fallback?: ReactNode;
-}
-
-interface State {
+// Error boundary for React components
+interface ErrorBoundaryState {
   hasError: boolean;
-  error?: Error;
-  errorInfo?: ErrorInfo;
+  error: Error | null;
+  errorInfo: ErrorInfo | null;
 }
 
-class ErrorBoundary extends Component<Props, State> {
-  constructor(props: Props) {
+class ErrorBoundary extends React.Component<PropsWithChildren<{}>, ErrorBoundaryState> {
+  constructor(props: PropsWithChildren<{}>) {
     super(props);
-    this.state = { hasError: false };
+    this.state = {
+      hasError: false,
+      error: null,
+      errorInfo: null
+    };
   }
-
-  static getDerivedStateFromError(error: Error): State {
-    return { hasError: true, error };
+  
+  static getDerivedStateFromError(error: Error): ErrorBoundaryState {
+    return {
+      hasError: true,
+      error,
+      errorInfo: null
+    };
   }
-
+  
   componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-    console.error('Error Boundary caught an error:', error, errorInfo);
+    console.error('Error caught by boundary:', error, errorInfo);
     
     // Log error to monitoring service
-    this.logErrorToService(error, errorInfo);
+    this.logError(error, errorInfo);
     
-    this.setState({ error, errorInfo });
+    this.setState({
+      error,
+      errorInfo
+    });
   }
-
-  logErrorToService = (error: Error, errorInfo: ErrorInfo) => {
+  
+  private logError = (error: Error, errorInfo: ErrorInfo) => {
     // Send error to monitoring service
-    fetch('/api/errors', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        error: error.message,
+    if (process.env.NODE_ENV === 'production') {
+      // Send to Sentry or other monitoring service
+      console.error('Error logged:', {
+        message: error.message,
         stack: error.stack,
-        componentStack: errorInfo.componentStack,
-        timestamp: new Date().toISOString(),
-        userAgent: navigator.userAgent,
-        url: window.location.href
-      })
-    }).catch(console.error);
+        componentStack: errorInfo.componentStack
+      });
+    }
   };
-
+  
   render() {
     if (this.state.hasError) {
-      return this.props.fallback || (
-        <div className="error-boundary">
-          <h2>Terjadi Kesalahan</h2>
-          <p>Maaf, terjadi kesalahan yang tidak terduga. Silakan refresh halaman atau hubungi administrator.</p>
-          <button onClick={() => window.location.reload()}>
-            Refresh Halaman
-          </button>
-          {process.env.NODE_ENV === 'development' && (
-            <details>
-              <summary>Error Details</summary>
-              <pre>{this.state.error?.stack}</pre>
-            </details>
-          )}
+      return (
+        <div className="flex items-center justify-center min-h-screen">
+          <Card className="w-full max-w-md">
+            <CardContent className="text-center p-6">
+              <AlertCircle className="h-12 w-12 text-red-500 mx-auto mb-4" />
+              <h2 className="text-xl font-semibold mb-2">Something went wrong</h2>
+              <p className="text-gray-600 mb-4">
+                We're sorry, but something unexpected happened.
+              </p>
+              <Button onClick={() => window.location.reload()}>
+                Refresh Page
+              </Button>
+            </CardContent>
+          </Card>
         </div>
       );
     }
-
+    
     return this.props.children;
   }
 }
-
-export default ErrorBoundary;
 ```
 
 ### API Error Handling Hook
 ```typescript
-// Custom hook untuk menangani API errors
-import { useState, useCallback } from 'react';
-import { toast } from '@/hooks/use-toast';
-
-interface ApiError {
-  message: string;
-  code?: string;
-  details?: any;
-}
-
-export const useApiError = () => {
-  const [error, setError] = useState<ApiError | null>(null);
-  const [loading, setLoading] = useState(false);
-
-  const handleApiCall = useCallback(async <T>(
-    apiCall: () => Promise<T>,
-    options: {
-      showToast?: boolean;
-      errorMessage?: string;
-      onSuccess?: (data: T) => void;
-      onError?: (error: ApiError) => void;
-    } = {}
-  ): Promise<T | null> => {
-    const {
-      showToast = true,
-      errorMessage = 'Terjadi kesalahan',
-      onSuccess,
-      onError
-    } = options;
-
-    setLoading(true);
-    setError(null);
-
-    try {
-      const result = await apiCall();
-      
-      if (onSuccess) {
-        onSuccess(result);
-      }
-      
-      return result;
-    } catch (err: any) {
-      const apiError: ApiError = {
-        message: err.message || errorMessage,
-        code: err.code,
-        details: err.details
-      };
-      
-      setError(apiError);
-      
-      if (showToast) {
-        toast({
-          title: "Error",
-          description: apiError.message,
-          variant: "destructive"
-        });
-      }
-      
-      if (onError) {
-        onError(apiError);
-      }
-      
-      return null;
-    } finally {
-      setLoading(false);
+// Custom hook for API error handling
+const useAPIError = () => {
+  const [error, setError] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  
+  const handleError = useCallback((error: any) => {
+    console.error('API Error:', error);
+    
+    let errorMessage = 'An unexpected error occurred';
+    
+    if (error.response?.data?.error) {
+      errorMessage = error.response.data.error;
+    } else if (error.response?.data?.message) {
+      errorMessage = error.response.data.message;
+    } else if (error.message) {
+      errorMessage = error.message;
     }
+    
+    setError(errorMessage);
   }, []);
-
+  
   const clearError = useCallback(() => {
     setError(null);
   }, []);
-
+  
+  const executeWithErrorHandling = useCallback(async (operation: () => Promise<any>) => {
+    setIsLoading(true);
+    setError(null);
+    
+    try {
+      const result = await operation();
+      return result;
+    } catch (err) {
+      handleError(err);
+      throw err;
+    } finally {
+      setIsLoading(false);
+    }
+  }, [handleError]);
+  
   return {
     error,
-    loading,
-    handleApiCall,
-    clearError
+    isLoading,
+    handleError,
+    clearError,
+    executeWithErrorHandling
   };
 };
 ```
 
 ### Form Error Handling
 ```typescript
-// Form error handling utilities
-export const useFormErrors = () => {
+// Form error handling component
+interface FormErrorProps {
+  error: string | null;
+  field?: string;
+}
+
+const FormError: React.FC<FormErrorProps> = ({ error, field }) => {
+  if (!error) return null;
+  
+  return (
+    <div className="text-red-500 text-sm mt-1">
+      {field ? `${field}: ${error}` : error}
+    </div>
+  );
+};
+
+// Form validation error handling
+const useFormError = () => {
   const [errors, setErrors] = useState<Record<string, string>>({});
-
+  
   const setError = useCallback((field: string, message: string) => {
-    setErrors(prev => ({ ...prev, [field]: message }));
+    setErrors(prev => ({
+      ...prev,
+      [field]: message
+    }));
   }, []);
-
+  
   const clearError = useCallback((field: string) => {
     setErrors(prev => {
       const newErrors = { ...prev };
@@ -438,317 +417,224 @@ export const useFormErrors = () => {
       return newErrors;
     });
   }, []);
-
+  
   const clearAllErrors = useCallback(() => {
     setErrors({});
   }, []);
-
+  
   const hasError = useCallback((field: string) => {
     return !!errors[field];
   }, [errors]);
-
-  const getError = useCallback((field: string) => {
-    return errors[field];
-  }, [errors]);
-
-  const hasAnyError = useCallback(() => {
-    return Object.keys(errors).length > 0;
-  }, [errors]);
-
+  
   return {
     errors,
     setError,
     clearError,
     clearAllErrors,
-    hasError,
-    getError,
-    hasAnyError
+    hasError
   };
 };
 ```
 
-## 📊 Error Monitoring & Logging
+## 📊 Error Logging and Monitoring
 
-### Error Logging Service
+### Error Logger
 ```javascript
-// Centralized error logging service
+// Comprehensive error logger
 const errorLogger = {
-  // Log levels
-  levels: {
-    ERROR: 'error',
-    WARN: 'warn',
-    INFO: 'info',
-    DEBUG: 'debug'
-  },
-  
-  // Log error with context
-  log: (level, message, context = {}) => {
+  logError: (error, context = {}) => {
     const logEntry = {
-      level,
-      message,
-      context,
       timestamp: new Date().toISOString(),
-      environment: process.env.NODE_ENV,
-      version: process.env.APP_VERSION || '1.0.0'
+      level: 'ERROR',
+      message: error.message,
+      stack: error.stack,
+      type: error.type || 'UNKNOWN',
+      severity: error.severity || 'MEDIUM',
+      context: {
+        ...context,
+        userAgent: context.userAgent || 'Unknown',
+        ip: context.ip || 'Unknown',
+        url: context.url || 'Unknown'
+      }
     };
     
     // Console logging
-    console[level](JSON.stringify(logEntry, null, 2));
+    console.error('Error logged:', logEntry);
     
-    // File logging (if configured)
-    if (process.env.LOG_FILE) {
-      fs.appendFileSync(process.env.LOG_FILE, JSON.stringify(logEntry) + '\n');
-    }
+    // File logging
+    fs.appendFileSync('logs/error.log', JSON.stringify(logEntry) + '\n');
     
-    // External logging service (if configured)
-    if (process.env.LOG_SERVICE_URL) {
-      fetch(process.env.LOG_SERVICE_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(logEntry)
-      }).catch(console.error);
+    // Send to monitoring service in production
+    if (process.env.NODE_ENV === 'production') {
+      sendToMonitoringService(logEntry);
     }
   },
   
-  // Specific error logging methods
-  error: (message, context) => this.log('error', message, context),
-  warn: (message, context) => this.log('warn', message, context),
-  info: (message, context) => this.log('info', message, context),
-  debug: (message, context) => this.log('debug', message, context)
-};
-```
-
-### Error Recovery Strategies
-```javascript
-// Error recovery strategies
-const errorRecovery = {
-  // Retry with exponential backoff
-  retryWithBackoff: async (fn, maxRetries = 3, baseDelay = 1000) => {
-    for (let attempt = 1; attempt <= maxRetries; attempt++) {
-      try {
-        return await fn();
-      } catch (error) {
-        if (attempt === maxRetries) {
-          throw error;
-        }
-        
-        const delay = baseDelay * Math.pow(2, attempt - 1);
-        console.log(`Retry attempt ${attempt} after ${delay}ms`);
-        await new Promise(resolve => setTimeout(resolve, delay));
-      }
-    }
-  },
-  
-  // Fallback data
-  withFallback: async (primaryFn, fallbackFn, fallbackData = null) => {
-    try {
-      return await primaryFn();
-    } catch (error) {
-      console.warn('Primary function failed, using fallback:', error.message);
-      
-      try {
-        return await fallbackFn();
-      } catch (fallbackError) {
-        console.error('Fallback function also failed:', fallbackError.message);
-        return fallbackData;
-      }
-    }
-  },
-  
-  // Circuit breaker pattern
-  circuitBreaker: (fn, threshold = 5, timeout = 60000) => {
-    let failures = 0;
-    let lastFailureTime = 0;
-    let state = 'CLOSED'; // CLOSED, OPEN, HALF_OPEN
-    
-    return async (...args) => {
-      if (state === 'OPEN') {
-        if (Date.now() - lastFailureTime > timeout) {
-          state = 'HALF_OPEN';
-        } else {
-          throw new Error('Circuit breaker is OPEN');
-        }
-      }
-      
-      try {
-        const result = await fn(...args);
-        failures = 0;
-        state = 'CLOSED';
-        return result;
-      } catch (error) {
-        failures++;
-        lastFailureTime = Date.now();
-        
-        if (failures >= threshold) {
-          state = 'OPEN';
-        }
-        
-        throw error;
-      }
+  logWarning: (message, context = {}) => {
+    const logEntry = {
+      timestamp: new Date().toISOString(),
+      level: 'WARN',
+      message,
+      context
     };
+    
+    console.warn('Warning logged:', logEntry);
+    fs.appendFileSync('logs/warning.log', JSON.stringify(logEntry) + '\n');
+  },
+  
+  logInfo: (message, context = {}) => {
+    const logEntry = {
+      timestamp: new Date().toISOString(),
+      level: 'INFO',
+      message,
+      context
+    };
+    
+    console.log('Info logged:', logEntry);
+    fs.appendFileSync('logs/info.log', JSON.stringify(logEntry) + '\n');
   }
 };
 ```
 
-## 🚨 Error Prevention
-
-### Input Validation
+### Error Monitoring Service
 ```javascript
-// Input validation utilities
-const validators = {
-  // Email validation
-  email: (email) => {
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    return emailRegex.test(email);
-  },
-  
-  // Phone number validation
-  phone: (phone) => {
-    const phoneRegex = /^(\+62|62|0)[0-9]{9,13}$/;
-    return phoneRegex.test(phone);
-  },
-  
-  // NIS validation
-  nis: (nis) => {
-    const nisRegex = /^[0-9]{4,10}$/;
-    return nisRegex.test(nis);
-  },
-  
-  // NIP validation
-  nip: (nip) => {
-    const nipRegex = /^[0-9]{18,19}$/;
-    return nipRegex.test(nip);
-  },
-  
-  // Date validation
-  date: (date) => {
-    const dateObj = new Date(date);
-    return dateObj instanceof Date && !isNaN(dateObj.getTime());
-  },
-  
-  // Required field validation
-  required: (value) => {
-    return value !== null && value !== undefined && value !== '';
-  },
-  
-  // Length validation
-  length: (value, min, max) => {
-    return value.length >= min && value.length <= max;
-  }
-};
-
-// Validation middleware
-const validateInput = (schema) => {
-  return (req, res, next) => {
-    const errors = [];
-    
-    for (const [field, rules] of Object.entries(schema)) {
-      const value = req.body[field];
-      
-      for (const rule of rules) {
-        if (rule.required && !validators.required(value)) {
-          errors.push(`${field} diperlukan`);
-          continue;
-        }
-        
-        if (value && rule.type && !validators[rule.type](value)) {
-          errors.push(`${field} tidak valid`);
-        }
-        
-        if (value && rule.minLength && !validators.length(value, rule.minLength, Infinity)) {
-          errors.push(`${field} minimal ${rule.minLength} karakter`);
-        }
-        
-        if (value && rule.maxLength && !validators.length(value, 0, rule.maxLength)) {
-          errors.push(`${field} maksimal ${rule.maxLength} karakter`);
-        }
-      }
-    }
-    
-    if (errors.length > 0) {
-      return res.status(400).json({
-        success: false,
-        error: 'Data tidak valid',
-        details: errors
+// Error monitoring service integration
+const sendToMonitoringService = async (logEntry) => {
+  try {
+    // Send to Sentry
+    if (process.env.SENTRY_DSN) {
+      Sentry.captureException(new Error(logEntry.message), {
+        tags: {
+          type: logEntry.type,
+          severity: logEntry.severity
+        },
+        extra: logEntry.context
       });
     }
     
-    next();
-  };
-};
-```
-
-## 📈 Error Metrics & Alerting
-
-### Error Metrics Collection
-```javascript
-// Error metrics collection
-const errorMetrics = {
-  counts: new Map(),
-  rates: new Map(),
-  
-  // Track error occurrence
-  trackError: (errorType, severity = 'medium') => {
-    const key = `${errorType}:${severity}`;
-    this.counts.set(key, (this.counts.get(key) || 0) + 1);
-  },
-  
-  // Calculate error rates
-  calculateRates: () => {
-    const total = Array.from(this.counts.values()).reduce((sum, count) => sum + count, 0);
-    
-    for (const [key, count] of this.counts) {
-      this.rates.set(key, count / total);
-    }
-  },
-  
-  // Get error summary
-  getSummary: () => {
-    this.calculateRates();
-    
-    return {
-      totalErrors: Array.from(this.counts.values()).reduce((sum, count) => sum + count, 0),
-      errorTypes: Object.fromEntries(this.counts),
-      errorRates: Object.fromEntries(this.rates),
-      timestamp: new Date().toISOString()
-    };
-  }
-};
-
-// Error alerting
-const errorAlerts = {
-  thresholds: {
-    errorRate: 0.05, // 5% error rate
-    criticalErrors: 10, // 10 critical errors per hour
-    consecutiveErrors: 5 // 5 consecutive errors
-  },
-  
-  checkAlerts: () => {
-    const summary = errorMetrics.getSummary();
-    
-    // Check error rate
-    if (summary.errorRates['critical:high'] > this.thresholds.errorRate) {
-      this.sendAlert('HIGH_ERROR_RATE', summary);
-    }
-    
-    // Check critical errors
-    const criticalCount = summary.errorTypes['critical:high'] || 0;
-    if (criticalCount > this.thresholds.criticalErrors) {
-      this.sendAlert('HIGH_CRITICAL_ERRORS', summary);
-    }
-  },
-  
-  sendAlert: (type, data) => {
-    console.error(`ALERT: ${type}`, data);
-    
-    // Send to monitoring service
-    if (process.env.ALERT_WEBHOOK) {
-      fetch(process.env.ALERT_WEBHOOK, {
+    // Send to custom monitoring service
+    if (process.env.MONITORING_SERVICE_URL) {
+      await fetch(process.env.MONITORING_SERVICE_URL, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ type, data, timestamp: new Date().toISOString() })
-      }).catch(console.error);
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${process.env.MONITORING_API_KEY}`
+        },
+        body: JSON.stringify(logEntry)
+      });
     }
+  } catch (error) {
+    console.error('Failed to send error to monitoring service:', error);
   }
 };
 ```
+
+## 🔄 Error Recovery Patterns
+
+### Retry Mechanism
+```javascript
+// Retry mechanism for failed operations
+const retryOperation = async (operation, maxRetries = 3, delay = 1000) => {
+  let lastError;
+  
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      return await operation();
+    } catch (error) {
+      lastError = error;
+      
+      if (attempt === maxRetries) {
+        throw lastError;
+      }
+      
+      // Exponential backoff
+      const waitTime = delay * Math.pow(2, attempt - 1);
+      await new Promise(resolve => setTimeout(resolve, waitTime));
+      
+      console.log(`Retry attempt ${attempt} after ${waitTime}ms`);
+    }
+  }
+  
+  throw lastError;
+};
+
+// Database retry wrapper
+const retryDatabaseOperation = async (operation, ...args) => {
+  return retryOperation(async () => {
+    return await operation(...args);
+  }, 3, 1000);
+};
+```
+
+### Circuit Breaker Pattern
+```javascript
+// Circuit breaker for external services
+class CircuitBreaker {
+  constructor(threshold = 5, timeout = 60000) {
+    this.threshold = threshold;
+    this.timeout = timeout;
+    this.failureCount = 0;
+    this.lastFailureTime = null;
+    this.state = 'CLOSED'; // CLOSED, OPEN, HALF_OPEN
+  }
+  
+  async execute(operation) {
+    if (this.state === 'OPEN') {
+      if (Date.now() - this.lastFailureTime > this.timeout) {
+        this.state = 'HALF_OPEN';
+      } else {
+        throw new Error('Circuit breaker is OPEN');
+      }
+    }
+    
+    try {
+      const result = await operation();
+      this.onSuccess();
+      return result;
+    } catch (error) {
+      this.onFailure();
+      throw error;
+    }
+  }
+  
+  onSuccess() {
+    this.failureCount = 0;
+    this.state = 'CLOSED';
+  }
+  
+  onFailure() {
+    this.failureCount++;
+    this.lastFailureTime = Date.now();
+    
+    if (this.failureCount >= this.threshold) {
+      this.state = 'OPEN';
+    }
+  }
+}
+```
+
+## 🎯 Error Handling Best Practices
+
+### Backend Best Practices
+- **Error Classification**: Categorize errors by type and severity
+- **Custom Error Classes**: Create specific error classes for different scenarios
+- **Global Error Handler**: Implement centralized error handling
+- **Error Logging**: Log errors with context and stack traces
+- **Error Monitoring**: Integrate with monitoring services
+- **Graceful Degradation**: Handle errors without crashing the system
+
+### Frontend Best Practices
+- **Error Boundaries**: Catch and handle React errors
+- **User-Friendly Messages**: Display clear error messages to users
+- **Error Recovery**: Provide ways to recover from errors
+- **Loading States**: Show loading states during operations
+- **Validation**: Validate inputs before submission
+- **Retry Mechanisms**: Allow users to retry failed operations
+
+### General Best Practices
+- **Error Prevention**: Validate inputs and handle edge cases
+- **Error Documentation**: Document common errors and solutions
+- **Error Testing**: Test error scenarios
+- **Error Monitoring**: Monitor error rates and patterns
+- **Error Recovery**: Implement recovery mechanisms
+- **User Communication**: Communicate errors clearly to users

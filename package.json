@@ -13,7 +13,7 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "start": "node server.js",
-    "start:modern": "node scripts/maintenance/server_modern.js",
+    "start:modern": "node server_modern.js",
     "start:modular": "node scripts/maintenance/server_modular.js",
     "start:optimized": "node scripts/maintenance/server_optimized.js",
     "start:https": "node scripts/maintenance/server_https.js",

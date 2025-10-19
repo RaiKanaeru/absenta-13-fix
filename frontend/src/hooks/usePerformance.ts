@@ -51,12 +51,7 @@ export const usePerformance = (): UsePerformanceReturn => {
     }
 
     // Add breadcrumb for page load
-    addBreadcrumb({
-      message: 'Page loaded',
-      category: 'performance',
-      level: 'info',
-      data: { loadTime },
-    });
+    addBreadcrumb('Page loaded', 'performance', 'info', { loadTime });
 
     // Record render time
     renderStartTime.current = Date.now();
@@ -69,28 +64,18 @@ export const usePerformance = (): UsePerformanceReturn => {
       entries.forEach((entry) => {
         if (entry.entryType === 'navigation') {
           const navEntry = entry as PerformanceNavigationTiming;
-          addBreadcrumb({
-            message: 'Navigation timing',
-            category: 'performance',
-            level: 'info',
-            data: {
-              domContentLoaded: navEntry.domContentLoadedEventEnd - navEntry.domContentLoadedEventStart,
-              loadComplete: navEntry.loadEventEnd - navEntry.loadEventStart,
-              totalTime: navEntry.loadEventEnd - navEntry.fetchStart,
-            },
+          addBreadcrumb('Navigation timing', 'performance', 'info', {
+            domContentLoaded: navEntry.domContentLoadedEventEnd - navEntry.domContentLoadedEventStart,
+            loadComplete: navEntry.loadEventEnd - navEntry.loadEventStart,
+            totalTime: navEntry.loadEventEnd - navEntry.fetchStart,
           });
         } else if (entry.entryType === 'resource') {
           const resourceEntry = entry as PerformanceResourceTiming;
           if (resourceEntry.duration > 1000) { // 1 second
-            addBreadcrumb({
-              message: 'Slow resource load',
-              category: 'performance',
-              level: 'warning',
-              data: {
-                name: resourceEntry.name,
-                duration: resourceEntry.duration,
-                size: resourceEntry.transferSize,
-              },
+            addBreadcrumb('Slow resource load', 'performance', 'warning', {
+              name: resourceEntry.name,
+              duration: resourceEntry.duration,
+              size: resourceEntry.transferSize,
             });
           }
         }
@@ -118,12 +103,7 @@ export const usePerformance = (): UsePerformanceReturn => {
 
       // Record slow operations
       if (duration > 1000) { // 1 second
-        addBreadcrumb({
-          message: `Slow operation: ${name}`,
-          category: 'performance',
-          level: 'warning',
-          data: { name, duration },
-        });
+        addBreadcrumb(`Slow operation: ${name}`, 'performance', 'warning', { name, duration });
 
         captureMessage(`Slow operation detected: ${name}`, 'warning', {
           operation: name,
@@ -143,12 +123,7 @@ export const usePerformance = (): UsePerformanceReturn => {
       userInteractions: prev.userInteractions + 1 
     }));
 
-    addBreadcrumb({
-      message: `User interaction: ${action}`,
-      category: 'user',
-      level: 'info',
-      data: { action },
-    });
+    addBreadcrumb(`User interaction: ${action}`, 'user', 'info', { action });
   }, [addBreadcrumb]);
 
   // Record error
@@ -158,14 +133,9 @@ export const usePerformance = (): UsePerformanceReturn => {
       errors: prev.errors + 1 
     }));
 
-    addBreadcrumb({
-      message: `Error occurred: ${error.message}`,
-      category: 'error',
-      level: 'error',
-      data: { 
-        message: error.message,
-        stack: error.stack,
-      },
+    addBreadcrumb(`Error occurred: ${error.message}`, 'error', 'error', { 
+      message: error.message,
+      stack: error.stack,
     });
   }, [addBreadcrumb]);
 
@@ -178,12 +148,7 @@ export const usePerformance = (): UsePerformanceReturn => {
 
     // Record slow network requests
     if (duration > 2000) { // 2 seconds
-      addBreadcrumb({
-        message: `Slow network request: ${url}`,
-        category: 'network',
-        level: 'warning',
-        data: { url, duration },
-      });
+      addBreadcrumb(`Slow network request: ${url}`, 'network', 'warning', { url, duration });
 
       captureMessage(`Slow network request detected`, 'warning', {
         url: url,

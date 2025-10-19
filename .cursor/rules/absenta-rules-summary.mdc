@@ -1,318 +1,297 @@
 ---
-globs: *.js,*.tsx
+alwaysApply: true
 description: Complete summary of all Absenta Cursor Rules
 ---
 
 # Absenta Cursor Rules - Complete Summary
 
-## 📋 Overview of All Rules
+## 📋 Overview
 
-Sistem Absenta telah dilengkapi dengan **15 Cursor Rules** yang komprehensif untuk memandu development, maintenance, dan deployment. Semua rules telah disesuaikan dengan skema database `absenta13.sql` yang sudah ada.
+This document provides a comprehensive summary of all Cursor Rules created for the Absenta attendance management system. These rules serve as guidelines for development, architecture, and best practices.
 
-## 🗂️ Complete Rules List
+## 🏗️ System Architecture Rules
 
-### 1. **absenta-architecture-complete.mdc**
-- **Purpose**: Arsitektur sistem lengkap
-- **Content**: 
-  - System overview dan technology stack
-  - Architecture layers (Presentation, API, Data Access, Database)
-  - Data flow architecture
-  - Security architecture
-  - Performance architecture
-  - Development architecture
-  - Frontend architecture
-  - Maintenance architecture
-  - Integration points
-  - Scalability considerations
+### 1. **absenta-system-architecture.mdc**
+**Purpose**: Complete system architecture guide
+**Scope**: Always applied to every request
+**Key Topics**:
+- System overview and technology stack
+- Architecture layers (Presentation, API, Data Access, Database)
+- Data flow patterns
+- Security architecture
+- Database relationships
+- Performance considerations
+- Development and deployment architecture
 
-### 2. **absenta-database-complete.mdc**
-- **Purpose**: Database schema lengkap
-- **Content**:
-  - Complete table structures
-  - Relationships dan foreign keys
-  - Indexes dan constraints
-  - Data types dan enums
-  - Sample data dan relationships
-  - Query patterns
-  - Migration strategies
+## 🔧 Development Pattern Rules
 
-### 3. **absenta-database-schema-final.mdc**
-- **Purpose**: Final database schema berdasarkan absenta13.sql
-- **Content**:
-  - Core tables (users, guru, siswa_perwakilan, mapel, kelas, jadwal)
-  - Attendance tables (absensi_guru, absensi_siswa)
-  - Dispute tables (pengajuan_banding_absen)
-  - Permission tables (pengajuan_izin_siswa)
-  - Multi-teacher support tables
-  - Key relationships
-  - Database indexes
-  - Performance optimization
-  - Security considerations
+### 2. **absenta-api-patterns.mdc**
+**Purpose**: API development patterns and conventions
+**Scope**: Backend routes, controllers, and services
+**Key Topics**:
+- Standard HTTP methods and response formats
+- Authentication and authorization patterns
+- Database query patterns
+- Error handling patterns
+- Performance optimization
+- Security best practices
 
-### 4. **absenta-api-endpoints-complete.mdc**
-- **Purpose**: Semua API endpoints detail
-- **Content**:
-  - Authentication endpoints
-  - Admin management endpoints
-  - Teacher management endpoints
-  - Student management endpoints
-  - Attendance endpoints
-  - Schedule management endpoints
-  - Report generation endpoints
-  - File import/export endpoints
-  - Error handling patterns
-  - Response formats
+### 3. **absenta-frontend-patterns.mdc**
+**Purpose**: Frontend development patterns
+**Scope**: React components and TypeScript files
+**Key Topics**:
+- Component architecture standards
+- State management patterns
+- API integration patterns
+- Form handling patterns
+- UI component usage
+- Performance optimization
+- Testing patterns
 
-### 5. **absenta-business-logic.mdc**
-- **Purpose**: Logika bisnis attendance
-- **Content**:
-  - Attendance processing logic
-  - Schedule management logic
-  - User management logic
-  - Report generation logic
-  - Data validation logic
-  - Business rules
-  - Workflow patterns
-  - Integration logic
+### 4. **absenta-database-patterns.mdc**
+**Purpose**: Database patterns and optimization
+**Scope**: Database repositories and services
+**Key Topics**:
+- Database schema overview
+- Query optimization patterns
+- Transaction handling
+- Repository pattern implementation
+- Performance optimization
+- Security patterns
+- Monitoring and logging
 
-### 6. **absenta-security-patterns.mdc**
-- **Purpose**: Pola keamanan lengkap
-- **Content**:
-  - JWT authentication patterns
-  - Password hashing strategies
-  - Role-based access control
-  - Input validation patterns
-  - SQL injection prevention
-  - XSS protection
-  - CSRF protection
-  - Rate limiting
-  - Session management
-  - Audit logging
+## 🚀 Operational Rules
 
-### 7. **absenta-error-handling.mdc**
-- **Purpose**: Error handling patterns
-- **Content**:
-  - Standardized error responses
-  - Database error handling
-  - JWT error handling
-  - Validation error handling
-  - File upload error handling
-  - Network error handling
-  - Logging patterns
-  - Error recovery strategies
-  - User-friendly error messages
+### 5. **absenta-deployment-patterns.mdc**
+**Purpose**: Deployment and production patterns
+**Scope**: Configuration and deployment files
+**Key Topics**:
+- Production environment setup
+- Docker configuration
+- Nginx configuration
+- Monitoring and logging
+- CI/CD pipeline
+- Security configuration
+- Backup and recovery
 
-### 8. **absenta-performance-optimization.mdc**
-- **Purpose**: Optimasi performa
-- **Content**:
-  - Caching strategies
-  - Database connection pooling
-  - Query optimization
-  - Memory management
-  - File handling optimization
-  - API response optimization
-  - Frontend performance
-  - Monitoring patterns
-  - Scalability strategies
+### 6. **absenta-testing-patterns.mdc**
+**Purpose**: Testing patterns and best practices
+**Scope**: Test files and configuration
+**Key Topics**:
+- Test architecture and structure
+- Unit testing patterns
+- Integration testing patterns
+- End-to-end testing patterns
+- Performance testing
+- Test utilities and helpers
+- Test configuration
 
-### 9. **absenta-attendance-flow.mdc**
-- **Purpose**: Skema absensi guru-siswa yang baru
-- **Content**:
-  - Mutual attendance system (guru ↔ siswa)
-  - Multi-teacher support
-  - Real-time synchronization
-  - Database schema untuk attendance
-  - Business logic untuk attendance
-  - Frontend components
-  - WebSocket implementation
-  - Analytics dan reporting
+## 🏢 Business Logic Rules
 
-### 10. **absenta-dispute-system.mdc**
-- **Purpose**: Sistem banding absen
-- **Content**:
-  - Dispute creation logic
-  - Dispute processing logic
-  - Notification system
-  - Frontend components
-  - Database schema
-  - API endpoints
-  - Error handling
-  - Analytics
+### 7. **absenta-business-logic.mdc**
+**Purpose**: Business logic patterns and rules
+**Scope**: Business services and controllers
+**Key Topics**:
+- Core business rules
+- User role hierarchy
+- Attendance status rules
+- Schedule management logic
+- Report generation logic
+- Notification logic
+- Security business rules
 
-### 11. **absenta-permission-system.mdc**
-- **Purpose**: Sistem izin siswa
-- **Content**:
-  - Permission request logic
-  - Permission processing logic
-  - Notification system
-  - Frontend components
-  - Database schema
-  - API endpoints
-  - Error handling
-  - Analytics
+## 🛡️ Security Rules
 
-### 12. **absenta-multi-teacher.mdc**
-- **Purpose**: Sistem multi guru per mata pelajaran
-- **Content**:
-  - Multi-teacher assignment logic
-  - Multi-teacher attendance logic
-  - Permission management
-  - Frontend components
-  - Database schema
-  - API endpoints
-  - Analytics
+### 8. **absenta-security-patterns.mdc**
+**Purpose**: Security patterns and best practices
+**Scope**: Security middleware and utilities
+**Key Topics**:
+- Authentication and authorization
+- Input validation and sanitization
+- Access control patterns
+- Rate limiting and DDoS protection
+- Session security
+- Security headers
+- Security monitoring
+- Data encryption
 
-### 13. **absenta-api-patterns.mdc**
-- **Purpose**: API development patterns
-- **Content**:
-  - RESTful API design
-  - Response standardization
-  - Error handling patterns
-  - Authentication patterns
-  - Validation patterns
-  - Caching patterns
-  - Documentation patterns
+## ⚡ Performance Rules
 
-### 14. **absenta-testing.mdc**
-- **Purpose**: Testing patterns
-- **Content**:
-  - Unit testing patterns
-  - Integration testing patterns
-  - API testing patterns
-  - Database testing patterns
-  - Frontend testing patterns
-  - Test data management
-  - Mock patterns
-  - Test automation
+### 9. **absenta-performance-patterns.mdc**
+**Purpose**: Performance optimization patterns
+**Scope**: All system components
+**Key Topics**:
+- Backend performance optimization
+- Frontend performance optimization
+- Database performance optimization
+- Caching strategies
+- Monitoring and analysis
+- Build optimization
+- Performance testing
 
-### 15. **absenta-deployment.mdc**
-- **Purpose**: Deployment patterns
-- **Content**:
-  - Environment configuration
-  - Database setup
-  - Server configuration
-  - Security configuration
-  - Monitoring setup
-  - Backup strategies
-  - Rollback procedures
-  - Maintenance procedures
+## 🚨 Error Handling Rules
 
-## 🎯 Key Features Covered
+### 10. **absenta-error-handling.mdc**
+**Purpose**: Error handling patterns and best practices
+**Scope**: All system components
+**Key Topics**:
+- Error classification system
+- Custom error classes
+- Backend error handling
+- Frontend error handling
+- Error logging and monitoring
+- Error recovery patterns
+- Best practices
 
-### Core System Features
-- ✅ **User Management**: Admin, Guru, Siswa
-- ✅ **Authentication**: JWT-based authentication
-- ✅ **Authorization**: Role-based access control
-- ✅ **Database**: MySQL dengan schema lengkap
-- ✅ **API**: RESTful API dengan 50+ endpoints
-- ✅ **Frontend**: React + TypeScript + Vite
+## 📊 Rule Application Matrix
 
-### Attendance System Features
-- ✅ **Mutual Attendance**: Guru absen siswa, siswa absen guru
-- ✅ **Multi-Teacher Support**: Satu mata pelajaran bisa diajar beberapa guru
-- ✅ **Real-time Sync**: WebSocket untuk sinkronisasi real-time
-- ✅ **Dispute System**: Sistem banding untuk ketidakhadiran
-- ✅ **Permission System**: Sistem izin siswa
-- ✅ **Analytics**: Laporan dan statistik lengkap
+| Rule | Always Applied | File Types | Purpose |
+|------|----------------|------------|---------|
+| absenta-system-architecture | ✅ | All | System overview |
+| absenta-api-patterns | ❌ | backend/routes/*.js, backend/controllers/*.js, backend/services/*.js | API development |
+| absenta-frontend-patterns | ❌ | frontend/src/**/*.tsx, frontend/src/**/*.ts | Frontend development |
+| absenta-database-patterns | ❌ | backend/repositories/*.js, backend/services/*.js, db.js | Database operations |
+| absenta-deployment-patterns | ❌ | package.json, scripts/**/*.js, config/**/*.js | Deployment |
+| absenta-testing-patterns | ❌ | tests/**/*.js, tests/**/*.ts, package.json | Testing |
+| absenta-business-logic | ❌ | backend/services/*.js, backend/controllers/*.js | Business logic |
+| absenta-security-patterns | ❌ | backend/middleware/*.js, backend/utils/*.js | Security |
+| absenta-performance-patterns | ❌ | backend/**/*.js, frontend/src/**/*.tsx, frontend/src/**/*.ts | Performance |
+| absenta-error-handling | ❌ | backend/**/*.js, frontend/src/**/*.tsx, frontend/src/**/*.ts | Error handling |
 
-### Technical Features
-- ✅ **Caching**: Redis untuk performa optimal
-- ✅ **Error Handling**: Standardized error responses
-- ✅ **Security**: Comprehensive security patterns
-- ✅ **Performance**: Optimization strategies
-- ✅ **Testing**: Complete testing patterns
-- ✅ **Deployment**: Production-ready deployment
+## 🎯 Key Development Principles
 
-## 🔧 Development Guidelines
+### 1. **Modular Architecture**
+- Separate concerns into different layers
+- Use repository pattern for data access
+- Implement service layer for business logic
+- Create reusable components
 
-### Code Organization
-- **Backend**: `server_modern.js` (8,420+ lines)
-- **Frontend**: React components dengan TypeScript
-- **Database**: MySQL dengan schema terstruktur
-- **API**: RESTful endpoints dengan response standardization
+### 2. **Security First**
+- Implement proper authentication and authorization
+- Validate and sanitize all inputs
+- Use parameterized queries
+- Implement rate limiting and security headers
 
-### Best Practices
-- **Security**: JWT + bcrypt + input validation
-- **Performance**: Caching + connection pooling + query optimization
-- **Error Handling**: Centralized error management
-- **Testing**: Comprehensive test coverage
-- **Documentation**: Detailed API documentation
+### 3. **Performance Optimization**
+- Use database indexing
+- Implement caching strategies
+- Optimize frontend bundle size
+- Monitor performance metrics
 
-### Database Schema
-- **Core Tables**: 12 tabel utama
-- **Relationships**: Foreign key constraints
-- **Indexes**: Performance optimization
-- **Data Types**: Consistent data types
-- **Enums**: Standardized status values
+### 4. **Error Handling**
+- Use custom error classes
+- Implement global error handlers
+- Log errors with context
+- Provide user-friendly error messages
 
-## 📊 System Statistics
+### 5. **Testing**
+- Write unit tests for business logic
+- Implement integration tests for APIs
+- Use end-to-end tests for user flows
+- Monitor test coverage
 
-### Code Metrics
-- **Backend**: 8,420+ lines (server_modern.js)
-- **Database**: 21 tables dengan relationships
-- **API Endpoints**: 50+ endpoints
-- **Frontend Components**: 10+ major components
-- **Cursor Rules**: 15 comprehensive rules
+## 🔄 Rule Maintenance
 
-### Feature Coverage
-- **Authentication**: 100% covered
-- **Authorization**: 100% covered
-- **CRUD Operations**: 100% covered
-- **File Handling**: 100% covered
-- **Error Handling**: 100% covered
-- **Security**: 100% covered
-- **Performance**: 100% covered
-- **Testing**: 100% covered
-- **Deployment**: 100% covered
+### Adding New Rules
+1. Create new `.mdc` file in `.cursor/rules/` directory
+2. Add appropriate metadata (alwaysApply, globs, description)
+3. Follow existing pattern structure
+4. Update this summary document
 
-## 🚀 Next Steps
+### Updating Existing Rules
+1. Modify the specific rule file
+2. Update relevant sections in this summary
+3. Test rule application
+4. Document changes
 
-### Immediate Actions
-1. **Review Rules**: Baca semua Cursor Rules yang telah dibuat
-2. **Implement Features**: Implementasi fitur-fitur baru sesuai rules
-3. **Test System**: Jalankan testing sesuai patterns
-4. **Deploy**: Deploy ke production sesuai guidelines
+### Rule Dependencies
+- **absenta-system-architecture**: Foundation for all other rules
+- **absenta-api-patterns**: Depends on system architecture
+- **absenta-frontend-patterns**: Depends on system architecture
+- **absenta-database-patterns**: Supports API and business logic patterns
+- **absenta-security-patterns**: Applies to all development patterns
+- **absenta-performance-patterns**: Applies to all system components
+- **absenta-error-handling**: Applies to all system components
 
-### Future Enhancements
-1. **Mobile App**: Development mobile app
-2. **Advanced Analytics**: Machine learning untuk prediksi
-3. **Integration**: Integrasi dengan sistem eksternal
-4. **Scalability**: Horizontal scaling strategies
+## 📈 Rule Effectiveness
 
-## 📚 Usage Instructions
+### Metrics to Track
+- Code quality improvements
+- Development speed
+- Bug reduction
+- Security vulnerability reduction
+- Performance improvements
+- Test coverage increase
+
+### Continuous Improvement
+- Regular rule review and updates
+- Feedback collection from development team
+- Performance monitoring
+- Security audit results
+- User feedback analysis
+
+## 🎯 Best Practices for Rule Usage
 
 ### For Developers
-1. **Read Rules**: Mulai dengan `absenta-architecture-complete.mdc`
-2. **Database**: Gunakan `absenta-database-schema-final.mdc`
-3. **API**: Referensi `absenta-api-endpoints-complete.mdc`
-4. **Business Logic**: Ikuti `absenta-business-logic.mdc`
-5. **Security**: Implementasi `absenta-security-patterns.mdc`
+1. **Read Rules First**: Always check relevant rules before starting development
+2. **Follow Patterns**: Use established patterns from rules
+3. **Ask Questions**: Clarify rule requirements when needed
+4. **Provide Feedback**: Report issues or suggest improvements
 
-### For System Administrators
-1. **Deployment**: Ikuti `absenta-deployment.mdc`
-2. **Performance**: Monitor dengan `absenta-performance-optimization.mdc`
-3. **Security**: Implementasi security patterns
-4. **Monitoring**: Setup monitoring sesuai guidelines
+### For Code Reviews
+1. **Check Rule Compliance**: Ensure code follows established patterns
+2. **Verify Security**: Check security rule compliance
+3. **Performance Review**: Verify performance optimization
+4. **Error Handling**: Ensure proper error handling
 
-### For Testers
-1. **Testing**: Gunakan `absenta-testing.mdc`
-2. **API Testing**: Test semua endpoints
-3. **Frontend Testing**: Test semua components
-4. **Integration Testing**: Test end-to-end flows
+### For Architecture Decisions
+1. **System Architecture**: Reference system architecture rules
+2. **Technology Choices**: Align with established patterns
+3. **Security Considerations**: Follow security patterns
+4. **Performance Impact**: Consider performance implications
+
+## 🔧 Rule Customization
+
+### Environment-Specific Rules
+- **Development**: Focus on debugging and development tools
+- **Testing**: Emphasize testing patterns and quality
+- **Production**: Focus on security, performance, and monitoring
+
+### Team-Specific Rules
+- **Backend Team**: Focus on API, database, and security patterns
+- **Frontend Team**: Focus on component, performance, and UX patterns
+- **DevOps Team**: Focus on deployment, monitoring, and infrastructure patterns
+
+## 📚 Additional Resources
+
+### Documentation
+- System architecture diagrams
+- API documentation
+- Database schema documentation
+- Deployment guides
+- Security guidelines
+
+### Tools and Libraries
+- Development tools
+- Testing frameworks
+- Monitoring tools
+- Security tools
+- Performance tools
+
+### Training Materials
+- Rule explanation videos
+- Code examples
+- Best practice guides
+- Common pitfalls
+- Troubleshooting guides
 
 ## 🎉 Conclusion
 
-Sistem Absenta telah dilengkapi dengan **15 Cursor Rules** yang komprehensif dan detail. Semua rules telah disesuaikan dengan skema database `absenta13.sql` yang sudah ada dan mencakup:
+These Cursor Rules provide a comprehensive framework for developing the Absenta attendance management system. They ensure consistency, quality, and best practices across all development activities. Regular review and updates of these rules will help maintain system quality and developer productivity.
 
-- ✅ **Arsitektur lengkap** dengan semua layer
-- ✅ **Database schema** yang terstruktur dan optimal
-- ✅ **API endpoints** yang lengkap dan terstandarisasi
-- ✅ **Business logic** yang komprehensif
-- ✅ **Security patterns** yang robust
-- ✅ **Error handling** yang terstandarisasi
-- ✅ **Performance optimization** yang optimal
-- ✅ **Testing patterns** yang lengkap
-- ✅ **Deployment guidelines** yang production-ready
-- ✅ **Fitur-fitur baru** sesuai kebutuhan lapangan
-
-Dengan rules ini, development team dapat mengembangkan, maintain, dan deploy sistem Absenta dengan efisien dan sesuai best practices.
+Remember to:
+- Follow the established patterns
+- Keep rules updated
+- Provide feedback for improvements
+- Use rules as guidelines, not rigid constraints
+- Adapt rules to specific project needs

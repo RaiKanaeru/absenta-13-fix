@@ -159,4 +159,10 @@ export const endpoints = {
   getHealth: () => api.get('/api/health'),
 };
 
+// Add methods to apiCall object for backward compatibility
+apiCall.get = api.get;
+apiCall.post = api.post;
+apiCall.put = api.put;
+apiCall.delete = api.delete;
+
 export default apiCall;

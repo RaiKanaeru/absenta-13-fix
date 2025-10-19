@@ -89,7 +89,7 @@ const ErrorFallback: React.FC<ErrorFallbackProps> = ({ error, resetError, eventI
 interface ErrorBoundaryProps {
   children: React.ReactNode;
   fallback?: React.ComponentType<ErrorFallbackProps>;
-  beforeCapture?: (scope: any, error: Error, errorInfo: any) => void;
+  beforeCapture?: (scope: any, error: unknown, errorInfo: any) => void;
 }
 
 const ErrorBoundary: React.FC<ErrorBoundaryProps> = ({ 
@@ -99,12 +99,21 @@ const ErrorBoundary: React.FC<ErrorBoundaryProps> = ({
 }) => {
   return (
     <SentryErrorBoundary
-      fallback={fallback}
+      fallback={({ error, componentStack, eventId, resetError }) => {
+        const FallbackComponent = fallback;
+        return (
+          <FallbackComponent 
+            error={error as Error} 
+            resetError={resetError} 
+            eventId={eventId} 
+          />
+        );
+      }}
       beforeCapture={(scope, error, errorInfo) => {
         // Add custom context before capturing
         scope.setTag('errorBoundary', 'true');
         scope.setContext('errorInfo', {
-          componentStack: errorInfo.componentStack,
+          errorInfo: errorInfo || '',
         });
         
         // Call custom beforeCapture if provided

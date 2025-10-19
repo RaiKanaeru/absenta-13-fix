@@ -382,7 +382,7 @@ const ExcelImportView: React.FC<ExcelImportViewProps> = ({ entityType, entityNam
             <Alert>
               <CheckCircle className="h-4 w-4" />
               <AlertDescription>
-                Berhasil memproses {importResult.processed || importResult.inserted_or_updated || importResult.inserted} baris data.
+                Berhasil memproses {importResult.valid} baris data.
                 {importResult.invalid > 0 && ` ${importResult.invalid} baris dilewati karena error.`}
               </AlertDescription>
             </Alert>

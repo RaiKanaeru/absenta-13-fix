@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Download, FileSpreadsheet, Calendar, AlertCircle, CheckCircle } from 'lucide-react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { fetchWithAuth } from '@/utils/http';
+import { api } from '@/utils/api';
 
 interface ScheduleData {
   id_jadwal: number;
@@ -76,7 +76,7 @@ const ScheduleExportView: React.FC = () => {
   useEffect(() => {
     const loadClasses = async () => {
       try {
-        const response = await fetchWithAuth('/api/admin/kelas');
+        const response = await api.get('/api/admin/kelas');
         if (response.success) {
           setClasses(response.data || []);
         }
@@ -91,7 +91,7 @@ const ScheduleExportView: React.FC = () => {
   const checkConflicts = async () => {
     try {
       setLoading(true);
-      const response = await fetchWithAuth('/api/admin/jadwal/conflicts');
+      const response = await api.get('/api/admin/jadwal/conflicts');
       if (response.success) {
         setConflicts(response.data || []);
       }
@@ -109,7 +109,7 @@ const ScheduleExportView: React.FC = () => {
       setLoading(true);
       setError(null);
       
-      const response = await fetchWithAuth(`/api/admin/jadwal/export?kelas_id=${selectedClass}&format=excel`);
+      const response = await api.get(`/api/admin/jadwal/export?kelas_id=${selectedClass}&format=excel`);
       if (response.success) {
         setExportData(response.data);
         generateExcelFile(response.data);

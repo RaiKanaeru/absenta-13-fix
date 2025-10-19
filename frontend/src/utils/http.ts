@@ -131,3 +131,33 @@ export async function handleResponseError(response: Response, context: string = 
     throw new Error(errorMessage);
   }
 }
+
+/**
+ * Fetch with authentication - wrapper function for backward compatibility
+ * @param url - URL endpoint
+ * @param options - RequestInit options
+ * @returns Promise<Response>
+ */
+export async function fetchWithAuth(url: string, options: RequestInit = {}): Promise<Response> {
+  const method = options.method || 'GET';
+  
+  if (method === 'GET') {
+    return httpGet(url, options);
+  } else if (method === 'POST') {
+    const body = options.body;
+    return httpPost(url, body, options);
+  } else if (method === 'PUT') {
+    const body = options.body;
+    return httpPut(url, body, options);
+  } else if (method === 'DELETE') {
+    return httpDelete(url, options);
+  } else {
+    // Fallback to generic fetch
+    const fullUrl = url.startsWith('http') ? url : `${BASE_URL}${url}`;
+    return fetch(fullUrl, {
+      ...options,
+      headers: { ...getAuthHeaders(), ...(options.headers || {}) },
+      credentials: 'include',
+    });
+  }
+}

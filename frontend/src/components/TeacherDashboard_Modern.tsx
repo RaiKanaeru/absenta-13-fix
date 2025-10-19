@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -80,6 +80,7 @@ type FlatHistoryRow = {
   waktu_absen: string;
   status_guru?: string;
   keterangan_guru?: string;
+  absensi_id?: number;
 };
 
 interface Student {
@@ -2585,6 +2586,12 @@ const HistoryView = ({ user }: { user: TeacherDashboardProps['userData'] }) => {
   const [totalPages, setTotalPages] = useState(1);
   const [totalDays, setTotalDays] = useState(0);
   const limit = 7; // 7 hari kebelakang
+  
+  // Edit attendance states
+  const [editingAttendance, setEditingAttendance] = useState<FlatHistoryRow | null>(null);
+  const [editStatus, setEditStatus] = useState<string>('');
+  const [editKeterangan, setEditKeterangan] = useState<string>('');
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
 
   useEffect(() => {
     const fetchHistory = async () => {
@@ -2685,22 +2692,68 @@ const HistoryView = ({ user }: { user: TeacherDashboardProps['userData'] }) => {
     setCurrentPage(page);
   };
 
+  // Edit attendance functions
+  const handleEditAttendance = (attendance: FlatHistoryRow) => {
+    setEditingAttendance(attendance);
+    setEditStatus(attendance.status_kehadiran);
+    setEditKeterangan(attendance.keterangan || '');
+    setEditDialogOpen(true);
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editingAttendance || !editingAttendance.absensi_id) return;
+
+    try {
+      const response = await apiCall(`/api/guru/edit-attendance/${editingAttendance.absensi_id}`, {
+        method: 'PUT',
+        body: JSON.stringify({
+          status: editStatus,
+          keterangan: editKeterangan
+        })
+      });
+
+      if (response.success) {
+        toast({
+          title: "Berhasil",
+          description: "Absensi berhasil diperbarui",
+        });
+        setEditDialogOpen(false);
+        // Refresh data
+        window.location.reload();
+      } else {
+        toast({
+          title: "Error",
+          description: response.error || "Gagal memperbarui absensi",
+          variant: "destructive",
+        });
+      }
+    } catch (error) {
+      console.error('Error updating attendance:', error);
+      toast({
+        title: "Error",
+        description: "Gagal memperbarui absensi",
+        variant: "destructive",
+      });
+    }
+  };
+
   return (
-    <Card>
-      <CardHeader>
-        <div className="flex items-center justify-between">
-          <CardTitle className="flex items-center gap-2">
-            <History className="w-5 h-5" />
-            Riwayat Absensi
-          </CardTitle>
-          {!loading && totalDays > 0 && (
-            <div className="text-sm text-gray-600">
-              Total: {totalDays} hari | Halaman {currentPage} dari {totalPages}
-            </div>
-          )}
-        </div>
-      </CardHeader>
-      <CardContent>
+    <>
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <CardTitle className="flex items-center gap-2">
+              <History className="w-5 h-5" />
+              Riwayat Absensi
+            </CardTitle>
+            {!loading && totalDays > 0 && (
+              <div className="text-sm text-gray-600">
+                Total: {totalDays} hari | Halaman {currentPage} dari {totalPages}
+              </div>
+            )}
+          </div>
+        </CardHeader>
+        <CardContent>
         {loading ? (
           <div className="space-y-4">
             {[1, 2, 3].map((i) => (
@@ -2746,6 +2799,7 @@ const HistoryView = ({ user }: { user: TeacherDashboardProps['userData'] }) => {
                             <TableHead>Status</TableHead>
                             <TableHead>Waktu</TableHead>
                             <TableHead>Keterangan</TableHead>
+                            <TableHead>Aksi</TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
@@ -2811,6 +2865,28 @@ const HistoryView = ({ user }: { user: TeacherDashboardProps['userData'] }) => {
                                 ) : (
                                   <span className="text-sm text-gray-400">-</span>
                                 )}
+                              </TableCell>
+                              <TableCell>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => handleEditAttendance({
+                                    tanggal: date,
+                                    jam_ke: 0,
+                                    jam_mulai: '',
+                                    jam_selesai: '',
+                                    nama_mapel: classData.mata_pelajaran,
+                                    nama_kelas: classData.kelas,
+                                    nama_siswa: siswa.nama,
+                                    nis: siswa.nis || '',
+                                    status_kehadiran: siswa.status,
+                                    keterangan: siswa.alasan,
+                                    waktu_absen: siswa.waktu_absen,
+                                    absensi_id: siswa.id
+                                  })}
+                                >
+                                  <Edit className="w-4 h-4" />
+                                </Button>
                               </TableCell>
                             </TableRow>
                           );
@@ -2882,6 +2958,146 @@ const HistoryView = ({ user }: { user: TeacherDashboardProps['userData'] }) => {
         )}
       </CardContent>
     </Card>
+    
+    {/* Edit Attendance Dialog - Mirip dengan fitur edit di siswa */}
+    <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Edit className="w-5 h-5" />
+            Edit Absensi Siswa
+          </DialogTitle>
+        </DialogHeader>
+        <div className="space-y-6">
+          {editingAttendance && (
+            <>
+              {/* Info Siswa */}
+              <div className="bg-gray-50 p-4 rounded-lg">
+                <h4 className="font-medium text-gray-900 mb-2">Informasi Siswa</h4>
+                <div className="grid grid-cols-2 gap-4 text-sm">
+                  <div>
+                    <span className="text-gray-600">Nama:</span>
+                    <p className="font-medium">{editingAttendance.nama_siswa}</p>
+                  </div>
+                  <div>
+                    <span className="text-gray-600">NIS:</span>
+                    <p className="font-medium">{editingAttendance.nis}</p>
+                  </div>
+                  <div>
+                    <span className="text-gray-600">Kelas:</span>
+                    <p className="font-medium">{editingAttendance.nama_kelas}</p>
+                  </div>
+                  <div>
+                    <span className="text-gray-600">Mata Pelajaran:</span>
+                    <p className="font-medium">{editingAttendance.nama_mapel}</p>
+                  </div>
+                  <div>
+                    <span className="text-gray-600">Tanggal:</span>
+                    <p className="font-medium">
+                      {new Date(editingAttendance.tanggal).toLocaleDateString('id-ID', {
+                        weekday: 'long',
+                        year: 'numeric',
+                        month: 'long',
+                        day: 'numeric'
+                      })}
+                    </p>
+                  </div>
+                  <div>
+                    <span className="text-gray-600">Waktu:</span>
+                    <p className="font-medium">
+                      {editingAttendance.jam_mulai} - {editingAttendance.jam_selesai}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Form Edit */}
+              <div className="space-y-4">
+                <div>
+                  <Label htmlFor="edit-status" className="text-sm font-medium">
+                    Status Kehadiran
+                  </Label>
+                  <Select value={editStatus} onValueChange={setEditStatus}>
+                    <SelectTrigger className="mt-1">
+                      <SelectValue placeholder="Pilih status kehadiran" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Hadir">
+                        <div className="flex items-center gap-2">
+                          <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                          Hadir
+                        </div>
+                      </SelectItem>
+                      <SelectItem value="Izin">
+                        <div className="flex items-center gap-2">
+                          <div className="w-2 h-2 bg-yellow-500 rounded-full"></div>
+                          Izin
+                        </div>
+                      </SelectItem>
+                      <SelectItem value="Sakit">
+                        <div className="flex items-center gap-2">
+                          <div className="w-2 h-2 bg-orange-500 rounded-full"></div>
+                          Sakit
+                        </div>
+                      </SelectItem>
+                      <SelectItem value="Alpa">
+                        <div className="flex items-center gap-2">
+                          <div className="w-2 h-2 bg-red-500 rounded-full"></div>
+                          Alpa
+                        </div>
+                      </SelectItem>
+                      <SelectItem value="Dispen">
+                        <div className="flex items-center gap-2">
+                          <div className="w-2 h-2 bg-purple-500 rounded-full"></div>
+                          Dispen
+                        </div>
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div>
+                  <Label htmlFor="edit-keterangan" className="text-sm font-medium">
+                    Keterangan
+                  </Label>
+                  <Textarea
+                    id="edit-keterangan"
+                    placeholder="Masukkan keterangan jika diperlukan..."
+                    value={editKeterangan}
+                    onChange={(e) => setEditKeterangan(e.target.value)}
+                    rows={3}
+                    className="mt-1"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">
+                    Keterangan akan muncul di laporan absensi
+                  </p>
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex justify-end space-x-3 pt-4 border-t">
+                <Button 
+                  variant="outline" 
+                  onClick={() => setEditDialogOpen(false)}
+                  className="flex items-center gap-2"
+                >
+                  <XCircle className="w-4 h-4" />
+                  Batal
+                </Button>
+                <Button 
+                  onClick={handleSaveEdit}
+                  className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700"
+                >
+                  <Save className="w-4 h-4" />
+                  Simpan Perubahan
+                </Button>
+              </div>
+            </>
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
+  </>
   );
 };
 

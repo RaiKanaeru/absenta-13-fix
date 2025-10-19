@@ -7,9 +7,9 @@ import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import cookieParser from 'cookie-parser';
 import ExcelJS from 'exceljs';
-import { compressImage, validateImage } from '../../backend/utils/imageCompression.js';
+import { compressImage, validateImage } from './backend/utils/imageCompression.js';
 import { db, pool } from './db.js';
-import adminRouter from '../../backend/routes/admin.js';
+import adminRouter from './backend/routes/admin.js';
 
 const app = express();
 const port = 3001;
@@ -1418,7 +1418,7 @@ app.delete('/api/admin/kelas/:id', authenticateToken, requireRole(['admin']), as
 
 // Helper function untuk normalisasi guru data
 function normalizeGuruData(requestBody) {
-    const { guru_ids, guru_id, is_multi_guru } = requestBody;
+    const { guru_ids, guru_id } = requestBody;
     
     // ✅ Backward compatibility: terima guru_id lama atau guru_ids baru
     let normalizedGuruIds = [];
@@ -1444,9 +1444,9 @@ function normalizeGuruData(requestBody) {
     }
     
     return {
-        guru_id: normalizedGuruIds[0],
-        guru_ids: normalizedGuruIds,
-        is_multi_guru: normalizedGuruIds.length > 1
+        guru_id: normalizedGuruIds[0],  // Primary teacher
+        guru_ids: normalizedGuruIds,     // All teachers
+        additional_guru_ids: normalizedGuruIds.slice(1) // Additional teachers only
     };
 }
 
@@ -1465,8 +1465,6 @@ app.get('/api/admin/jadwal', authenticateToken, requireRole(['admin']), async (r
                 j.kelas_id,
                 j.mapel_id, 
                 j.guru_id,
-                j.guru_ids,
-                j.is_multi_guru,
                 j.hari,
                 j.jam_ke,
                 j.jam_mulai,
@@ -1474,12 +1472,18 @@ app.get('/api/admin/jadwal', authenticateToken, requireRole(['admin']), async (r
                 j.status,
                 k.nama_kelas,
                 m.nama_mapel,
-                g.nama as nama_guru
+                g.nama as nama_guru_utama,
+                GROUP_CONCAT(DISTINCT jg.guru_id) as guru_ids,
+                GROUP_CONCAT(DISTINCT g2.nama ORDER BY g2.nama SEPARATOR ', ') as nama_guru_semua,
+                COUNT(DISTINCT jg.guru_id) as jumlah_guru
             FROM jadwal j
             JOIN kelas k ON j.kelas_id = k.id_kelas
             JOIN mapel m ON j.mapel_id = m.id_mapel  
             JOIN guru g ON j.guru_id = g.id_guru
+            LEFT JOIN jadwal_guru jg ON j.id_jadwal = jg.jadwal_id AND jg.status = 'aktif'
+            LEFT JOIN guru g2 ON jg.guru_id = g2.id_guru
             WHERE j.status = 'aktif'
+            GROUP BY j.id_jadwal
             ORDER BY 
                 FIELD(j.hari, 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'),
                 j.jam_ke, 
@@ -1489,44 +1493,24 @@ app.get('/api/admin/jadwal', authenticateToken, requireRole(['admin']), async (r
         const [rows] = await db.execute(query);
         console.log(`✅ Schedules retrieved: ${rows.length} items`);
         
-        // Optimasi: Batch query untuk enrichment nama guru
-        // Kumpulkan semua guru_ids dari seluruh jadwal
-        const allGuruIds = new Set();
+        // Process guru data untuk setiap jadwal
         for (const schedule of rows) {
+            // Build guru IDs array dari guru_ids yang sudah ada
             let guruIds = [];
-            if (schedule.guru_ids && schedule.is_multi_guru) {
-                guruIds = JSON.parse(schedule.guru_ids);
-            } else {
-                guruIds = [schedule.guru_id];
-            }
-            guruIds.forEach(id => allGuruIds.add(id));
-        }
-
-        // Query semua guru sekaligus (batch) dengan parameterized query
-        let guruMap = {};
-        if (allGuruIds.size > 0) {
-            const guruIdsArray = [...allGuruIds];
-            const placeholders = guruIdsArray.map(() => '?').join(',');
-            const [allGuru] = await db.execute(
-                `SELECT id_guru, nama FROM guru WHERE id_guru IN (${placeholders})`,
-                guruIdsArray
-            );
-            guruMap = Object.fromEntries(allGuru.map(g => [g.id_guru, g.nama]));
-        }
-
-        // Mapping hasil ke setiap jadwal
-        for (const schedule of rows) {
-            let guruIds = [];
-            if (schedule.guru_ids && schedule.is_multi_guru) {
-                guruIds = JSON.parse(schedule.guru_ids);
+            if (schedule.guru_ids) {
+                guruIds = schedule.guru_ids.split(',').map(id => parseInt(id));
             } else {
                 guruIds = [schedule.guru_id];
             }
             
-            const guruNames = guruIds.map(id => guruMap[id] || 'Unknown').filter(n => n !== 'Unknown');
-            schedule.guru_list = guruIds.map(id => ({ id_guru: id, nama: guruMap[id] }));
-            schedule.guru_names = guruNames.join(', ');
+            // Set guru data
+            schedule.guru_list = guruIds.map(id => ({ id_guru: id, nama: 'Loading...' }));
+            schedule.guru_names = schedule.nama_guru_semua || schedule.nama_guru_utama;
+            schedule.nama_guru = schedule.nama_guru_utama; // Backward compatibility
+            schedule.jumlah_guru = schedule.jumlah_guru || 1;
         }
+
+        // Data sudah diproses di loop sebelumnya
         
         res.json({ success: true, data: rows });
     } catch (error) {
@@ -1640,16 +1624,27 @@ app.post('/api/admin/jadwal', authenticateToken, requireRole(['admin']), async (
             });
         }
 
+        // Insert jadwal dengan single guru (primary teacher)
         const [result] = await db.execute(
-            `INSERT INTO jadwal (kelas_id, mapel_id, guru_id, guru_ids, is_multi_guru, ruang_id, hari, jam_ke, jam_mulai, jam_selesai, status)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'aktif')`,
-            [kelas_id, mapel_id, normalizedGuruId, JSON.stringify(normalizedGuruIds), normalizedIsMultiGuru, ruang_id || null, hari, jam_ke, jam_mulai, jam_selesai]
+            `INSERT INTO jadwal (kelas_id, mapel_id, guru_id, ruang_id, hari, jam_ke, jam_mulai, jam_selesai, status)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'aktif')`,
+            [kelas_id, mapel_id, normalizedGuruId, ruang_id || null, hari, jam_ke, jam_mulai, jam_selesai]
         );
+
+        const jadwalId = result.insertId;
+
+        // Insert semua guru ke jadwal_guru (termasuk guru utama)
+        for (const guruId of normalizedGuruIds) {
+            await db.execute(
+                'INSERT INTO jadwal_guru (jadwal_id, guru_id, status) VALUES (?, ?, ?)',
+                [jadwalId, guruId, 'aktif']
+            );
+        }
 
         console.log('✅ Schedule added successfully');
         res.json({ 
             message: 'Jadwal berhasil ditambahkan',
-            id: result.insertId 
+            id: jadwalId 
         });
     } catch (error) {
         console.error('❌ Error adding schedule:', error);
@@ -1753,12 +1748,25 @@ app.put('/api/admin/jadwal/:id', authenticateToken, requireRole(['admin']), asyn
             });
         }
 
+        // Update jadwal dengan single guru (primary teacher)
         const [result] = await db.execute(
             `UPDATE jadwal 
-             SET kelas_id = ?, mapel_id = ?, guru_id = ?, guru_ids = ?, is_multi_guru = ?, ruang_id = ?, hari = ?, jam_ke = ?, jam_mulai = ?, jam_selesai = ?
+             SET kelas_id = ?, mapel_id = ?, guru_id = ?, ruang_id = ?, hari = ?, jam_ke = ?, jam_mulai = ?, jam_selesai = ?
              WHERE id_jadwal = ?`,
-            [kelas_id, mapel_id, normalizedGuruId, JSON.stringify(normalizedGuruIds), normalizedIsMultiGuru, ruang_id || null, hari, jam_ke, jam_mulai, jam_selesai, id]
+            [kelas_id, mapel_id, normalizedGuruId, ruang_id || null, hari, jam_ke, jam_mulai, jam_selesai, id]
         );
+
+        // Update guru di jadwal_guru
+        // 1. Hapus semua guru yang lama
+        await db.execute('DELETE FROM jadwal_guru WHERE jadwal_id = ?', [id]);
+
+        // 2. Insert semua guru yang baru
+        for (const guruId of normalizedGuruIds) {
+            await db.execute(
+                'INSERT INTO jadwal_guru (jadwal_id, guru_id, status) VALUES (?, ?, ?)',
+                [id, guruId, 'aktif']
+            );
+        }
 
         if (result.affectedRows === 0) {
             return res.status(404).json({ error: 'Jadwal tidak ditemukan' });
@@ -1788,14 +1796,15 @@ app.get('/api/admin/jadwal/preview', authenticateToken, requireRole(['admin']), 
                 j.jam_mulai,
                 j.jam_selesai,
                 j.status,
-                j.guru_id,        -- ✅ TAMBAHKAN INI
-                j.guru_ids,
-                j.is_multi_guru,
-                m.nama_mapel
+                j.guru_id,
+                m.nama_mapel,
+                GROUP_CONCAT(DISTINCT jgt.guru_id) as guru_tambahan_ids
             FROM jadwal j
             JOIN kelas k ON j.kelas_id = k.id_kelas
             JOIN mapel m ON j.mapel_id = m.id_mapel
+            LEFT JOIN jadwal_guru_tambahan jgt ON j.id_jadwal = jgt.jadwal_id AND jgt.status = 'aktif'
             WHERE j.status = 'aktif'
+            GROUP BY j.id_jadwal
         `;
         
         let params = [];
@@ -1812,11 +1821,11 @@ app.get('/api/admin/jadwal/preview', authenticateToken, requireRole(['admin']), 
         // Optimasi: Batch query untuk enrichment nama guru
         const allGuruIds = new Set();
         for (const schedule of schedules) {
-            let guruIds = [];
-            if (schedule.guru_ids && schedule.is_multi_guru) {
-                guruIds = JSON.parse(schedule.guru_ids);
-            } else if (schedule.guru_id) {
-                guruIds = [schedule.guru_id];
+            // Build guru IDs array
+            let guruIds = [schedule.guru_id];
+            if (schedule.guru_tambahan_ids) {
+                const additionalIds = schedule.guru_tambahan_ids.split(',').map(id => parseInt(id));
+                guruIds = [...guruIds, ...additionalIds];
             }
             guruIds.forEach(id => {
                 const parsed = parseInt(id);
@@ -1840,11 +1849,11 @@ app.get('/api/admin/jadwal/preview', authenticateToken, requireRole(['admin']), 
 
         // Mapping hasil ke setiap jadwal
         for (const schedule of schedules) {
-            let guruIds = [];
-            if (schedule.guru_ids && schedule.is_multi_guru) {
-                guruIds = JSON.parse(schedule.guru_ids);
-            } else if (schedule.guru_id) {
-                guruIds = [schedule.guru_id];
+            // Build guru IDs array
+            let guruIds = [schedule.guru_id];
+            if (schedule.guru_tambahan_ids) {
+                const additionalIds = schedule.guru_tambahan_ids.split(',').map(id => parseInt(id));
+                guruIds = [...guruIds, ...additionalIds];
             }
             
             const guruNames = guruIds
@@ -1910,13 +1919,15 @@ app.get('/api/admin/jadwal/export', authenticateToken, requireRole(['admin']), a
                 j.jam_mulai,
                 j.jam_selesai,
                 j.status,
-                j.guru_ids,
-                j.is_multi_guru,
-                m.nama_mapel
+                j.guru_id,
+                m.nama_mapel,
+                GROUP_CONCAT(DISTINCT jgt.guru_id) as guru_tambahan_ids
             FROM jadwal j
             JOIN kelas k ON j.kelas_id = k.id_kelas
             JOIN mapel m ON j.mapel_id = m.id_mapel
+            LEFT JOIN jadwal_guru_tambahan jgt ON j.id_jadwal = jgt.jadwal_id AND jgt.status = 'aktif'
             WHERE j.status = 'aktif'
+            GROUP BY j.id_jadwal
         `;
         
         let params = [];
@@ -1934,11 +1945,11 @@ app.get('/api/admin/jadwal/export', authenticateToken, requireRole(['admin']), a
         // Kumpulkan semua guru_ids dari seluruh jadwal
         const allGuruIds = new Set();
         for (const schedule of schedules) {
-            let guruIds = [];
-            if (schedule.guru_ids && schedule.is_multi_guru) {
-                guruIds = JSON.parse(schedule.guru_ids);
-            } else {
-                guruIds = [schedule.guru_id];
+            // Build guru IDs array
+            let guruIds = [schedule.guru_id];
+            if (schedule.guru_tambahan_ids) {
+                const additionalIds = schedule.guru_tambahan_ids.split(',').map(id => parseInt(id));
+                guruIds = [...guruIds, ...additionalIds];
             }
             guruIds.forEach(id => allGuruIds.add(id));
         }
@@ -1957,11 +1968,11 @@ app.get('/api/admin/jadwal/export', authenticateToken, requireRole(['admin']), a
 
         // Mapping hasil ke setiap jadwal
         for (const schedule of schedules) {
-            let guruIds = [];
-            if (schedule.guru_ids && schedule.is_multi_guru) {
-                guruIds = JSON.parse(schedule.guru_ids);
-            } else {
-                guruIds = [schedule.guru_id];
+            // Build guru IDs array
+            let guruIds = [schedule.guru_id];
+            if (schedule.guru_tambahan_ids) {
+                const additionalIds = schedule.guru_tambahan_ids.split(',').map(id => parseInt(id));
+                guruIds = [...guruIds, ...additionalIds];
             }
             
             const guruNames = guruIds.map(id => guruMap[id] || 'Unknown').filter(n => n !== 'Unknown');
@@ -2106,10 +2117,65 @@ app.get('/api/schedule/:id/students', authenticateToken, requireRole(['guru', 'a
     }
 });
 
+// Get students for a specific schedule by date (for edit mode)
+app.get('/api/schedule/:id/students-by-date', authenticateToken, requireRole(['guru', 'admin']), async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { tanggal } = req.query;
+        
+        if (!tanggal) {
+            return res.status(400).json({ error: 'Parameter tanggal diperlukan' });
+        }
+        
+        console.log(`👥 Getting students for schedule ID: ${id} on date: ${tanggal}`);
+
+        // First, get the schedule details to get the class ID
+        const [scheduleData] = await db.execute(
+            'SELECT kelas_id FROM jadwal WHERE id_jadwal = ? AND status = "aktif"',
+            [id]
+        );
+
+        if (scheduleData.length === 0) {
+            return res.status(404).json({ error: 'Jadwal tidak ditemukan' });
+        }
+
+        const kelasId = scheduleData[0].kelas_id;
+
+        // Get all students in the class with their existing attendance for the specified date
+        const [students] = await db.execute(
+            `SELECT 
+                s.id_siswa as id,
+                s.nis,
+                s.nama,
+                s.jenis_kelamin,
+                s.jabatan,
+                s.status,
+                k.nama_kelas,
+                COALESCE(a.status, 'Hadir') as attendance_status,
+                a.keterangan as attendance_note,
+                a.waktu_absen,
+            FROM siswa s
+            JOIN kelas k ON s.kelas_id = k.id_kelas
+            LEFT JOIN absensi_siswa a ON s.id_siswa = a.siswa_id 
+                AND a.jadwal_id = ? 
+                AND a.tanggal = ?
+            WHERE s.kelas_id = ? AND s.status = 'aktif'
+            ORDER BY s.nama ASC`,
+            [id, tanggal, kelasId]
+        );
+
+        console.log(`✅ Found ${students.length} students for schedule ${id} on date ${tanggal} (class ${kelasId}) with attendance data`);
+        res.json(students);
+    } catch (error) {
+        console.error('❌ Error getting students for schedule by date:', error);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
 // Submit attendance for a schedule
 app.post('/api/attendance/submit', authenticateToken, requireRole(['guru', 'admin']), async (req, res) => {
     try {
-        const { scheduleId, attendance, notes, guruId, ada_tugas, terlambat } = req.body;
+        const { scheduleId, attendance, notes, guruId } = req.body;
         
         if (!scheduleId || !attendance || !guruId) {
             return res.status(400).json({ error: 'Data absensi tidak lengkap' });
@@ -2119,9 +2185,9 @@ app.post('/api/attendance/submit', authenticateToken, requireRole(['guru', 'admi
         console.log(`📊 Attendance data:`, JSON.stringify(attendance, null, 2));
         console.log(`📝 Notes data:`, JSON.stringify(notes, null, 2));
 
-        // Get the schedule details to verify it exists and get guru_ids
+        // Get the schedule details to verify it exists
         const [scheduleData] = await db.execute(
-            'SELECT kelas_id, mapel_id, guru_id, guru_ids, is_multi_guru FROM jadwal WHERE id_jadwal = ? AND status = "aktif"',
+            'SELECT kelas_id, mapel_id, guru_id FROM jadwal WHERE id_jadwal = ? AND status = "aktif"',
             [scheduleId]
         );
 
@@ -2129,15 +2195,10 @@ app.post('/api/attendance/submit', authenticateToken, requireRole(['guru', 'admi
             return res.status(404).json({ error: 'Jadwal tidak ditemukan' });
         }
 
-        const { kelas_id, mapel_id, guru_id, guru_ids, is_multi_guru } = scheduleData[0];
+        const { kelas_id, mapel_id, guru_id } = scheduleData[0];
         
-        // Determine semua guru yang terlibat
-        let allGuruIds = [];
-        if (guru_ids && is_multi_guru) {
-            allGuruIds = JSON.parse(guru_ids);
-        } else {
-            allGuruIds = [guru_id];
-        }
+        // Single teacher per schedule
+        const allGuruIds = [guru_id];
 
         // Insert attendance records for each student
         const attendanceEntries = Object.entries(attendance);
@@ -2146,8 +2207,6 @@ app.post('/api/attendance/submit', authenticateToken, requireRole(['guru', 'admi
 
         for (const [studentId, status] of attendanceEntries) {
             const note = notes[studentId] || '';
-            const studentAdaTugas = ada_tugas ? ada_tugas[studentId] : false; // ✅ BARU
-            const studentTerlambat = terlambat ? terlambat[studentId] : false; // ✅ BARU
             
             // Validate status
             const validStatuses = ['Hadir', 'Izin', 'Sakit', 'Alpa', 'Dispen'];
@@ -2158,7 +2217,7 @@ app.post('/api/attendance/submit', authenticateToken, requireRole(['guru', 'admi
                 });
             }
             
-            console.log(`👤 Processing student ${studentId}: status="${status}", note="${note}", ada_tugas=${studentAdaTugas}, terlambat=${studentTerlambat}`);
+            console.log(`👤 Processing student ${studentId}: status="${status}", note="${note}"`);
             
             // Check if attendance already exists for today
             const [existingAttendance] = await db.execute(
@@ -2171,20 +2230,20 @@ app.post('/api/attendance/submit', authenticateToken, requireRole(['guru', 'admi
                 const currentStatus = existingAttendance[0].current_status;
                 console.log(`🔄 Updating existing attendance ID ${existingId} from "${currentStatus}" to "${status}"`);
                 
-                // ✅ UPDATE: Tambah field ada_tugas dan terlambat
+                // Update existing attendance
                 const [updateResult] = await db.execute(
-                    'UPDATE absensi_siswa SET status = ?, keterangan = ?, ada_tugas = ?, terlambat = ?, waktu_absen = ? WHERE id = ?',
-                    [status, note, studentAdaTugas, studentTerlambat, `${currentDate} ${currentTime}`, existingId]
+                    'UPDATE absensi_siswa SET status = ?, keterangan = ?, waktu_absen = ? WHERE id = ?',
+                    [status, note, `${currentDate} ${currentTime}`, existingId]
                 );
                 
                 console.log(`✅ Updated attendance for student ${studentId}: ${updateResult.affectedRows} rows affected`);
             } else {
                 console.log(`➕ Inserting new attendance for student ${studentId}`);
                 
-                // ✅ INSERT: Tambah field ada_tugas dan terlambat
+                // Insert new attendance
                 const [insertResult] = await db.execute(
-                    'INSERT INTO absensi_siswa (siswa_id, jadwal_id, tanggal, status, keterangan, guru_id, ada_tugas, terlambat, waktu_absen) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-                    [studentId, scheduleId, currentDate, status, note, guruId, studentAdaTugas, studentTerlambat, `${currentDate} ${currentTime}`]
+                    'INSERT INTO absensi_siswa (siswa_id, jadwal_id, tanggal, status, keterangan, guru_id, waktu_absen) VALUES (?, ?, ?, ?, ?, ?, ?)',
+                    [studentId, scheduleId, currentDate, status, note, guruId, `${currentDate} ${currentTime}`]
                 );
                 
                 console.log(`✅ Inserted new attendance for student ${studentId}: ID ${insertResult.insertId}`);
@@ -2211,8 +2270,8 @@ app.post('/api/attendance/submit', authenticateToken, requireRole(['guru', 'admi
                 // Insert new: create entry untuk guru ini
                 await db.execute(`
                     INSERT INTO absensi_guru 
-                    (jadwal_id, guru_id, kelas_id, tanggal, jam_ke, status, keterangan, metode_absen)
-                    SELECT ?, ?, kelas_id, ?, jam_ke, 'Hadir', 'Absensi siswa tercatat', 'manual'
+                    (jadwal_id, guru_id, kelas_id, siswa_pencatat_id, tanggal, jam_ke, status, keterangan, metode_absen)
+                    SELECT ?, ?, kelas_id, 2, ?, jam_ke, 'Hadir', 'Absensi siswa tercatat', 'manual'
                     FROM jadwal WHERE id_jadwal = ?
                 `, [scheduleId, currentGuruId, currentDate, scheduleId]);
                 console.log(`✅ Created absensi_guru for guru ${currentGuruId}`);
@@ -2896,9 +2955,12 @@ app.get('/api/guru/classes', authenticateToken, requireRole(['guru']), async (re
         const guruId = req.user.guru_id;
         const [rows] = await db.execute(
             `SELECT DISTINCT k.id_kelas as id, k.nama_kelas 
-             FROM jadwal j JOIN kelas k ON j.kelas_id = k.id_kelas 
-             WHERE (j.guru_id = ? OR JSON_CONTAINS(j.guru_ids, CAST(? AS JSON))) AND j.status = 'aktif' ORDER BY k.nama_kelas`,
-            [guruId, JSON.stringify(guruId)]
+             FROM jadwal j 
+             JOIN kelas k ON j.kelas_id = k.id_kelas 
+             LEFT JOIN jadwal_guru jg ON j.id_jadwal = jg.jadwal_id AND jg.guru_id = ? AND jg.status = 'aktif'
+             WHERE (j.guru_id = ? OR jg.guru_id IS NOT NULL) AND j.status = 'aktif' 
+             ORDER BY k.nama_kelas`,
+            [guruId, guruId]
         );
         res.json(rows);
     } catch (error) {
@@ -3492,6 +3554,46 @@ app.get('/api/guru/history', authenticateToken, requireRole(['guru', 'admin']), 
     }
 });
 
+// Edit student attendance
+app.put('/api/guru/edit-attendance/:id', authenticateToken, requireRole(['guru', 'admin']), async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { status, keterangan } = req.body;
+        const guruId = req.user.guru_id;
+
+        if (!guruId) {
+            return res.status(400).json({ error: 'guru_id tidak ditemukan pada token pengguna' });
+        }
+
+        // Check if teacher has permission to edit this attendance
+        const [attendanceCheck] = await db.execute(`
+            SELECT a.id, a.siswa_id, a.jadwal_id, a.status, a.keterangan, a.waktu_absen,
+                   j.guru_id, jg.guru_id as multi_guru_id
+            FROM absensi_siswa a
+            JOIN jadwal j ON a.jadwal_id = j.id_jadwal
+            LEFT JOIN jadwal_guru jg ON j.id_jadwal = jg.jadwal_id AND jg.guru_id = ? AND jg.status = 'aktif'
+            WHERE a.id = ? AND (j.guru_id = ? OR jg.guru_id IS NOT NULL)
+        `, [guruId, id, guruId]);
+
+        if (attendanceCheck.length === 0) {
+            return res.status(403).json({ error: 'Tidak memiliki izin untuk mengedit absensi ini' });
+        }
+
+        // Update attendance
+        await db.execute(
+            'UPDATE absensi_siswa SET status = ?, keterangan = ?, waktu_absen = NOW() WHERE id = ?',
+            [status, keterangan, id]
+        );
+
+        console.log(`✅ Attendance updated for ID ${id} by guru ${guruId}`);
+        res.json({ success: true, message: 'Absensi berhasil diperbarui' });
+
+    } catch (error) {
+        console.error('❌ Error updating attendance:', error);
+        res.status(500).json({ error: 'Gagal memperbarui absensi', details: error.message });
+    }
+});
+
 // Get student attendance history for teacher (FIXED ENDPOINT)
 app.get('/api/guru/student-attendance-history', authenticateToken, requireRole(['guru', 'admin']), async (req, res) => {
     try {
@@ -3517,7 +3619,8 @@ app.get('/api/guru/student-attendance-history', authenticateToken, requireRole([
                 absensi.keterangan,
                 absensi.waktu_absen,
                 guru_absen.status as status_guru,
-                guru_absen.keterangan as keterangan_guru
+                guru_absen.keterangan as keterangan_guru,
+                absensi.id as absensi_id
             FROM absensi_siswa absensi
             INNER JOIN jadwal ON absensi.jadwal_id = jadwal.id_jadwal
             INNER JOIN mapel ON jadwal.mapel_id = mapel.id_mapel
@@ -3525,12 +3628,13 @@ app.get('/api/guru/student-attendance-history', authenticateToken, requireRole([
             INNER JOIN siswa siswa ON absensi.siswa_id = siswa.id_siswa
             LEFT JOIN absensi_guru guru_absen ON jadwal.id_jadwal = guru_absen.jadwal_id 
                 AND DATE(guru_absen.tanggal) = DATE(absensi.waktu_absen)
-            WHERE (jadwal.guru_id = ? OR JSON_CONTAINS(jadwal.guru_ids, CAST(? AS JSON)))
+            LEFT JOIN jadwal_guru jg ON jadwal.id_jadwal = jg.jadwal_id AND jg.guru_id = ? AND jg.status = 'aktif'
+            WHERE (jadwal.guru_id = ? OR jg.guru_id IS NOT NULL)
                 AND absensi.waktu_absen >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)
             ORDER BY absensi.waktu_absen DESC, jadwal.jam_ke ASC
             LIMIT 1000`;
 
-        const [history] = await db.execute(query, [guruId, JSON.stringify(guruId)]);
+        const [history] = await db.execute(query, [guruId, guruId]);
 
         console.log(`✅ Found ${history.length} student attendance records for guru_id ${guruId}`);
         
@@ -4367,183 +4471,110 @@ app.get('/api/siswa/:siswaId/jadwal-rentang', authenticateToken, requireRole(['s
     }
 });
 
-// Alternative endpoint with siswa_id parameter for backward compatibility
-app.get('/api/siswa/:siswa_id/jadwal-rentang', authenticateToken, requireRole(['siswa']), async (req, res) => {
-    try {
-        const { siswa_id } = req.params;
-        const { tanggal } = req.query;
-        
-        console.log('📅 Getting jadwal for siswa (legacy):', siswa_id, 'tanggal:', tanggal);
-
-        // Check database connection
-        if (!db) {
-            console.error('❌ Database connection not available');
-            return res.status(500).json({ 
-                success: false,
-                error: 'Database connection tidak tersedia' 
-            });
-        }
-
-        // Validate siswa_id parameter
-        if (!siswa_id || isNaN(parseInt(siswa_id))) {
-            console.log('❌ Invalid siswa_id parameter:', siswa_id);
-            return res.status(400).json({ 
-                success: false, 
-                error: 'ID siswa tidak valid' 
-            });
-        }
-
-        if (!tanggal) {
-            console.log('❌ Missing tanggal parameter (legacy)');
-            return res.status(400).json({ 
-                success: false, 
-                error: 'Parameter tanggal diperlukan' 
-            });
-        }
-
-        // Validate tanggal format
-        const targetDate = new Date(tanggal);
-        if (isNaN(targetDate.getTime())) {
-            console.log('❌ Invalid tanggal format (legacy):', tanggal);
-            return res.status(400).json({ 
-                success: false, 
-                error: 'Format tanggal tidak valid. Gunakan format YYYY-MM-DD' 
-            });
-        }
-
-        // Parse tanggal dan dapatkan hari dalam bahasa Indonesia
-        const dayNames = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
-        const targetDay = dayNames[targetDate.getDay()];
-
-        console.log('📅 Target day (legacy):', targetDay);
-
-        // Get siswa's class
-        console.log('🔍 Getting siswa data (legacy)...');
-        const [siswaData] = await db.execute(
-            'SELECT kelas_id FROM siswa WHERE id_siswa = ?',
-            [parseInt(siswa_id)]
-        );
-
-        if (siswaData.length === 0) {
-            console.log('❌ Siswa not found (legacy):', siswa_id);
-            return res.status(404).json({ 
-                success: false, 
-                error: 'Siswa tidak ditemukan' 
-            });
-        }
-
-        const kelasId = siswaData[0].kelas_id;
-        console.log('📊 Siswa kelas_id (legacy):', kelasId);
-
-        // Get schedule for the specific date and class
-        console.log('🔍 Getting jadwal data (legacy)...');
-        const [jadwalData] = await db.execute(`
-            SELECT 
-                j.id_jadwal,
-                j.jam_ke,
-                j.jam_mulai,
-                j.jam_selesai,
-                mp.nama_mapel,
-                mp.kode_mapel,
-                g.nama as nama_guru,
-                g.nip,
-                k.nama_kelas,
-                COALESCE(ag.status, 'belum_diambil') as status_kehadiran,
-                COALESCE(ag.keterangan, '') as keterangan
-            FROM jadwal j
-            JOIN mapel mp ON j.mapel_id = mp.id_mapel
-            JOIN guru g ON j.guru_id = g.id_guru
-            JOIN kelas k ON j.kelas_id = k.id_kelas
-            LEFT JOIN absensi_guru ag ON j.id_jadwal = ag.jadwal_id 
-                AND ag.tanggal = ?
-            WHERE j.kelas_id = ? AND j.hari = ?
-            ORDER BY j.jam_ke
-        `, [tanggal, kelasId, targetDay]);
-
-        console.log('✅ Jadwal retrieved for date (legacy):', tanggal, 'count:', jadwalData.length);
-
-        res.json({
-            success: true,
-            data: jadwalData
-        });
-
-    } catch (error) {
-        console.error('❌ Error getting jadwal by date (legacy):', error);
-        console.error('❌ Error stack:', error.stack);
-        console.error('❌ Error details:', {
-            message: error.message,
-            code: error.code,
-            errno: error.errno,
-            sqlState: error.sqlState
-        });
-        res.status(500).json({ 
-            success: false, 
-            error: 'Gagal memuat jadwal untuk tanggal tersebut',
-            details: process.env.NODE_ENV === 'development' ? error.message : undefined
-        });
-    }
-});
+// Endpoint duplikat dihapus untuk menghindari konflik routing
 
 // Submit kehadiran guru
 app.post('/api/siswa/submit-kehadiran-guru', authenticateToken, requireRole(['siswa']), async (req, res) => {
+    const connection = await db.getConnection();
+    
     try {
-        const { siswa_id, kehadiran_data } = req.body;
-        console.log('📝 Submitting kehadiran guru for siswa:', siswa_id);
-        console.log('📝 Kehadiran data:', kehadiran_data);
+        const { siswa_id, kehadiran_data, tanggal_absen } = req.body;
+        
+        // Support edit mode dengan tanggal_absen
+        const targetDate = tanggal_absen || new Date().toISOString().split('T')[0];
+        
+        console.log('📝 Submitting kehadiran guru:', {
+            siswa_id,
+            jadwal_count: Object.keys(kehadiran_data).length,
+            target_date: targetDate,
+            is_edit_mode: !!tanggal_absen
+        });
 
-        // Begin transaction
-        await db.execute('START TRANSACTION');
-
-        const today = new Date().toISOString().split('T')[0];
-        const currentTime = new Date().toTimeString().split(' ')[0];
+        await connection.beginTransaction();
 
         // Insert/update attendance for each jadwal
         for (const [jadwalId, data] of Object.entries(kehadiran_data)) {
             const { status, keterangan } = data;
             
-            // Get guru_ids dari jadwal
-            const [scheduleData] = await db.execute(
-                'SELECT guru_id, guru_ids, is_multi_guru FROM jadwal WHERE id_jadwal = ?',
+            // Get schedule data and all teachers
+            const [scheduleData] = await connection.execute(
+                `SELECT j.kelas_id, j.jam_ke, j.guru_id,
+                        GROUP_CONCAT(jg.guru_id) as all_guru_ids
+                 FROM jadwal j
+                 LEFT JOIN jadwal_guru jg ON j.id_jadwal = jg.jadwal_id AND jg.status = 'aktif'
+                 WHERE j.id_jadwal = ?
+                 GROUP BY j.id_jadwal`,
                 [jadwalId]
             );
             
-            if (scheduleData.length === 0) continue;
-            
-            const { guru_id, guru_ids, is_multi_guru } = scheduleData[0];
-            let allGuruIds = [];
-            
-            if (guru_ids && is_multi_guru) {
-                allGuruIds = JSON.parse(guru_ids);
-            } else {
-                allGuruIds = [guru_id];
+            if (scheduleData.length === 0) {
+                console.warn(`Jadwal ${jadwalId} not found, skipping`);
+                continue;
             }
             
-            // Loop dan upsert untuk SETIAP guru
-            for (const currentGuruId of allGuruIds) {
-                const [existing] = await db.execute(
-                    'SELECT id_absensi FROM absensi_guru WHERE jadwal_id = ? AND guru_id = ? AND tanggal = ?',
-                    [jadwalId, currentGuruId, today]
+            const { kelas_id, jam_ke, guru_id, all_guru_ids } = scheduleData[0];
+            const guruIds = all_guru_ids ? all_guru_ids.split(',').map(id => parseInt(id)) : [guru_id];
+            
+            console.log(`  Processing jadwal ${jadwalId}:`, {
+                guru_ids: guruIds,
+                status,
+                has_keterangan: !!keterangan,
+                keterangan_length: keterangan?.length
+            });
+            
+            // Check for existing attendance record
+            const [existingRecord] = await connection.execute(
+                'SELECT id FROM absensi_guru_jadwal WHERE jadwal_id = ? AND tanggal = ?',
+                [jadwalId, targetDate]
+            );
+            
+            let absensiGuruJadwalId;
+            
+            if (existingRecord.length > 0) {
+                // Update existing record
+                absensiGuruJadwalId = existingRecord[0].id;
+                await connection.execute(
+                    'UPDATE absensi_guru_jadwal SET status = ?, keterangan = ?, siswa_pencatat_id = ?, waktu_catat = NOW() WHERE id = ?',
+                    [status, keterangan, siswa_id, absensiGuruJadwalId]
+                );
+                console.log(`    Updated existing attendance record for jadwal ${jadwalId}`);
+            } else {
+                // Create new attendance record
+                const [insertResult] = await connection.execute(
+                    'INSERT INTO absensi_guru_jadwal (jadwal_id, guru_pencatat_id, tanggal, jam_ke, status, keterangan, siswa_pencatat_id, metode_absen) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+                    [jadwalId, guru_id, targetDate, jam_ke, status, keterangan, siswa_id, 'manual']
+                );
+                absensiGuruJadwalId = insertResult.insertId;
+                console.log(`    Created new attendance record for jadwal ${jadwalId}`);
+            }
+            
+            // Update mapping for all teachers
+            for (const guruId of guruIds) {
+                // Check if mapping exists
+                const [existingMapping] = await connection.execute(
+                    'SELECT id FROM absensi_guru_mapping WHERE absensi_guru_jadwal_id = ? AND guru_id = ?',
+                    [absensiGuruJadwalId, guruId]
                 );
                 
-                if (existing.length > 0) {
-                    await db.execute(
-                        'UPDATE absensi_guru SET status = ?, keterangan = ?, siswa_pencatat_id = ? WHERE id_absensi = ?',
-                        [status, keterangan, siswa_id, existing[0].id_absensi]
+                if (existingMapping.length > 0) {
+                    // Update existing mapping
+                    await connection.execute(
+                        'UPDATE absensi_guru_mapping SET status = ?, keterangan = ? WHERE id = ?',
+                        [status, keterangan, existingMapping[0].id]
                     );
+                    console.log(`      Updated mapping for guru ${guruId}`);
                 } else {
-                    await db.execute(`
-                        INSERT INTO absensi_guru 
-                        (jadwal_id, guru_id, kelas_id, siswa_pencatat_id, tanggal, jam_ke, status, keterangan, metode_absen)
-                        SELECT ?, ?, kelas_id, ?, ?, jam_ke, ?, ?, 'manual'
-                        FROM jadwal WHERE id_jadwal = ?
-                    `, [jadwalId, currentGuruId, siswa_id, today, status, keterangan, jadwalId]);
+                    // Create new mapping
+                    await connection.execute(
+                        'INSERT INTO absensi_guru_mapping (absensi_guru_jadwal_id, guru_id, status, keterangan) VALUES (?, ?, ?, ?)',
+                        [absensiGuruJadwalId, guruId, status, keterangan]
+                    );
+                    console.log(`      Created mapping for guru ${guruId}`);
                 }
             }
         }
 
-        // Commit transaction
-        await db.execute('COMMIT');
-
+        await connection.commit();
         console.log('✅ Kehadiran guru submitted successfully');
 
         res.json({
@@ -4552,10 +4583,18 @@ app.post('/api/siswa/submit-kehadiran-guru', authenticateToken, requireRole(['si
         });
 
     } catch (error) {
-        // Rollback on error
-        await db.execute('ROLLBACK');
+        await connection.rollback();
         console.error('❌ Error submitting kehadiran guru:', error);
-        res.status(500).json({ error: 'Gagal menyimpan data kehadiran guru' });
+        
+        // Send detailed error for debugging
+        res.status(500).json({ 
+            error: 'Gagal menyimpan data kehadiran guru',
+            details: error.message,
+            sqlState: error.sqlState,
+            errno: error.errno
+        });
+    } finally {
+        connection.release();
     }
 });
 
@@ -5990,11 +6029,12 @@ app.get('/api/guru/:guruId/banding-absen', authenticateToken, requireRole(['guru
             JOIN mapel m ON j.mapel_id = m.id_mapel
             JOIN siswa s ON ba.siswa_id = s.id_siswa
             JOIN kelas k ON s.kelas_id = k.id_kelas
-            WHERE (j.guru_id = ? OR JSON_CONTAINS(j.guru_ids, CAST(? AS JSON)))
+            LEFT JOIN jadwal_guru jg ON j.id_jadwal = jg.jadwal_id AND jg.guru_id = ? AND jg.status = 'aktif'
+            WHERE (j.guru_id = ? OR jg.guru_id IS NOT NULL)
             ORDER BY ba.tanggal_pengajuan DESC, ba.status_banding ASC
         `;
 
-        const [rows] = await db.execute(query, [guruId, JSON.stringify(guruId)]);
+        const [rows] = await db.execute(query, [guruId, guruId]);
         console.log(`✅ Banding absen for guru retrieved: ${rows.length} items`);
         res.json(rows);
     } catch (error) {

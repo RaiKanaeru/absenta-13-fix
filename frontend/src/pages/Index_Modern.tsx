@@ -7,7 +7,7 @@ import { useToast } from "@/hooks/use-toast";
 import { api } from "@/utils/api";
 
 type AppState = 'login' | 'dashboard';
-type UserRole = 'admin' | 'guru' | 'siswa' | null;
+type UserRole = 'admin' | 'guru' | 'siswa' | 'perwakilan' | null;
 
 interface UserData {
   id: number;

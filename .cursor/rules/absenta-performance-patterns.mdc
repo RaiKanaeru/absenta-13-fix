@@ -1,0 +1,583 @@
+---
+globs: backend/**/*.js,frontend/src/**/*.tsx,frontend/src/**/*.ts
+description: Performance optimization patterns and best practices for Absenta system
+---
+
+# Absenta Performance Optimization Patterns
+
+## 🚀 Backend Performance Optimization
+
+### Database Query Optimization
+```javascript
+// Optimized database queries
+const optimizedQueries = {
+  // Use indexes for frequently queried columns
+  getUserWithRole: async (username, role) => {
+    const [rows] = await db.execute(`
+      SELECT p.*, g.nama_guru, s.nama_siswa
+      FROM pengguna p
+      LEFT JOIN guru g ON p.id = g.user_id AND p.role = 'guru'
+      LEFT JOIN siswa_perwakilan s ON p.id = s.user_id AND p.role = 'siswa'
+      WHERE p.username = ? AND p.role = ?
+      LIMIT 1
+    `, [username, role]);
+    
+    return rows[0];
+  },
+  
+  // Pagination with proper indexing
+  getSiswaWithPagination: async (page = 1, limit = 10, search = '') => {
+    const offset = (page - 1) * limit;
+    
+    const whereClause = search ? 
+      'WHERE s.nama_siswa LIKE ? OR s.nis LIKE ?' : '';
+    
+    const searchParams = search ? [`%${search}%`, `%${search}%`] : [];
+    
+    const [rows] = await db.execute(`
+      SELECT s.*, p.username, p.status, k.nama_kelas
+      FROM siswa_perwakilan s
+      JOIN pengguna p ON s.user_id = p.id
+      JOIN kelas k ON s.kelas_id = k.id
+      ${whereClause}
+      ORDER BY s.nama_siswa
+      LIMIT ? OFFSET ?
+    `, [...searchParams, limit, offset]);
+    
+    return rows;
+  },
+  
+  // Batch operations for better performance
+  batchInsertAttendance: async (attendanceData) => {
+    const connection = await db.getConnection();
+    
+    try {
+      await connection.beginTransaction();
+      
+      const values = attendanceData.map(data => [
+        data.jadwal_id,
+        data.guru_id,
+        data.tanggal,
+        data.status,
+        data.keterangan
+      ]);
+      
+      await connection.execute(
+        'INSERT INTO absensi_guru (jadwal_id, guru_id, tanggal, status, keterangan) VALUES ?',
+        [values]
+      );
+      
+      await connection.commit();
+    } catch (error) {
+      await connection.rollback();
+      throw error;
+    } finally {
+      connection.release();
+    }
+  }
+};
+```
+
+### Connection Pooling
+```javascript
+// Optimized database connection pool
+const dbConfig = {
+  host: process.env.DB_HOST,
+  user: process.env.DB_USER,
+  password: process.env.DB_PASSWORD,
+  database: process.env.DB_NAME,
+  waitForConnections: true,
+  connectionLimit: 20, // Increased for better performance
+  queueLimit: 0,
+  acquireTimeout: 60000,
+  timeout: 60000,
+  reconnect: true,
+  charset: 'utf8mb4',
+  // Performance optimizations
+  multipleStatements: false,
+  supportBigNumbers: true,
+  bigNumberStrings: true,
+  dateStrings: false,
+  debug: false,
+  trace: false
+};
+
+const pool = mysql.createPool(dbConfig);
+
+// Connection health monitoring
+const monitorConnectionHealth = async () => {
+  try {
+    const connection = await pool.getConnection();
+    await connection.ping();
+    connection.release();
+    return true;
+  } catch (error) {
+    console.error('Database connection health check failed:', error);
+    return false;
+  }
+};
+```
+
+### Caching Implementation
+```javascript
+// Redis caching for performance
+const redis = require('redis');
+const client = redis.createClient(process.env.REDIS_URL);
+
+const cacheMiddleware = (duration = 300) => {
+  return async (req, res, next) => {
+    const key = `cache:${req.originalUrl}`;
+    
+    try {
+      const cached = await client.get(key);
+      if (cached) {
+        return res.json(JSON.parse(cached));
+      }
+    } catch (error) {
+      console.error('Cache error:', error);
+    }
+    
+    const originalSend = res.json;
+    res.json = (body) => {
+      client.setex(key, duration, JSON.stringify(body));
+      originalSend.call(res, body);
+    };
+    
+    next();
+  };
+};
+
+// Cache invalidation
+const invalidateCache = async (pattern) => {
+  try {
+    const keys = await client.keys(pattern);
+    if (keys.length > 0) {
+      await client.del(keys);
+    }
+  } catch (error) {
+    console.error('Cache invalidation error:', error);
+  }
+};
+```
+
+## ⚡ Frontend Performance Optimization
+
+### React Performance Patterns
+```typescript
+// Memoized components for better performance
+const ExpensiveComponent = React.memo(({ data, onUpdate }: Props) => {
+  const processedData = useMemo(() => {
+    return data.map(item => ({
+      ...item,
+      processed: true,
+      displayName: `${item.nama_siswa} (${item.nis})`
+    }));
+  }, [data]);
+  
+  const handleUpdate = useCallback((id: string, updates: any) => {
+    onUpdate(id, updates);
+  }, [onUpdate]);
+  
+  return (
+    <div>
+      {processedData.map(item => (
+        <StudentCard 
+          key={item.id} 
+          data={item} 
+          onUpdate={handleUpdate}
+        />
+      ))}
+    </div>
+  );
+});
+
+// Lazy loading for large components
+const LazyDashboard = lazy(() => import('./Dashboard'));
+const LazyReports = lazy(() => import('./Reports'));
+
+const App = () => (
+  <Suspense fallback={<LoadingSpinner />}>
+    <Routes>
+      <Route path="/dashboard" element={<LazyDashboard />} />
+      <Route path="/reports" element={<LazyReports />} />
+    </Routes>
+  </Suspense>
+);
+```
+
+### API Optimization
+```typescript
+// Optimized API calls with caching
+const useOptimizedAPI = <T>(url: string, options?: RequestOptions) => {
+  const [data, setData] = useState<T | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  
+  const fetchData = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    
+    try {
+      // Check cache first
+      const cached = localStorage.getItem(`cache:${url}`);
+      if (cached) {
+        const parsedData = JSON.parse(cached);
+        setData(parsedData);
+        setLoading(false);
+        return;
+      }
+      
+      const response = await api.get(url);
+      setData(response.data);
+      
+      // Cache the response
+      localStorage.setItem(`cache:${url}`, JSON.stringify(response.data));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'An error occurred');
+    } finally {
+      setLoading(false);
+    }
+  }, [url]);
+  
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
+  
+  return { data, loading, error, refetch: fetchData };
+};
+```
+
+### Virtual Scrolling for Large Lists
+```typescript
+// Virtual scrolling for performance
+const VirtualizedList = ({ items, itemHeight = 50, containerHeight = 400 }) => {
+  const [scrollTop, setScrollTop] = useState(0);
+  
+  const visibleStart = Math.floor(scrollTop / itemHeight);
+  const visibleEnd = Math.min(
+    visibleStart + Math.ceil(containerHeight / itemHeight) + 1,
+    items.length
+  );
+  
+  const visibleItems = items.slice(visibleStart, visibleEnd);
+  const totalHeight = items.length * itemHeight;
+  const offsetY = visibleStart * itemHeight;
+  
+  return (
+    <div 
+      style={{ height: containerHeight, overflow: 'auto' }}
+      onScroll={(e) => setScrollTop(e.currentTarget.scrollTop)}
+    >
+      <div style={{ height: totalHeight, position: 'relative' }}>
+        <div style={{ transform: `translateY(${offsetY}px)` }}>
+          {visibleItems.map((item, index) => (
+            <div 
+              key={visibleStart + index}
+              style={{ height: itemHeight }}
+            >
+              {item.content}
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+};
+```
+
+## 📊 Performance Monitoring
+
+### Backend Performance Metrics
+```javascript
+// Performance monitoring middleware
+const performanceMonitor = (req, res, next) => {
+  const startTime = Date.now();
+  const startMemory = process.memoryUsage();
+  
+  res.on('finish', () => {
+    const endTime = Date.now();
+    const endMemory = process.memoryUsage();
+    
+    const metrics = {
+      method: req.method,
+      url: req.url,
+      statusCode: res.statusCode,
+      responseTime: endTime - startTime,
+      memoryUsage: {
+        rss: endMemory.rss - startMemory.rss,
+        heapUsed: endMemory.heapUsed - startMemory.heapUsed,
+        heapTotal: endMemory.heapTotal - startMemory.heapTotal
+      },
+      timestamp: new Date().toISOString()
+    };
+    
+    // Log slow queries
+    if (metrics.responseTime > 1000) {
+      console.warn('Slow request detected:', metrics);
+    }
+    
+    // Log memory usage
+    if (metrics.memoryUsage.heapUsed > 100 * 1024 * 1024) { // 100MB
+      console.warn('High memory usage detected:', metrics);
+    }
+  });
+  
+  next();
+};
+```
+
+### Frontend Performance Monitoring
+```typescript
+// Performance monitoring hook
+const usePerformanceMonitor = () => {
+  useEffect(() => {
+    // Monitor Core Web Vitals
+    const observer = new PerformanceObserver((list) => {
+      for (const entry of list.getEntries()) {
+        if (entry.entryType === 'largest-contentful-paint') {
+          console.log('LCP:', entry.startTime);
+        }
+        if (entry.entryType === 'first-input') {
+          console.log('FID:', entry.processingStart - entry.startTime);
+        }
+        if (entry.entryType === 'layout-shift') {
+          console.log('CLS:', entry.value);
+        }
+      }
+    });
+    
+    observer.observe({ entryTypes: ['largest-contentful-paint', 'first-input', 'layout-shift'] });
+    
+    return () => observer.disconnect();
+  }, []);
+};
+
+// Component performance monitoring
+const useComponentPerformance = (componentName: string) => {
+  useEffect(() => {
+    const startTime = performance.now();
+    
+    return () => {
+      const endTime = performance.now();
+      console.log(`${componentName} render time: ${endTime - startTime}ms`);
+    };
+  });
+};
+```
+
+## 🔧 Database Performance Optimization
+
+### Index Optimization
+```sql
+-- Performance indexes
+CREATE INDEX idx_pengguna_username ON pengguna(username);
+CREATE INDEX idx_pengguna_role ON pengguna(role);
+CREATE INDEX idx_absensi_guru_guru_id ON absensi_guru(guru_id);
+CREATE INDEX idx_absensi_guru_tanggal ON absensi_guru(tanggal);
+CREATE INDEX idx_absensi_guru_status ON absensi_guru(status);
+CREATE INDEX idx_jadwal_kelas_id ON jadwal(kelas_id);
+CREATE INDEX idx_jadwal_guru_id ON jadwal(guru_id);
+CREATE INDEX idx_jadwal_hari ON jadwal(hari);
+
+-- Composite indexes for common queries
+CREATE INDEX idx_absensi_guru_guru_tanggal ON absensi_guru(guru_id, tanggal);
+CREATE INDEX idx_jadwal_kelas_hari ON jadwal(kelas_id, hari);
+CREATE INDEX idx_pengguna_role_status ON pengguna(role, status);
+```
+
+### Query Optimization
+```javascript
+// Optimized attendance query
+const getOptimizedAttendanceData = async (filters) => {
+  const { startDate, endDate, kelasId, mapelId, guruId } = filters;
+  
+  let query = `
+    SELECT 
+      ag.id,
+      ag.tanggal,
+      ag.status,
+      ag.keterangan,
+      g.nama_guru,
+      m.nama_mapel,
+      k.nama_kelas,
+      j.hari,
+      j.jam_mulai,
+      j.jam_selesai
+    FROM absensi_guru ag
+    INNER JOIN jadwal j ON ag.jadwal_id = j.id
+    INNER JOIN mapel m ON j.mapel_id = m.id
+    INNER JOIN kelas k ON j.kelas_id = k.id
+    INNER JOIN guru g ON ag.guru_id = g.id
+    WHERE ag.tanggal BETWEEN ? AND ?
+  `;
+  
+  const params = [startDate, endDate];
+  
+  if (kelasId) {
+    query += ' AND j.kelas_id = ?';
+    params.push(kelasId);
+  }
+  
+  if (mapelId) {
+    query += ' AND j.mapel_id = ?';
+    params.push(mapelId);
+  }
+  
+  if (guruId) {
+    query += ' AND ag.guru_id = ?';
+    params.push(guruId);
+  }
+  
+  query += ' ORDER BY ag.tanggal DESC, j.jam_mulai';
+  
+  const [rows] = await db.execute(query, params);
+  return rows;
+};
+```
+
+## 🚀 Build Optimization
+
+### Webpack/Vite Optimization
+```typescript
+// vite.config.ts optimization
+export default defineConfig({
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          vendor: ['react', 'react-dom'],
+          ui: ['@radix-ui/react-dialog', '@radix-ui/react-dropdown-menu'],
+          utils: ['date-fns', 'clsx', 'tailwind-merge']
+        }
+      }
+    },
+    chunkSizeWarningLimit: 1000,
+    minify: 'terser',
+    terserOptions: {
+      compress: {
+        drop_console: true,
+        drop_debugger: true
+      }
+    }
+  },
+  optimizeDeps: {
+    include: ['react', 'react-dom', 'date-fns']
+  }
+});
+```
+
+### Bundle Analysis
+```javascript
+// Bundle analysis script
+const analyzeBundle = () => {
+  const { execSync } = require('child_process');
+  
+  try {
+    // Build with analysis
+    execSync('npm run build -- --analyze', { stdio: 'inherit' });
+    
+    // Generate bundle report
+    execSync('npx webpack-bundle-analyzer dist/stats.json', { stdio: 'inherit' });
+  } catch (error) {
+    console.error('Bundle analysis failed:', error);
+  }
+};
+```
+
+## 📈 Performance Testing
+
+### Load Testing
+```javascript
+// Artillery load testing
+const loadTestConfig = {
+  config: {
+    target: 'http://localhost:3001',
+    phases: [
+      { duration: '2m', arrivalRate: 10 },
+      { duration: '5m', arrivalRate: 20 },
+      { duration: '2m', arrivalRate: 10 }
+    ]
+  },
+  scenarios: [
+    {
+      name: 'Login and Dashboard',
+      weight: 70,
+      flow: [
+        { post: { url: '/api/login', json: { username: 'admin123', password: 'admin123' } } },
+        { get: { url: '/api/admin/dashboard' } }
+      ]
+    },
+    {
+      name: 'Attendance Submission',
+      weight: 30,
+      flow: [
+        { post: { url: '/api/login', json: { username: 'guru001', password: 'admin123' } } },
+        { post: { url: '/api/attendance/submit', json: { jadwal_id: 1, status: 'hadir' } } }
+      ]
+    }
+  ]
+};
+```
+
+### Performance Benchmarks
+```javascript
+// Performance benchmarking
+const benchmark = {
+  async measureDatabaseQuery(query, params) {
+    const start = Date.now();
+    const result = await db.execute(query, params);
+    const end = Date.now();
+    
+    return {
+      query,
+      executionTime: end - start,
+      resultCount: result[0].length
+    };
+  },
+  
+  async measureAPICall(endpoint, method = 'GET', data = null) {
+    const start = Date.now();
+    const response = await fetch(endpoint, {
+      method,
+      headers: { 'Content-Type': 'application/json' },
+      body: data ? JSON.stringify(data) : undefined
+    });
+    const end = Date.now();
+    
+    return {
+      endpoint,
+      method,
+      responseTime: end - start,
+      status: response.status
+    };
+  }
+};
+```
+
+## 🎯 Performance Best Practices
+
+### Backend Optimization
+- **Database Indexing**: Create indexes for frequently queried columns
+- **Connection Pooling**: Use connection pools for database connections
+- **Caching**: Implement Redis caching for frequently accessed data
+- **Query Optimization**: Use efficient SQL queries
+- **Batch Operations**: Group related database operations
+- **Compression**: Enable gzip compression
+- **Rate Limiting**: Implement request throttling
+
+### Frontend Optimization
+- **Code Splitting**: Split code into smaller chunks
+- **Lazy Loading**: Load components on demand
+- **Memoization**: Use React.memo and useMemo
+- **Virtual Scrolling**: For large lists
+- **Image Optimization**: Optimize images and use appropriate formats
+- **Bundle Optimization**: Minimize bundle size
+- **Caching**: Implement browser caching
+
+### Monitoring & Analysis
+- **Performance Metrics**: Monitor Core Web Vitals
+- **Load Testing**: Regular load testing
+- **Bundle Analysis**: Analyze bundle size
+- **Database Monitoring**: Monitor query performance
+- **Memory Usage**: Monitor memory consumption
+- **Error Tracking**: Track performance-related errors

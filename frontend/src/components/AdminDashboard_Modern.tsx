@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback } from "react";
+import * as React from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -31,11 +32,11 @@ import RekapKetidakhadiranView from './RekapKetidakhadiranView';
 import RekapKetidakhadiranGuruView from './RekapKetidakhadiranGuruView';
 import ExcelImportView from './ExcelImportView';
 import JadwalAdvancedImportView from './JadwalAdvancedImportView';
-import { VIEW_TO_REPORT_KEY } from '@/utils/reportKeys';
+import { VIEW_TO_REPORT_KEY } from '../utils/reportKeys';
 import { EditProfile } from './EditProfile';
 import ReportLetterheadSettings from './ReportLetterheadSettings';
-import { ensureArray, normalizeList, getSelectValue, hasValidId } from '@/utils/normalize';
-import { httpGet, handleResponseError } from '@/utils/http';
+import { ensureArray, normalizeList, getSelectValue, hasValidId } from '../utils/normalize';
+import { httpGet, handleResponseError } from '../utils/http';
 import { 
   UserPlus, BookOpen, Calendar, BarChart3, LogOut, ArrowLeft, ArrowRight, Users, GraduationCap, 
   Eye, Download, FileText, Edit, Trash2, Plus, Search, Filter, Settings, Bell, Menu, X,
@@ -318,7 +319,7 @@ const ManageTeacherAccountsView = ({ onBack, onLogout }: { onBack: () => void; o
     fetchSubjects();
   }, [fetchTeachers, fetchSubjects]);
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     
     // Validasi client-side
@@ -847,7 +848,7 @@ const ManageStudentDataView = ({ onBack, onLogout }: { onBack: () => void; onLog
     fetchClasses();
   }, [fetchStudentsData, fetchClasses]);
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setIsLoading(true);
 
@@ -1301,7 +1302,7 @@ const ManageTeacherDataView = ({ onBack, onLogout }: { onBack: () => void; onLog
     fetchTeachersData();
   }, [fetchTeachersData]);
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setIsLoading(true);
 
@@ -1735,7 +1736,7 @@ const ManageSubjectsView = ({ onBack, onLogout }: { onBack: () => void; onLogout
     fetchSubjects();
   }, [fetchSubjects]);
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setIsLoading(true);
 
@@ -2104,7 +2105,7 @@ const ManageClassesView = ({ onBack, onLogout }: { onBack: () => void; onLogout:
     fetchClasses();
   }, [fetchClasses]);
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setIsLoading(true);
 
@@ -2501,7 +2502,7 @@ const ManageStudentsView = ({ onBack, onLogout }: { onBack: () => void; onLogout
     fetchClasses();
   }, [fetchStudents, fetchClasses]);
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     
     if (!validateForm()) {
@@ -3381,7 +3382,7 @@ const ManageSchedulesView = ({ onBack, onLogout }: { onBack: () => void; onLogou
     return slots;
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setIsLoading(true);
 
@@ -4688,7 +4689,7 @@ const LiveStudentAttendanceView = ({ onBack, onLogout }: { onBack: () => void; o
         </CardHeader>
         <CardContent>
           {attendanceData && attendanceData.length > 0 ? (
-            <React.Fragment key="attendance-content">
+            <div key="attendance-content">
               <div className="overflow-x-auto">
                 <Table>
                   <TableHeader>
@@ -4761,7 +4762,7 @@ const LiveStudentAttendanceView = ({ onBack, onLogout }: { onBack: () => void; o
                 </Table>
               </div>
               <Pagination />
-            </React.Fragment>
+            </div>
           ) : (
             <div className="text-center py-12 text-gray-500">
               <Users className="w-12 h-12 mx-auto mb-4 opacity-50" />
@@ -5573,7 +5574,7 @@ const LiveTeacherAttendanceView = ({ onBack, onLogout }: { onBack: () => void; o
           </CardHeader>
           <CardContent>
             {attendanceData && attendanceData.length > 0 ? (
-              <React.Fragment key="teacher-attendance-content">
+              <div key="teacher-attendance-content">
                 <div className="overflow-x-auto">
                   <Table>
                     <TableHeader>
@@ -5652,7 +5653,7 @@ const LiveTeacherAttendanceView = ({ onBack, onLogout }: { onBack: () => void; o
                   </Table>
                 </div>
                 <TeacherPagination />
-              </React.Fragment>
+              </div>
             ) : (
               <div className="text-center py-12 text-gray-500">
                 <GraduationCap className="w-12 h-12 mx-auto mb-4 opacity-50" />
@@ -6521,15 +6522,15 @@ const RiwayatIzinReportView = ({ onBack, onLogout }: { onBack: () => void; onLog
           <div className="flex gap-2">
             <Button onClick={fetchReportData} disabled={loading} className="bg-orange-600 hover:bg-orange-700">
               {loading ? (
-                <React.Fragment key="loading-state">
+                <div key="loading-state">
                   <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent mr-2" />
                   Memuat...
-                </React.Fragment>
+                </div>
               ) : (
-                <React.Fragment key="normal-state">
+                <div key="normal-state">
                   <Search className="w-4 h-4 mr-2" />
                   Tampilkan Data
-                </React.Fragment>
+                </div>
               )}
             </Button>
             
@@ -7123,15 +7124,15 @@ const TeacherAttendanceSummaryView = ({ onBack, onLogout }: { onBack: () => void
           <div className="flex gap-2">
             <Button onClick={fetchReportData} disabled={loading} className="bg-blue-600 hover:bg-blue-700">
               {loading ? (
-                <React.Fragment key="loading-state">
+                <div key="loading-state">
                   <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent mr-2" />
                   Memuat...
-                </React.Fragment>
+                </div>
               ) : (
-                <React.Fragment key="normal-state">
+                <div key="normal-state">
                   <Search className="w-4 h-4 mr-2" />
                   Tampilkan Data
-                </React.Fragment>
+                </div>
               )}
             </Button>
             
@@ -7974,15 +7975,15 @@ const StudentPromotionView = ({ onBack, onLogout }: { onBack: () => void; onLogo
               className="bg-emerald-600 hover:bg-emerald-700"
             >
               {isProcessing ? (
-                <React.Fragment key="processing-state">
+                <div key="processing-state">
                   <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
                   Memproses...
-                </React.Fragment>
+                </div>
               ) : (
-                <React.Fragment key="normal-state">
+                <div key="normal-state">
                   <ArrowUpCircle className="w-4 h-4 mr-2" />
                   Konfirmasi Naik Kelas
-                </React.Fragment>
+                </div>
               )}
             </Button>
           </DialogFooter>
@@ -8014,15 +8015,15 @@ const StudentPromotionView = ({ onBack, onLogout }: { onBack: () => void; onLogo
                   className="bg-emerald-600 hover:bg-emerald-700"
                 >
                   {isProcessing ? (
-                    <React.Fragment key="processing-state">
+                    <div key="processing-state">
                       <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
                       Memproses...
-                    </React.Fragment>
+                    </div>
                   ) : (
-                    <React.Fragment key="normal-state">
+                    <div key="normal-state">
                       <ArrowUpCircle className="w-4 h-4 mr-2" />
                       Naik Kelas Sekarang
-                    </React.Fragment>
+                    </div>
                   )}
                 </Button>
               </div>
@@ -8070,7 +8071,7 @@ const RuangKelasManagementView = ({ onBack, onLogout }: { onBack: () => void; on
     fetchRooms();
   }, [fetchRooms]);
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     
     // Validasi field wajib

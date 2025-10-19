@@ -1,0 +1,589 @@
+---
+globs: backend/repositories/*.js,backend/services/*.js,db.js
+description: Database patterns and query optimization for Absenta system
+---
+
+# Absenta Database Patterns & Optimization
+
+## 🗄️ Database Schema Overview
+
+### Core Tables Structure
+```sql
+-- User Management
+pengguna (Users)
+├── id (PRIMARY KEY)
+├── username (UNIQUE)
+├── password (HASHED)
+├── role (ENUM: 'admin', 'guru', 'siswa')
+├── status (ENUM: 'active', 'inactive')
+└── created_at, updated_at
+
+-- Teacher Data
+guru (Teachers)
+├── id (PRIMARY KEY)
+├── user_id (FOREIGN KEY → pengguna.id)
+├── nama_guru
+├── nip
+├── mapel_id (FOREIGN KEY → mapel.id)
+└── created_at, updated_at
+
+-- Student Data
+siswa_perwakilan (Students)
+├── id (PRIMARY KEY)
+├── user_id (FOREIGN KEY → pengguna.id)
+├── nama_siswa
+├── nis
+├── kelas_id (FOREIGN KEY → kelas.id)
+└── created_at, updated_at
+
+-- Subject Management
+mapel (Subjects)
+├── id (PRIMARY KEY)
+├── nama_mapel
+├── kode_mapel
+└── created_at, updated_at
+
+-- Class Management
+kelas (Classes)
+├── id (PRIMARY KEY)
+├── nama_kelas
+├── tingkat
+└── created_at, updated_at
+
+-- Schedule Management
+jadwal (Schedules)
+├── id (PRIMARY KEY)
+├── mapel_id (FOREIGN KEY → mapel.id)
+├── kelas_id (FOREIGN KEY → kelas.id)
+├── hari
+├── jam_mulai
+├── jam_selesai
+└── created_at, updated_at
+
+-- Attendance Records
+absensi_guru (Teacher Attendance)
+├── id (PRIMARY KEY)
+├── jadwal_id (FOREIGN KEY → jadwal.id)
+├── guru_id (FOREIGN KEY → guru.id)
+├── tanggal
+├── status (ENUM: 'hadir', 'tidak_hadir', 'izin')
+├── keterangan
+└── created_at, updated_at
+
+absensi_siswa (Student Attendance)
+├── id (PRIMARY KEY)
+├── jadwal_id (FOREIGN KEY → jadwal.id)
+├── siswa_id (FOREIGN KEY → siswa_perwakilan.id)
+├── tanggal
+├── status (ENUM: 'hadir', 'tidak_hadir', 'izin')
+├── keterangan
+└── created_at, updated_at
+```
+
+## 🔍 Query Optimization Patterns
+
+### Indexed Queries
+```javascript
+// Optimized User Query with Indexes
+const getUserWithRole = async (username, role) => {
+  const [rows] = await db.execute(`
+    SELECT p.*, g.nama_guru, s.nama_siswa
+    FROM pengguna p
+    LEFT JOIN guru g ON p.id = g.user_id AND p.role = 'guru'
+    LEFT JOIN siswa_perwakilan s ON p.id = s.user_id AND p.role = 'siswa'
+    WHERE p.username = ? AND p.role = ?
+    LIMIT 1
+  `, [username, role]);
+  
+  return rows[0];
+};
+```
+
+### Pagination Queries
+```javascript
+// Efficient Pagination
+const getSiswaWithPagination = async (page = 1, limit = 10, search = '') => {
+  const offset = (page - 1) * limit;
+  
+  const whereClause = search ? 
+    'WHERE s.nama_siswa LIKE ? OR s.nis LIKE ?' : '';
+  
+  const searchParams = search ? [`%${search}%`, `%${search}%`] : [];
+  
+  const [rows] = await db.execute(`
+    SELECT s.*, p.username, p.status, k.nama_kelas
+    FROM siswa_perwakilan s
+    JOIN pengguna p ON s.user_id = p.id
+    JOIN kelas k ON s.kelas_id = k.id
+    ${whereClause}
+    ORDER BY s.nama_siswa
+    LIMIT ? OFFSET ?
+  `, [...searchParams, limit, offset]);
+  
+  return rows;
+};
+```
+
+### Complex Joins
+```javascript
+// Attendance Report Query
+const getAttendanceReport = async (startDate, endDate, kelasId = null) => {
+  const whereClause = kelasId ? 'AND j.kelas_id = ?' : '';
+  const params = [startDate, endDate];
+  if (kelasId) params.push(kelasId);
+  
+  const [rows] = await db.execute(`
+    SELECT 
+      j.hari,
+      j.jam_mulai,
+      j.jam_selesai,
+      m.nama_mapel,
+      k.nama_kelas,
+      g.nama_guru,
+      COUNT(ag.id) as total_attendance,
+      SUM(CASE WHEN ag.status = 'hadir' THEN 1 ELSE 0 END) as hadir,
+      SUM(CASE WHEN ag.status = 'tidak_hadir' THEN 1 ELSE 0 END) as tidak_hadir,
+      SUM(CASE WHEN ag.status = 'izin' THEN 1 ELSE 0 END) as izin
+    FROM jadwal j
+    JOIN mapel m ON j.mapel_id = m.id
+    JOIN kelas k ON j.kelas_id = k.id
+    JOIN guru g ON j.guru_id = g.id
+    LEFT JOIN absensi_guru ag ON j.id = ag.jadwal_id
+    WHERE j.tanggal BETWEEN ? AND ?
+    ${whereClause}
+    GROUP BY j.id, j.hari, j.jam_mulai, j.jam_selesai, m.nama_mapel, k.nama_kelas, g.nama_guru
+    ORDER BY j.hari, j.jam_mulai
+  `, params);
+  
+  return rows;
+};
+```
+
+## 🔄 Transaction Patterns
+
+### Database Transactions
+```javascript
+// Transaction for Complex Operations
+const createUserWithProfile = async (userData, profileData) => {
+  const connection = await db.getConnection();
+  
+  try {
+    await connection.beginTransaction();
+    
+    // Create user account
+    const [userResult] = await connection.execute(
+      'INSERT INTO pengguna (username, password, role, status) VALUES (?, ?, ?, ?)',
+      [userData.username, userData.password, userData.role, userData.status]
+    );
+    
+    const userId = userResult.insertId;
+    
+    // Create profile based on role
+    if (userData.role === 'guru') {
+      await connection.execute(
+        'INSERT INTO guru (user_id, nama_guru, nip, mapel_id) VALUES (?, ?, ?, ?)',
+        [userId, profileData.nama_guru, profileData.nip, profileData.mapel_id]
+      );
+    } else if (userData.role === 'siswa') {
+      await connection.execute(
+        'INSERT INTO siswa_perwakilan (user_id, nama_siswa, nis, kelas_id) VALUES (?, ?, ?, ?)',
+        [userId, profileData.nama_siswa, profileData.nis, profileData.kelas_id]
+      );
+    }
+    
+    await connection.commit();
+    return userId;
+    
+  } catch (error) {
+    await connection.rollback();
+    throw error;
+  } finally {
+    connection.release();
+  }
+};
+```
+
+### Batch Operations
+```javascript
+// Batch Insert for Attendance
+const batchInsertAttendance = async (attendanceData) => {
+  const connection = await db.getConnection();
+  
+  try {
+    await connection.beginTransaction();
+    
+    const values = attendanceData.map(data => [
+      data.jadwal_id,
+      data.guru_id,
+      data.tanggal,
+      data.status,
+      data.keterangan
+    ]);
+    
+    await connection.execute(
+      'INSERT INTO absensi_guru (jadwal_id, guru_id, tanggal, status, keterangan) VALUES ?',
+      [values]
+    );
+    
+    await connection.commit();
+    
+  } catch (error) {
+    await connection.rollback();
+    throw error;
+  } finally {
+    connection.release();
+  }
+};
+```
+
+## 📊 Repository Pattern Implementation
+
+### Base Repository
+```javascript
+// Base Repository Class
+class BaseRepository {
+  constructor(tableName) {
+    this.tableName = tableName;
+  }
+  
+  async findById(id) {
+    const [rows] = await db.execute(
+      `SELECT * FROM ${this.tableName} WHERE id = ?`,
+      [id]
+    );
+    return rows[0];
+  }
+  
+  async findAll(conditions = {}, limit = null, offset = null) {
+    let query = `SELECT * FROM ${this.tableName}`;
+    const params = [];
+    
+    if (Object.keys(conditions).length > 0) {
+      const whereClause = Object.keys(conditions)
+        .map(key => `${key} = ?`)
+        .join(' AND ');
+      query += ` WHERE ${whereClause}`;
+      params.push(...Object.values(conditions));
+    }
+    
+    if (limit) {
+      query += ` LIMIT ${limit}`;
+      if (offset) {
+        query += ` OFFSET ${offset}`;
+      }
+    }
+    
+    const [rows] = await db.execute(query, params);
+    return rows;
+  }
+  
+  async create(data) {
+    const fields = Object.keys(data);
+    const values = Object.values(data);
+    const placeholders = fields.map(() => '?').join(', ');
+    
+    const [result] = await db.execute(
+      `INSERT INTO ${this.tableName} (${fields.join(', ')}) VALUES (${placeholders})`,
+      values
+    );
+    
+    return result.insertId;
+  }
+  
+  async update(id, data) {
+    const fields = Object.keys(data);
+    const values = Object.values(data);
+    const setClause = fields.map(field => `${field} = ?`).join(', ');
+    
+    const [result] = await db.execute(
+      `UPDATE ${this.tableName} SET ${setClause} WHERE id = ?`,
+      [...values, id]
+    );
+    
+    return result.affectedRows > 0;
+  }
+  
+  async delete(id) {
+    const [result] = await db.execute(
+      `DELETE FROM ${this.tableName} WHERE id = ?`,
+      [id]
+    );
+    
+    return result.affectedRows > 0;
+  }
+}
+```
+
+### Specialized Repositories
+```javascript
+// User Repository
+class UserRepository extends BaseRepository {
+  constructor() {
+    super('pengguna');
+  }
+  
+  async findByUsername(username) {
+    const [rows] = await db.execute(
+      'SELECT * FROM pengguna WHERE username = ?',
+      [username]
+    );
+    return rows[0];
+  }
+  
+  async findByRole(role) {
+    const [rows] = await db.execute(
+      'SELECT * FROM pengguna WHERE role = ?',
+      [role]
+    );
+    return rows;
+  }
+  
+  async updatePassword(id, hashedPassword) {
+    const [result] = await db.execute(
+      'UPDATE pengguna SET password = ? WHERE id = ?',
+      [hashedPassword, id]
+    );
+    return result.affectedRows > 0;
+  }
+}
+
+// Attendance Repository
+class AttendanceRepository extends BaseRepository {
+  constructor() {
+    super('absensi_guru');
+  }
+  
+  async getAttendanceByDateRange(startDate, endDate, guruId = null) {
+    let query = `
+      SELECT ag.*, g.nama_guru, j.hari, j.jam_mulai, j.jam_selesai, m.nama_mapel, k.nama_kelas
+      FROM absensi_guru ag
+      JOIN guru g ON ag.guru_id = g.id
+      JOIN jadwal j ON ag.jadwal_id = j.id
+      JOIN mapel m ON j.mapel_id = m.id
+      JOIN kelas k ON j.kelas_id = k.id
+      WHERE ag.tanggal BETWEEN ? AND ?
+    `;
+    
+    const params = [startDate, endDate];
+    
+    if (guruId) {
+      query += ' AND ag.guru_id = ?';
+      params.push(guruId);
+    }
+    
+    query += ' ORDER BY ag.tanggal DESC, j.jam_mulai';
+    
+    const [rows] = await db.execute(query, params);
+    return rows;
+  }
+  
+  async getAttendanceStats(guruId, startDate, endDate) {
+    const [rows] = await db.execute(`
+      SELECT 
+        COUNT(*) as total,
+        SUM(CASE WHEN status = 'hadir' THEN 1 ELSE 0 END) as hadir,
+        SUM(CASE WHEN status = 'tidak_hadir' THEN 1 ELSE 0 END) as tidak_hadir,
+        SUM(CASE WHEN status = 'izin' THEN 1 ELSE 0 END) as izin
+      FROM absensi_guru
+      WHERE guru_id = ? AND tanggal BETWEEN ? AND ?
+    `, [guruId, startDate, endDate]);
+    
+    return rows[0];
+  }
+}
+```
+
+## 🚀 Performance Optimization
+
+### Query Optimization
+```javascript
+// Optimized Query with Proper Indexing
+const getOptimizedAttendanceData = async (filters) => {
+  const { startDate, endDate, kelasId, mapelId, guruId } = filters;
+  
+  let query = `
+    SELECT 
+      ag.id,
+      ag.tanggal,
+      ag.status,
+      ag.keterangan,
+      g.nama_guru,
+      m.nama_mapel,
+      k.nama_kelas,
+      j.hari,
+      j.jam_mulai,
+      j.jam_selesai
+    FROM absensi_guru ag
+    INNER JOIN guru g ON ag.guru_id = g.id
+    INNER JOIN jadwal j ON ag.jadwal_id = j.id
+    INNER JOIN mapel m ON j.mapel_id = m.id
+    INNER JOIN kelas k ON j.kelas_id = k.id
+    WHERE ag.tanggal BETWEEN ? AND ?
+  `;
+  
+  const params = [startDate, endDate];
+  
+  if (kelasId) {
+    query += ' AND j.kelas_id = ?';
+    params.push(kelasId);
+  }
+  
+  if (mapelId) {
+    query += ' AND j.mapel_id = ?';
+    params.push(mapelId);
+  }
+  
+  if (guruId) {
+    query += ' AND ag.guru_id = ?';
+    params.push(guruId);
+  }
+  
+  query += ' ORDER BY ag.tanggal DESC, j.jam_mulai';
+  
+  const [rows] = await db.execute(query, params);
+  return rows;
+};
+```
+
+### Connection Pooling
+```javascript
+// Database Connection Configuration
+const dbConfig = {
+  host: process.env.DB_HOST || 'localhost',
+  user: process.env.DB_USER || 'root',
+  password: process.env.DB_PASSWORD || '',
+  database: process.env.DB_NAME || 'absenta13',
+  waitForConnections: true,
+  connectionLimit: 10,
+  queueLimit: 0,
+  acquireTimeout: 60000,
+  timeout: 60000,
+  reconnect: true
+};
+
+const pool = mysql.createPool(dbConfig);
+
+// Connection Health Check
+const checkConnection = async () => {
+  try {
+    const connection = await pool.getConnection();
+    await connection.ping();
+    connection.release();
+    return true;
+  } catch (error) {
+    console.error('Database connection failed:', error);
+    return false;
+  }
+};
+```
+
+## 🔒 Security Patterns
+
+### SQL Injection Prevention
+```javascript
+// Parameterized Queries (Always Use)
+const getUserById = async (id) => {
+  const [rows] = await db.execute(
+    'SELECT * FROM pengguna WHERE id = ?',
+    [id]
+  );
+  return rows[0];
+};
+
+// Input Validation
+const validateUserInput = (userData) => {
+  const errors = [];
+  
+  if (!userData.username || userData.username.length < 3) {
+    errors.push('Username must be at least 3 characters');
+  }
+  
+  if (!userData.password || userData.password.length < 6) {
+    errors.push('Password must be at least 6 characters');
+  }
+  
+  if (!['admin', 'guru', 'siswa'].includes(userData.role)) {
+    errors.push('Invalid role');
+  }
+  
+  return errors;
+};
+```
+
+### Data Sanitization
+```javascript
+// Input Sanitization
+const sanitizeInput = (input) => {
+  if (typeof input === 'string') {
+    return input.trim().replace(/[<>]/g, '');
+  }
+  return input;
+};
+
+// Safe Query Building
+const buildSafeQuery = (table, conditions) => {
+  const validColumns = ['id', 'username', 'role', 'status', 'created_at'];
+  const whereClause = Object.keys(conditions)
+    .filter(key => validColumns.includes(key))
+    .map(key => `${key} = ?`)
+    .join(' AND ');
+  
+  return `SELECT * FROM ${table} WHERE ${whereClause}`;
+};
+```
+
+## 📈 Monitoring & Logging
+
+### Query Performance Monitoring
+```javascript
+// Query Performance Logger
+const logQueryPerformance = (query, startTime, endTime) => {
+  const duration = endTime - startTime;
+  
+  if (duration > 1000) { // Log slow queries (>1s)
+    console.warn(`Slow query detected: ${duration}ms`, query);
+  }
+  
+  // Log all queries in development
+  if (process.env.NODE_ENV === 'development') {
+    console.log(`Query executed: ${duration}ms`, query);
+  }
+};
+
+// Wrapper for Database Operations
+const executeWithLogging = async (query, params) => {
+  const startTime = Date.now();
+  
+  try {
+    const result = await db.execute(query, params);
+    const endTime = Date.now();
+    
+    logQueryPerformance(query, startTime, endTime);
+    return result;
+  } catch (error) {
+    const endTime = Date.now();
+    console.error(`Query failed: ${endTime - startTime}ms`, query, error);
+    throw error;
+  }
+};
+```
+
+## 🔧 Best Practices
+
+### Database Design
+- **Normalization**: Proper table relationships
+- **Indexing**: Strategic index placement
+- **Constraints**: Foreign key and check constraints
+- **Naming**: Consistent naming conventions
+
+### Query Optimization
+- **Selective Queries**: Only select needed columns
+- **Proper Joins**: Use appropriate join types
+- **Limit Results**: Implement pagination
+- **Avoid N+1**: Use batch queries when possible
+
+### Security
+- **Parameterized Queries**: Always use prepared statements
+- **Input Validation**: Validate all inputs
+- **Access Control**: Implement proper permissions
+- **Audit Logging**: Log sensitive operations

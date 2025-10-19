@@ -651,6 +651,9 @@ const StudentDashboardComponent = ({ userData, onLogout }: StudentDashboardProps
       const token = localStorage.getItem('token');
       const cleanToken = token ? token.replace(/['"]/g, '') : '';
       
+      console.log('[loadJadwalByDate] Making API call to:', `/api/siswa/${siswaId}/jadwal-rentang?tanggal=${tanggal}`);
+      console.log('[loadJadwalByDate] Token available:', !!cleanToken);
+      
       const response = await fetch(`/api/siswa/${siswaId}/jadwal-rentang?tanggal=${tanggal}`, {
         headers: {
           'Authorization': `Bearer ${cleanToken}`
@@ -658,10 +661,14 @@ const StudentDashboardComponent = ({ userData, onLogout }: StudentDashboardProps
         credentials: 'include'
       });
 
+      console.log('[loadJadwalByDate] Response status:', response.status);
+      
       if (response.ok) {
         const result = await response.json();
+        console.log('[loadJadwalByDate] API response:', result);
         
         if (result.success && result.data) {
+          console.log('[loadJadwalByDate] Data received:', result.data.length, 'jadwal');
           setJadwalBerdasarkanTanggal(result.data);
           
           // Initialize kehadiranData for edit mode
@@ -675,7 +682,9 @@ const StudentDashboardComponent = ({ userData, onLogout }: StudentDashboardProps
             };
           });
           setKehadiranData(initialKehadiran);
+          console.log('[loadJadwalByDate] Initialized kehadiranData:', initialKehadiran);
         } else {
+          console.log('[loadJadwalByDate] No data or invalid response format:', result);
           setJadwalBerdasarkanTanggal([]);
           setKehadiranData({});
         }
@@ -899,6 +908,31 @@ const StudentDashboardComponent = ({ userData, onLogout }: StudentDashboardProps
           diwakili: (kehadiranData[jadwalIdNum] as { diwakili?: boolean }).diwakili || false
         };
       });
+
+      // Validasi data sebelum submit
+      const validationErrors: string[] = [];
+      Object.entries(kehadiranDataWithFlags).forEach(([jadwalId, data]) => {
+        const { status, keterangan } = data;
+        
+        // Validasi: Status "Hadir" tidak boleh ada keterangan khusus
+        if (status === 'Hadir' && keterangan && keterangan.trim() !== '') {
+          validationErrors.push(`Jadwal ${jadwalId}: Status "Hadir" tidak boleh ada keterangan`);
+        }
+        
+        // Validasi: Status selain "Hadir" harus ada keterangan
+        if (status !== 'Hadir' && (!keterangan || keterangan.trim() === '')) {
+          validationErrors.push(`Jadwal ${jadwalId}: Status "${status}" harus ada keterangan`);
+        }
+      });
+      
+      if (validationErrors.length > 0) {
+        toast({
+          title: "Data Tidak Valid",
+          description: validationErrors.join(', '),
+          variant: "destructive"
+        });
+        return;
+      }
 
       const requestData = {
         siswa_id: siswaId,
@@ -1907,7 +1941,7 @@ const StudentDashboardComponent = ({ userData, onLogout }: StudentDashboardProps
                       setFormBandingKelas({
                         ...formBandingKelas, 
                         jadwal_id: jadwalId,
-                        kelas_id: (selectedJadwal as JadwalHariIni & { kelas_id?: number })?.kelas_id || '' // TAMBAHKAN ini
+                        kelas_id: (selectedJadwal as JadwalHariIni & { kelas_id?: number })?.kelas_id?.toString() || '' // TAMBAHKAN ini
                       });
                       // Load attendance records when jadwal is selected
                       if (jadwalId && formBandingKelas.tanggal_absen) {
@@ -2475,7 +2509,7 @@ const StudentDashboardComponent = ({ userData, onLogout }: StudentDashboardProps
 
   return (
     <ErrorBoundary
-      onError={(error, errorInfo) => {
+      beforeCapture={(scope, error, errorInfo) => {
         // Log error to external service in production
         if (process.env.NODE_ENV === 'production') {
           // Here you would typically send to error reporting service
@@ -2663,7 +2697,7 @@ const StudentDashboardComponent = ({ userData, onLogout }: StudentDashboardProps
 export const StudentDashboard = ({ userData, onLogout }: StudentDashboardProps) => {
   return (
     <ErrorBoundary
-      onError={(error, errorInfo) => {
+      beforeCapture={(scope, error, errorInfo) => {
         console.error('StudentDashboard Error:', error, errorInfo);
         // You can add error reporting service here
       }}

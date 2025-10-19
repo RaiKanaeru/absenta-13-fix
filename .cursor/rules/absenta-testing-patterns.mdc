@@ -1,0 +1,676 @@
+---
+globs: tests/**/*.js,tests/**/*.ts,package.json
+description: Testing patterns and best practices for Absenta system
+---
+
+# Absenta Testing Patterns & Best Practices
+
+## 🧪 Testing Architecture
+
+### Test Structure
+```
+tests/
+├── unit/                    # Unit tests
+│   ├── controllers/         # Controller tests
+│   ├── services/           # Service layer tests
+│   ├── repositories/       # Repository tests
+│   └── utils/              # Utility function tests
+├── integration/            # Integration tests
+│   ├── api/               # API endpoint tests
+│   ├── database/          # Database integration tests
+│   └── auth/              # Authentication tests
+├── e2e/                   # End-to-end tests
+│   ├── user-flows/        # User journey tests
+│   └── admin-flows/       # Admin workflow tests
+├── performance/           # Performance tests
+│   ├── load-tests/        # Load testing
+│   └── stress-tests/      # Stress testing
+└── fixtures/              # Test data fixtures
+    ├── users.json
+    ├── schedules.json
+    └── attendance.json
+```
+
+## 🔧 Unit Testing Patterns
+
+### Controller Testing
+```javascript
+// tests/unit/controllers/authController.test.js
+const request = require('supertest');
+const app = require('../../app');
+const { db } = require('../../db');
+
+describe('AuthController', () => {
+  beforeEach(async () => {
+    // Setup test data
+    await db.execute('DELETE FROM pengguna WHERE username LIKE "test_%"');
+  });
+
+  afterEach(async () => {
+    // Cleanup test data
+    await db.execute('DELETE FROM pengguna WHERE username LIKE "test_%"');
+  });
+
+  describe('POST /api/login', () => {
+    it('should login with valid credentials', async () => {
+      // Arrange
+      const userData = {
+        username: 'test_admin',
+        password: 'test123',
+        role: 'admin',
+        status: 'active'
+      };
+      
+      // Create test user
+      const hashedPassword = await bcrypt.hash(userData.password, 10);
+      await db.execute(
+        'INSERT INTO pengguna (username, password, role, status) VALUES (?, ?, ?, ?)',
+        [userData.username, hashedPassword, userData.role, userData.status]
+      );
+
+      // Act
+      const response = await request(app)
+        .post('/api/login')
+        .send({
+          username: userData.username,
+          password: userData.password
+        });
+
+      // Assert
+      expect(response.status).toBe(200);
+      expect(response.body.success).toBe(true);
+      expect(response.body.token).toBeDefined();
+      expect(response.body.user.username).toBe(userData.username);
+    });
+
+    it('should reject invalid credentials', async () => {
+      // Act
+      const response = await request(app)
+        .post('/api/login')
+        .send({
+          username: 'invalid_user',
+          password: 'wrong_password'
+        });
+
+      // Assert
+      expect(response.status).toBe(401);
+      expect(response.body.success).toBe(false);
+      expect(response.body.error).toBe('Invalid username or password');
+    });
+
+    it('should validate required fields', async () => {
+      // Act
+      const response = await request(app)
+        .post('/api/login')
+        .send({
+          username: 'test_user'
+          // Missing password
+        });
+
+      // Assert
+      expect(response.status).toBe(400);
+      expect(response.body.error).toBe('Validation failed');
+    });
+  });
+});
+```
+
+### Service Layer Testing
+```javascript
+// tests/unit/services/authService.test.js
+const AuthService = require('../../services/authService');
+const { db } = require('../../db');
+
+describe('AuthService', () => {
+  describe('authenticateUser', () => {
+    it('should authenticate valid user', async () => {
+      // Arrange
+      const username = 'test_user';
+      const password = 'test123';
+      const hashedPassword = await bcrypt.hash(password, 10);
+      
+      await db.execute(
+        'INSERT INTO pengguna (username, password, role, status) VALUES (?, ?, ?, ?)',
+        [username, hashedPassword, 'admin', 'active']
+      );
+
+      // Act
+      const result = await AuthService.authenticateUser(username, password);
+
+      // Assert
+      expect(result.success).toBe(true);
+      expect(result.user.username).toBe(username);
+      expect(result.token).toBeDefined();
+    });
+
+    it('should reject invalid password', async () => {
+      // Arrange
+      const username = 'test_user';
+      const password = 'test123';
+      const wrongPassword = 'wrong123';
+      const hashedPassword = await bcrypt.hash(password, 10);
+      
+      await db.execute(
+        'INSERT INTO pengguna (username, password, role, status) VALUES (?, ?, ?, ?)',
+        [username, hashedPassword, 'admin', 'active']
+      );
+
+      // Act
+      const result = await AuthService.authenticateUser(username, wrongPassword);
+
+      // Assert
+      expect(result.success).toBe(false);
+      expect(result.error).toBe('Invalid credentials');
+    });
+  });
+});
+```
+
+### Repository Testing
+```javascript
+// tests/unit/repositories/userRepository.test.js
+const UserRepository = require('../../repositories/userRepository');
+const { db } = require('../../db');
+
+describe('UserRepository', () => {
+  let userRepository;
+
+  beforeEach(() => {
+    userRepository = new UserRepository();
+  });
+
+  describe('findByUsername', () => {
+    it('should find user by username', async () => {
+      // Arrange
+      const userData = {
+        username: 'test_user',
+        password: 'hashed_password',
+        role: 'admin',
+        status: 'active'
+      };
+      
+      await db.execute(
+        'INSERT INTO pengguna (username, password, role, status) VALUES (?, ?, ?, ?)',
+        [userData.username, userData.password, userData.role, userData.status]
+      );
+
+      // Act
+      const user = await userRepository.findByUsername(userData.username);
+
+      // Assert
+      expect(user).toBeDefined();
+      expect(user.username).toBe(userData.username);
+      expect(user.role).toBe(userData.role);
+    });
+
+    it('should return null for non-existent user', async () => {
+      // Act
+      const user = await userRepository.findByUsername('non_existent_user');
+
+      // Assert
+      expect(user).toBeNull();
+    });
+  });
+});
+```
+
+## 🔗 Integration Testing Patterns
+
+### API Integration Tests
+```javascript
+// tests/integration/api/attendance.test.js
+const request = require('supertest');
+const app = require('../../app');
+const { db } = require('../../db');
+
+describe('Attendance API Integration', () => {
+  let authToken;
+  let testUser;
+
+  beforeAll(async () => {
+    // Setup test user and get auth token
+    testUser = await createTestUser();
+    authToken = await getAuthToken(testUser);
+  });
+
+  afterAll(async () => {
+    // Cleanup test data
+    await cleanupTestData();
+  });
+
+  describe('POST /api/attendance/submit', () => {
+    it('should submit teacher attendance', async () => {
+      // Arrange
+      const attendanceData = {
+        jadwal_id: 1,
+        guru_id: testUser.id,
+        tanggal: '2025-01-13',
+        status: 'hadir',
+        keterangan: 'Hadir tepat waktu'
+      };
+
+      // Act
+      const response = await request(app)
+        .post('/api/attendance/submit')
+        .set('Authorization', `Bearer ${authToken}`)
+        .send(attendanceData);
+
+      // Assert
+      expect(response.status).toBe(200);
+      expect(response.body.success).toBe(true);
+      
+      // Verify data was saved
+      const [rows] = await db.execute(
+        'SELECT * FROM absensi_guru WHERE guru_id = ? AND tanggal = ?',
+        [testUser.id, attendanceData.tanggal]
+      );
+      expect(rows.length).toBe(1);
+      expect(rows[0].status).toBe(attendanceData.status);
+    });
+  });
+});
+```
+
+### Database Integration Tests
+```javascript
+// tests/integration/database/attendance.test.js
+const { db } = require('../../db');
+
+describe('Attendance Database Integration', () => {
+  beforeEach(async () => {
+    // Setup test data
+    await setupTestData();
+  });
+
+  afterEach(async () => {
+    // Cleanup test data
+    await cleanupTestData();
+  });
+
+  it('should handle attendance transaction correctly', async () => {
+    const connection = await db.getConnection();
+    
+    try {
+      await connection.beginTransaction();
+      
+      // Insert attendance record
+      const [result] = await connection.execute(
+        'INSERT INTO absensi_guru (jadwal_id, guru_id, tanggal, status) VALUES (?, ?, ?, ?)',
+        [1, 1, '2025-01-13', 'hadir']
+      );
+      
+      const attendanceId = result.insertId;
+      
+      // Verify record was inserted
+      const [rows] = await connection.execute(
+        'SELECT * FROM absensi_guru WHERE id = ?',
+        [attendanceId]
+      );
+      
+      expect(rows.length).toBe(1);
+      expect(rows[0].status).toBe('hadir');
+      
+      await connection.commit();
+    } catch (error) {
+      await connection.rollback();
+      throw error;
+    } finally {
+      connection.release();
+    }
+  });
+});
+```
+
+## 🎭 End-to-End Testing Patterns
+
+### User Journey Tests
+```javascript
+// tests/e2e/user-flows/teacher-attendance.test.js
+const { test, expect } = require('@playwright/test');
+
+test.describe('Teacher Attendance Flow', () => {
+  test('should complete teacher attendance workflow', async ({ page }) => {
+    // Login as teacher
+    await page.goto('http://localhost:8080');
+    await page.fill('[data-testid="username-input"]', 'guru001');
+    await page.fill('[data-testid="password-input"]', 'admin123');
+    await page.click('[data-testid="login-button"]');
+    
+    // Wait for dashboard to load
+    await page.waitForSelector('[data-testid="teacher-dashboard"]');
+    
+    // Navigate to attendance page
+    await page.click('[data-testid="attendance-tab"]');
+    
+    // Fill attendance form
+    await page.selectOption('[data-testid="schedule-select"]', '1');
+    await page.selectOption('[data-testid="status-select"]', 'hadir');
+    await page.fill('[data-testid="keterangan-input"]', 'Hadir tepat waktu');
+    
+    // Submit attendance
+    await page.click('[data-testid="submit-attendance"]');
+    
+    // Verify success message
+    await expect(page.locator('[data-testid="success-message"]')).toBeVisible();
+    await expect(page.locator('[data-testid="success-message"]')).toContainText('Kehadiran berhasil disimpan');
+  });
+});
+```
+
+### Admin Workflow Tests
+```javascript
+// tests/e2e/admin-flows/student-management.test.js
+const { test, expect } = require('@playwright/test');
+
+test.describe('Admin Student Management', () => {
+  test('should manage student accounts', async ({ page }) => {
+    // Login as admin
+    await page.goto('http://localhost:8080');
+    await page.fill('[data-testid="username-input"]', 'admin123');
+    await page.fill('[data-testid="password-input"]', 'admin123');
+    await page.click('[data-testid="login-button"]');
+    
+    // Navigate to student management
+    await page.click('[data-testid="admin-menu"]');
+    await page.click('[data-testid="student-management"]');
+    
+    // Add new student
+    await page.click('[data-testid="add-student-button"]');
+    await page.fill('[data-testid="student-name"]', 'Test Student');
+    await page.fill('[data-testid="student-nis"]', '12345');
+    await page.selectOption('[data-testid="class-select"]', '1');
+    await page.click('[data-testid="save-student"]');
+    
+    // Verify student was added
+    await expect(page.locator('[data-testid="student-list"]')).toContainText('Test Student');
+    
+    // Edit student
+    await page.click('[data-testid="edit-student-12345"]');
+    await page.fill('[data-testid="student-name"]', 'Updated Student');
+    await page.click('[data-testid="save-student"]');
+    
+    // Verify student was updated
+    await expect(page.locator('[data-testid="student-list"]')).toContainText('Updated Student');
+  });
+});
+```
+
+## 📊 Performance Testing Patterns
+
+### Load Testing
+```javascript
+// tests/performance/load-tests/attendance-load.test.js
+const { test, expect } = require('@playwright/test');
+
+test.describe('Attendance System Load Test', () => {
+  test('should handle concurrent attendance submissions', async ({ browser }) => {
+    const contexts = [];
+    const pages = [];
+    
+    // Create multiple browser contexts
+    for (let i = 0; i < 10; i++) {
+      const context = await browser.newContext();
+      const page = await context.newPage();
+      contexts.push(context);
+      pages.push(page);
+    }
+    
+    // Login all users concurrently
+    const loginPromises = pages.map(async (page, index) => {
+      await page.goto('http://localhost:8080');
+      await page.fill('[data-testid="username-input"]', `guru${index.toString().padStart(3, '0')}`);
+      await page.fill('[data-testid="password-input"]', 'admin123');
+      await page.click('[data-testid="login-button"]');
+      await page.waitForSelector('[data-testid="teacher-dashboard"]');
+    });
+    
+    await Promise.all(loginPromises);
+    
+    // Submit attendance concurrently
+    const attendancePromises = pages.map(async (page, index) => {
+      await page.click('[data-testid="attendance-tab"]');
+      await page.selectOption('[data-testid="schedule-select"]', '1');
+      await page.selectOption('[data-testid="status-select"]', 'hadir');
+      await page.fill('[data-testid="keterangan-input"]', `Concurrent test ${index}`);
+      await page.click('[data-testid="submit-attendance"]');
+      await page.waitForSelector('[data-testid="success-message"]');
+    });
+    
+    const startTime = Date.now();
+    await Promise.all(attendancePromises);
+    const endTime = Date.now();
+    
+    console.log(`Concurrent attendance submissions completed in ${endTime - startTime}ms`);
+    
+    // Cleanup
+    await Promise.all(contexts.map(context => context.close()));
+  });
+});
+```
+
+### Stress Testing
+```javascript
+// tests/performance/stress-tests/api-stress.test.js
+const axios = require('axios');
+
+describe('API Stress Test', () => {
+  it('should handle high concurrent requests', async () => {
+    const concurrentRequests = 100;
+    const requests = [];
+    
+    for (let i = 0; i < concurrentRequests; i++) {
+      requests.push(
+        axios.get('http://localhost:3001/api/health')
+          .then(response => ({ success: true, status: response.status }))
+          .catch(error => ({ success: false, error: error.message }))
+      );
+    }
+    
+    const results = await Promise.all(requests);
+    const successCount = results.filter(r => r.success).length;
+    const failureCount = results.filter(r => !r.success).length;
+    
+    console.log(`Success: ${successCount}, Failures: ${failureCount}`);
+    
+    // Assert that at least 95% of requests succeed
+    expect(successCount / concurrentRequests).toBeGreaterThan(0.95);
+  });
+});
+```
+
+## 🔧 Test Utilities & Helpers
+
+### Test Data Factory
+```javascript
+// tests/fixtures/testDataFactory.js
+const bcrypt = require('bcrypt');
+const { db } = require('../db');
+
+class TestDataFactory {
+  static async createUser(userData = {}) {
+    const defaultData = {
+      username: `test_user_${Date.now()}`,
+      password: 'test123',
+      role: 'admin',
+      status: 'active'
+    };
+    
+    const data = { ...defaultData, ...userData };
+    const hashedPassword = await bcrypt.hash(data.password, 10);
+    
+    const [result] = await db.execute(
+      'INSERT INTO pengguna (username, password, role, status) VALUES (?, ?, ?, ?)',
+      [data.username, hashedPassword, data.role, data.status]
+    );
+    
+    return { id: result.insertId, ...data };
+  }
+  
+  static async createTeacher(teacherData = {}) {
+    const user = await this.createUser({ role: 'guru' });
+    
+    const defaultData = {
+      user_id: user.id,
+      nama_guru: `Test Teacher ${Date.now()}`,
+      nip: `NIP${Date.now()}`,
+      mapel_id: 1
+    };
+    
+    const data = { ...defaultData, ...teacherData };
+    
+    const [result] = await db.execute(
+      'INSERT INTO guru (user_id, nama_guru, nip, mapel_id) VALUES (?, ?, ?, ?)',
+      [data.user_id, data.nama_guru, data.nip, data.mapel_id]
+    );
+    
+    return { id: result.insertId, ...data, user };
+  }
+  
+  static async createStudent(studentData = {}) {
+    const user = await this.createUser({ role: 'siswa' });
+    
+    const defaultData = {
+      user_id: user.id,
+      nama_siswa: `Test Student ${Date.now()}`,
+      nis: `NIS${Date.now()}`,
+      kelas_id: 1
+    };
+    
+    const data = { ...defaultData, ...studentData };
+    
+    const [result] = await db.execute(
+      'INSERT INTO siswa_perwakilan (user_id, nama_siswa, nis, kelas_id) VALUES (?, ?, ?, ?)',
+      [data.user_id, data.nama_siswa, data.nis, data.kelas_id]
+    );
+    
+    return { id: result.insertId, ...data, user };
+  }
+  
+  static async cleanup() {
+    await db.execute('DELETE FROM absensi_guru WHERE guru_id IN (SELECT id FROM guru WHERE nama_guru LIKE "Test %")');
+    await db.execute('DELETE FROM absensi_siswa WHERE siswa_id IN (SELECT id FROM siswa_perwakilan WHERE nama_siswa LIKE "Test %")');
+    await db.execute('DELETE FROM guru WHERE nama_guru LIKE "Test %"');
+    await db.execute('DELETE FROM siswa_perwakilan WHERE nama_siswa LIKE "Test %"');
+    await db.execute('DELETE FROM pengguna WHERE username LIKE "test_%"');
+  }
+}
+
+module.exports = TestDataFactory;
+```
+
+### Test Database Setup
+```javascript
+// tests/setup/testDatabase.js
+const { db } = require('../db');
+
+const setupTestDatabase = async () => {
+  // Create test database if it doesn't exist
+  await db.execute('CREATE DATABASE IF NOT EXISTS absenta_test');
+  await db.execute('USE absenta_test');
+  
+  // Run migrations
+  await runMigrations();
+  
+  // Seed test data
+  await seedTestData();
+};
+
+const runMigrations = async () => {
+  // Run database migrations for test environment
+  const migrations = [
+    'CREATE TABLE IF NOT EXISTS pengguna (id INT PRIMARY KEY AUTO_INCREMENT, username VARCHAR(255), password VARCHAR(255), role ENUM("admin", "guru", "siswa"), status ENUM("active", "inactive"))',
+    // ... other table creation scripts
+  ];
+  
+  for (const migration of migrations) {
+    await db.execute(migration);
+  }
+};
+
+const seedTestData = async () => {
+  // Insert basic test data
+  await db.execute(`
+    INSERT IGNORE INTO pengguna (username, password, role, status) VALUES 
+    ('admin123', '$2b$10$example', 'admin', 'active'),
+    ('guru001', '$2b$10$example', 'guru', 'active'),
+    ('siswa001', '$2b$10$example', 'siswa', 'active')
+  `);
+};
+
+module.exports = { setupTestDatabase };
+```
+
+## 📋 Test Configuration
+
+### Jest Configuration
+```javascript
+// jest.config.js
+module.exports = {
+  testEnvironment: 'node',
+  setupFilesAfterEnv: ['<rootDir>/tests/setup/jest.setup.js'],
+  testMatch: [
+    '<rootDir>/tests/unit/**/*.test.js',
+    '<rootDir>/tests/integration/**/*.test.js'
+  ],
+  collectCoverageFrom: [
+    'backend/**/*.js',
+    '!backend/migrations/**',
+    '!backend/config/**'
+  ],
+  coverageDirectory: 'coverage',
+  coverageReporters: ['text', 'lcov', 'html'],
+  testTimeout: 10000,
+  maxWorkers: 4
+};
+```
+
+### Playwright Configuration
+```javascript
+// playwright.config.js
+module.exports = {
+  testDir: './tests/e2e',
+  timeout: 30000,
+  retries: 2,
+  workers: 4,
+  use: {
+    baseURL: 'http://localhost:8080',
+    headless: true,
+    screenshot: 'only-on-failure',
+    video: 'retain-on-failure'
+  },
+  projects: [
+    {
+      name: 'chromium',
+      use: { ...devices['Desktop Chrome'] }
+    },
+    {
+      name: 'firefox',
+      use: { ...devices['Desktop Firefox'] }
+    },
+    {
+      name: 'webkit',
+      use: { ...devices['Desktop Safari'] }
+    }
+  ]
+};
+```
+
+## 🎯 Testing Best Practices
+
+### Test Organization
+- **Arrange-Act-Assert**: Clear test structure
+- **Single Responsibility**: One test per scenario
+- **Descriptive Names**: Clear test descriptions
+- **Independent Tests**: No test dependencies
+
+### Data Management
+- **Test Isolation**: Each test is independent
+- **Cleanup**: Proper test data cleanup
+- **Fixtures**: Reusable test data
+- **Mocking**: Mock external dependencies
+
+### Performance Testing
+- **Baseline Metrics**: Establish performance baselines
+- **Load Testing**: Test under expected load
+- **Stress Testing**: Test beyond normal capacity
+- **Monitoring**: Monitor performance during tests

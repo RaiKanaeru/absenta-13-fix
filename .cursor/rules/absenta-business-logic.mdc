@@ -1,948 +1,616 @@
 ---
-globs: *.js,*.tsx
+globs: backend/services/*.js,backend/controllers/*.js
 description: Business logic patterns and rules for Absenta attendance management system
 ---
 
-# Absenta Business Logic - Complete Guide
+# Absenta Business Logic Patterns
 
-## 🎯 System Overview (Updated 2025)
+## 🏢 Core Business Rules
 
-**Absenta** adalah sistem manajemen kehadiran yang mengelola tiga jenis pengguna utama:
-- **Admin**: Manajemen penuh sistem dengan fitur monitoring dan backup
-- **Guru**: Pencatatan kehadiran dengan fitur Edit Absen (30 Hari) dan multi-teacher support
-- **Siswa**: Melihat jadwal, riwayat kehadiran, dan pengajuan izin/banding (siswa perwakilan)
+### User Role Hierarchy
+```javascript
+// Role-based access control
+const ROLE_HIERARCHY = {
+  admin: {
+    level: 3,
+    permissions: ['read', 'write', 'delete', 'manage_users', 'system_config'],
+    canAccess: ['admin', 'guru', 'siswa']
+  },
+  guru: {
+    level: 2,
+    permissions: ['read', 'write', 'attendance_management'],
+    canAccess: ['guru', 'siswa']
+  },
+  siswa: {
+    level: 1,
+    permissions: ['read'],
+    canAccess: ['siswa']
+  }
+};
 
-## 🆕 New Features (2025)
-
-### 1. **Sistem Pengajuan Izin Kelas**
-- Siswa perwakilan dapat mengajukan izin untuk seluruh kelas
-- Support multiple jenis izin: sakit, izin, acara keluarga, kegiatan sekolah
-- Workflow approval dengan notifikasi real-time
-
-### 2. **Sistem Banding Absen**
-- Siswa perwakilan dapat mengajukan banding untuk status kehadiran
-- Support perubahan status: Alpa → Hadir, Hadir → Izin, dll
-- Bukti pendukung dan alasan banding
-
-### 3. **Multi-Teacher System**
-- Satu mata pelajaran dapat diajar oleh multiple guru
-- Role-based: primary, secondary, assistant, substitute
-- Attendance tracking untuk semua guru
-
-### 4. **Edit Absen (30 Hari)**
-- Guru dapat mengedit absensi hingga 30 hari ke belakang
-- Validasi tanggal dan permission checking
-- Audit trail untuk semua perubahan
-
-### 5. **KOP Laporan Resmi**
-- Logo Provinsi Jawa Barat dan SMK
-- Letterhead customizable per jenis laporan
-- Export Excel dengan format resmi
-
-## 👥 User Role Management
-
-### Role Hierarchy
-```
-admin (Level 3 - Highest)
-├── Full system access
-├── User management (create, read, update, delete)
-├── Schedule management
-├── Report generation
-├── System configuration
-└── Data import/export
-
-guru (Level 2 - Teacher)
-├── Class attendance recording
-├── Schedule viewing
-├── Student data (read-only)
-├── Personal profile management
-└── Attendance reports (own classes)
-
-siswa (Level 1 - Student)
-├── Personal attendance view
-├── Schedule viewing
-├── Personal profile management
-└── Attendance history
+// Permission checking
+const hasPermission = (userRole, requiredPermission) => {
+  const role = ROLE_HIERARCHY[userRole];
+  return role && role.permissions.includes(requiredPermission);
+};
 ```
 
-### Permission Matrix
-| Action | Admin | Guru | Siswa |
-|--------|-------|------|-------|
-| View all users | ✅ | ❌ | ❌ |
-| Create users | ✅ | ❌ | ❌ |
-| Edit users | ✅ | ❌ | ❌ |
-| Delete users | ✅ | ❌ | ❌ |
-| View schedules | ✅ | ✅ | ✅ |
-| Create schedules | ✅ | ❌ | ❌ |
-| Edit schedules | ✅ | ❌ | ❌ |
-| Record attendance | ✅ | ✅ | ❌ |
-| View attendance | ✅ | ✅ | ✅ (own only) |
-| Generate reports | ✅ | ✅ (limited) | ❌ |
-| Import data | ✅ | ❌ | ❌ |
-| Export data | ✅ | ✅ (limited) | ❌ |
+### Attendance Status Rules
+```javascript
+// Attendance status definitions
+const ATTENDANCE_STATUS = {
+  HADIR: 'hadir',
+  TIDAK_HADIR: 'tidak_hadir',
+  IZIN: 'izin',
+  SAKIT: 'sakit',
+  CUTI: 'cuti'
+};
+
+// Status validation rules
+const validateAttendanceStatus = (status, keterangan) => {
+  const rules = {
+    [ATTENDANCE_STATUS.HADIR]: {
+      requiresKeterangan: false,
+      allowedKeterangan: ['Hadir tepat waktu', 'Hadir terlambat']
+    },
+    [ATTENDANCE_STATUS.TIDAK_HADIR]: {
+      requiresKeterangan: true,
+      allowedKeterangan: ['Alpa', 'Tidak ada keterangan']
+    },
+    [ATTENDANCE_STATUS.IZIN]: {
+      requiresKeterangan: true,
+      allowedKeterangan: ['Izin sakit', 'Izin keluarga', 'Izin pribadi']
+    },
+    [ATTENDANCE_STATUS.SAKIT]: {
+      requiresKeterangan: true,
+      allowedKeterangan: ['Sakit', 'Sakit dengan surat dokter']
+    },
+    [ATTENDANCE_STATUS.CUTI]: {
+      requiresKeterangan: true,
+      allowedKeterangan: ['Cuti tahunan', 'Cuti melahirkan', 'Cuti khusus']
+    }
+  };
+  
+  const rule = rules[status];
+  if (!rule) return false;
+  
+  if (rule.requiresKeterangan && !keterangan) return false;
+  if (keterangan && !rule.allowedKeterangan.includes(keterangan)) return false;
+  
+  return true;
+};
+```
 
 ## 📅 Schedule Management Logic
 
-### Schedule Creation Rules
+### Schedule Validation Rules
 ```javascript
-// Business rules for schedule creation
-const scheduleRules = {
-  // 1. Time validation
-  timeValidation: {
-    startTime: '07:00:00', // Earliest class time
-    endTime: '16:00:00',   // Latest class time
-    maxDuration: 120,      // Maximum class duration (minutes)
-    minDuration: 30        // Minimum class duration (minutes)
-  },
+// Schedule conflict detection
+const detectScheduleConflicts = async (newSchedule) => {
+  const { hari, jam_mulai, jam_selesai, kelas_id, guru_id } = newSchedule;
   
-  // 2. Conflict detection
-  conflictDetection: {
-    sameTeacher: true,     // Check teacher availability
-    sameClass: true,       // Check class availability
-    sameRoom: true,        // Check room availability
-    timeOverlap: true      // Check time conflicts
-  },
+  // Check for class conflicts
+  const classConflicts = await db.execute(`
+    SELECT j.*, m.nama_mapel, g.nama_guru
+    FROM jadwal j
+    JOIN mapel m ON j.mapel_id = m.id
+    JOIN guru g ON j.guru_id = g.id
+    WHERE j.kelas_id = ? 
+    AND j.hari = ?
+    AND (
+      (j.jam_mulai <= ? AND j.jam_selesai > ?) OR
+      (j.jam_mulai < ? AND j.jam_selesai >= ?) OR
+      (j.jam_mulai >= ? AND j.jam_selesai <= ?)
+    )
+  `, [kelas_id, hari, jam_mulai, jam_mulai, jam_selesai, jam_selesai, jam_mulai, jam_selesai]);
   
-  // 3. Day restrictions
-  dayRestrictions: {
-    allowedDays: ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat'],
-    maxClassesPerDay: 9,   // Maximum classes per day
-    minBreakTime: 15       // Minimum break between classes (minutes)
-  }
-};
-```
-
-### Schedule Validation Logic
-```javascript
-async function validateSchedule(scheduleData) {
-  const errors = [];
+  // Check for teacher conflicts
+  const teacherConflicts = await db.execute(`
+    SELECT j.*, m.nama_mapel, k.nama_kelas
+    FROM jadwal j
+    JOIN mapel m ON j.mapel_id = m.id
+    JOIN kelas k ON j.kelas_id = k.id
+    WHERE j.guru_id = ? 
+    AND j.hari = ?
+    AND (
+      (j.jam_mulai <= ? AND j.jam_selesai > ?) OR
+      (j.jam_mulai < ? AND j.jam_selesai >= ?) OR
+      (j.jam_mulai >= ? AND j.jam_selesai <= ?)
+    )
+  `, [guru_id, hari, jam_mulai, jam_mulai, jam_selesai, jam_selesai, jam_mulai, jam_selesai]);
   
-  // 1. Time validation
-  if (scheduleData.jam_mulai >= scheduleData.jam_selesai) {
-    errors.push('Jam mulai harus lebih awal dari jam selesai');
-  }
-  
-  // 2. Duration validation
-  const duration = calculateDuration(scheduleData.jam_mulai, scheduleData.jam_selesai);
-  if (duration > 120) {
-    errors.push('Durasi kelas maksimal 120 menit');
-  }
-  
-  // 3. Conflict detection
-  const conflicts = await checkScheduleConflicts(scheduleData);
-  if (conflicts.length > 0) {
-    errors.push(`Konflik jadwal: ${conflicts.join(', ')}`);
-  }
-  
-  return errors;
-}
-```
-
-## 📊 Attendance Management Logic (FIXED)
-
-### NEW: Auto-Detect Guru ID Logic
-```javascript
-// FIXED: Auto-detect guru_id dari JWT token
-const autoDetectGuruId = async (req) => {
-  const { role, id } = req.user; // dari JWT token
-  
-  if (role === 'guru') {
-    // Auto-detect guru_id dari tabel guru
-    const [guru] = await db.execute(
-      'SELECT id_guru FROM guru WHERE id_pengguna = ? AND status = "aktif"',
-      [id]
-    );
-    
-    if (guru.length > 0) {
-      return guru[0].id_guru;
-    } else {
-      throw new Error('Guru tidak ditemukan atau tidak aktif');
-    }
-  } else if (role === 'admin') {
-    // Admin harus provide guruId secara eksplisit
-    if (!req.body.guruId) {
-      throw new Error('Admin harus menyediakan guruId');
-    }
-    return req.body.guruId;
-  } else {
-    throw new Error('Role tidak valid untuk attendance submission');
-  }
-};
-```
-
-### NEW: Edit Absen (30 Hari) Business Logic
-```javascript
-// Edit Absen (30 Hari) validation dan business rules
-const editAttendanceRules = {
-  // 1. Date validation
-  validateEditDate: (tanggal_absen) => {
-    const today = new Date();
-    const targetDate = new Date(tanggal_absen);
-    const daysDiff = Math.floor((today - targetDate) / (1000 * 60 * 60 * 24));
-    
-    // Can only edit up to 30 days back
-    if (daysDiff > 30) {
-      throw new Error('Tidak dapat mengedit absensi lebih dari 30 hari ke belakang');
-    }
-    
-    // Cannot edit future dates
-    if (targetDate > today) {
-      throw new Error('Tidak dapat mengedit absensi untuk tanggal masa depan');
-    }
-    
-    return true;
-  },
-  
-  // 2. Permission validation
-  validateEditPermission: (userRole, guruId, scheduleGuruId) => {
-    if (userRole !== 'guru') {
-      throw new Error('Hanya guru yang dapat mengedit absensi');
-    }
-    
-    if (guruId !== scheduleGuruId) {
-      throw new Error('Guru hanya dapat mengedit absensi kelas yang diampu');
-    }
-    
-    return true;
-  },
-  
-  // 3. Audit trail
-  createAuditLog: (oldData, newData, guruId) => {
     return {
-      action: 'EDIT_ATTENDANCE',
-      old_status: oldData.status,
-      new_status: newData.status,
-      guru_id: guruId,
-      timestamp: new Date(),
-      changes: {
-        status: oldData.status !== newData.status,
-        keterangan: oldData.keterangan !== newData.keterangan
-      }
-    };
-  }
+    hasConflicts: classConflicts.length > 0 || teacherConflicts.length > 0,
+    classConflicts,
+    teacherConflicts
+  };
 };
 ```
 
-### NEW: Upsert Logic for Duplicate Prevention
+### Schedule Generation Logic
 ```javascript
-// Upsert logic untuk mencegah duplikasi data absensi
-const upsertAttendanceLogic = {
-  // 1. Check existing attendance
-  checkExisting: async (siswaId, jadwalId, tanggal) => {
-    const [existing] = await db.execute(
-      'SELECT id, status, keterangan FROM absensi_siswa WHERE siswa_id = ? AND jadwal_id = ? AND tanggal = ?',
-      [siswaId, jadwalId, tanggal]
-    );
-    
-    return existing.length > 0 ? existing[0] : null;
-  },
+// Auto-generate weekly schedule
+const generateWeeklySchedule = async (kelasId, semesterId) => {
+  const days = ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
+  const timeSlots = [
+    { start: '07:00', end: '07:45' },
+    { start: '07:45', end: '08:30' },
+    { start: '08:30', end: '09:15' },
+    { start: '09:15', end: '10:00' },
+    { start: '10:00', end: '10:15' }, // Break
+    { start: '10:15', end: '11:00' },
+    { start: '11:00', end: '11:45' },
+    { start: '11:45', end: '12:30' },
+    { start: '12:30', end: '13:15' }, // Lunch
+    { start: '13:15', end: '14:00' },
+    { start: '14:00', end: '14:45' },
+    { start: '14:45', end: '15:30' }
+  ];
   
-  // 2. Update existing record
-  updateExisting: async (id, status, keterangan) => {
-    await db.execute(
-      'UPDATE absensi_siswa SET status = ?, keterangan = ?, waktu_absen = ? WHERE id = ?',
-      [status, keterangan, new Date(), id]
-    );
-  },
+  const schedules = [];
   
-  // 3. Insert new record
-  insertNew: async (siswaId, jadwalId, tanggal, status, keterangan, guruId) => {
-    await db.execute(
-      'INSERT INTO absensi_siswa (siswa_id, jadwal_id, tanggal, status, keterangan, waktu_absen, guru_id) VALUES (?, ?, ?, ?, ?, ?, ?)',
-      [siswaId, jadwalId, tanggal, status, keterangan, new Date(), guruId]
-    );
-  },
-  
-  // 4. Main upsert function
-  upsert: async (attendanceData) => {
-    const results = {
-      updated: 0,
-      inserted: 0,
-      errors: []
-    };
-    
-    for (const [studentId, status] of Object.entries(attendanceData.attendance)) {
-      try {
-        const existing = await upsertAttendanceLogic.checkExisting(
-          studentId, 
-          attendanceData.scheduleId, 
-          attendanceData.tanggal_absen
-        );
-        
-        if (existing) {
-          await upsertAttendanceLogic.updateExisting(
-            existing.id, 
-            status, 
-            attendanceData.notes[studentId]
-          );
-          results.updated++;
-        } else {
-          await upsertAttendanceLogic.insertNew(
-            studentId, 
-            attendanceData.scheduleId, 
-            attendanceData.tanggal_absen, 
-            status, 
-            attendanceData.notes[studentId], 
-            attendanceData.guruId
-          );
-          results.inserted++;
-        }
-      } catch (error) {
-        results.errors.push({
-          studentId,
-          error: error.message
-        });
-      }
+  for (const day of days) {
+    for (const slot of timeSlots) {
+      if (slot.start === '10:00' || slot.start === '12:30') continue; // Skip breaks
+      
+      const schedule = {
+        kelas_id,
+        hari: day,
+        jam_mulai: slot.start,
+        jam_selesai: slot.end,
+        semester_id: semesterId,
+        status: 'active'
+      };
+      
+      schedules.push(schedule);
     }
-    
-    return results;
   }
+  
+  return schedules;
 };
 ```
 
-### Teacher Attendance Rules
+## 📊 Attendance Calculation Logic
+
+### Attendance Statistics
 ```javascript
-const teacherAttendanceRules = {
-  // 1. Status definitions
-  statuses: {
-    'Hadir': {
-      description: 'Guru hadir tepat waktu',
-      isPresent: true,
-      requiresNote: false,
-      affectsSalary: false
-    },
-    'Terlambat': {
-      description: 'Guru hadir tapi terlambat',
-      isPresent: true,
-      requiresNote: true,
-      affectsSalary: true,
-      maxLateMinutes: 30
-    },
-    'Tidak Hadir': {
-      description: 'Guru tidak hadir tanpa keterangan',
-      isPresent: false,
-      requiresNote: true,
-      affectsSalary: true
-    },
-    'Sakit': {
-      description: 'Guru sakit dengan surat dokter',
-      isPresent: false,
-      requiresNote: true,
-      affectsSalary: false,
-      requiresDocument: true
-    },
-    'Izin': {
-      description: 'Guru izin dengan alasan yang jelas',
-      isPresent: false,
-      requiresNote: true,
-      affectsSalary: true,
-      maxDaysPerMonth: 3
-    },
-    'Dispen': {
-      description: 'Guru mendapat dispensasi khusus',
-      isPresent: false,
-      requiresNote: true,
-      affectsSalary: false,
-      requiresApproval: true
-    }
-  },
+// Calculate attendance statistics
+const calculateAttendanceStats = async (guruId, startDate, endDate) => {
+  const [attendanceData] = await db.execute(`
+    SELECT 
+      COUNT(*) as total_sessions,
+      SUM(CASE WHEN status = 'hadir' THEN 1 ELSE 0 END) as hadir_count,
+      SUM(CASE WHEN status = 'tidak_hadir' THEN 1 ELSE 0 END) as tidak_hadir_count,
+      SUM(CASE WHEN status = 'izin' THEN 1 ELSE 0 END) as izin_count,
+      SUM(CASE WHEN status = 'sakit' THEN 1 ELSE 0 END) as sakit_count
+    FROM absensi_guru
+    WHERE guru_id = ? AND tanggal BETWEEN ? AND ?
+  `, [guruId, startDate, endDate]);
   
-  // 2. Recording rules
-  recordingRules: {
-    maxRecordingDelay: 24, // Hours after class ends
-    allowRetroactive: true, // Allow recording past classes
-    requireStudentRecorder: true, // Must be recorded by student
-    autoMarkAbsent: true // Auto-mark absent if not recorded
-  }
+  const stats = attendanceData[0];
+  const attendanceRate = (stats.hadir_count / stats.total_sessions) * 100;
+  
+  return {
+    totalSessions: stats.total_sessions,
+    hadir: stats.hadir_count,
+    tidakHadir: stats.tidak_hadir_count,
+    izin: stats.izin_count,
+    sakit: stats.sakit_count,
+    attendanceRate: Math.round(attendanceRate * 100) / 100,
+    status: getAttendanceStatus(attendanceRate)
+  };
+};
+
+// Determine attendance status
+const getAttendanceStatus = (attendanceRate) => {
+  if (attendanceRate >= 95) return 'excellent';
+  if (attendanceRate >= 90) return 'good';
+  if (attendanceRate >= 80) return 'fair';
+  if (attendanceRate >= 70) return 'poor';
+  return 'critical';
 };
 ```
 
-### Student Attendance Rules
+### Late Arrival Detection
 ```javascript
-const studentAttendanceRules = {
-  // 1. Status definitions
-  statuses: {
-    'Hadir': {
-      description: 'Siswa hadir tepat waktu',
-      isPresent: true,
-      affectsGrade: false
-    },
-    'Izin': {
-      description: 'Siswa izin dengan keterangan',
-      isPresent: false,
-      affectsGrade: false,
-      requiresNote: true,
-      maxDaysPerMonth: 5
-    },
-    'Sakit': {
-      description: 'Siswa sakit dengan surat dokter',
-      isPresent: false,
-      affectsGrade: false,
-      requiresDocument: true
-    },
-    'Alpa': {
-      description: 'Siswa tidak hadir tanpa keterangan',
-      isPresent: false,
-      affectsGrade: true,
-      penaltyPoints: 1
-    },
-    'Dispen': {
-      description: 'Siswa mendapat dispensasi khusus',
-      isPresent: false,
-      affectsGrade: false,
-      requiresApproval: true
-    }
-  },
+// Detect late arrivals
+const detectLateArrivals = async (guruId, date) => {
+  const [schedules] = await db.execute(`
+    SELECT j.*, ag.tanggal, ag.keterangan
+    FROM jadwal j
+    LEFT JOIN absensi_guru ag ON j.id = ag.jadwal_id AND ag.tanggal = ?
+    WHERE j.guru_id = ? AND j.hari = DAYNAME(?)
+  `, [date, guruId, date]);
   
-  // 2. Grading rules
-  gradingRules: {
-    maxAbsences: 25, // Maximum absences per semester
-    warningThreshold: 15, // Warning at 15 absences
-    criticalThreshold: 20, // Critical at 20 absences
-    autoFailThreshold: 25 // Auto-fail at 25 absences
-  }
+  const lateArrivals = schedules.filter(schedule => {
+    if (!schedule.tanggal) return false; // No attendance recorded
+    
+    const keterangan = schedule.keterangan || '';
+    return keterangan.includes('terlambat') || keterangan.includes('late');
+  });
+  
+  return lateArrivals;
 };
 ```
 
 ## 📈 Report Generation Logic
 
-### Attendance Report Rules
+### Attendance Report Generation
 ```javascript
-const reportGenerationRules = {
-  // 1. Teacher attendance reports
-  teacherReports: {
-    daily: {
-      includes: ['status', 'time', 'class', 'notes'],
-      filters: ['teacher', 'date', 'status'],
-      groupBy: ['teacher', 'date']
-    },
-    monthly: {
-      includes: ['summary', 'trends', 'statistics'],
-      filters: ['teacher', 'month', 'year'],
-      calculations: ['attendance_rate', 'late_count', 'absent_count']
-    },
-    yearly: {
-      includes: ['annual_summary', 'trends', 'comparisons'],
-      filters: ['teacher', 'year'],
-      calculations: ['annual_rate', 'monthly_breakdown', 'improvements']
-    }
-  },
+// Generate comprehensive attendance report
+const generateAttendanceReport = async (filters) => {
+  const { startDate, endDate, kelasId, guruId, format = 'excel' } = filters;
   
-  // 2. Student attendance reports
-  studentReports: {
-    individual: {
-      includes: ['personal_record', 'class_attendance', 'trends'],
-      filters: ['student', 'date_range', 'class'],
-      calculations: ['attendance_rate', 'absence_count', 'warning_status']
-    },
-    class: {
-      includes: ['class_summary', 'student_list', 'statistics'],
-      filters: ['class', 'date_range'],
-      calculations: ['class_rate', 'top_attendees', 'problem_students']
-    }
+  // Build query conditions
+  let whereClause = 'WHERE ag.tanggal BETWEEN ? AND ?';
+  const params = [startDate, endDate];
+  
+  if (kelasId) {
+    whereClause += ' AND j.kelas_id = ?';
+    params.push(kelasId);
   }
+  
+  if (guruId) {
+    whereClause += ' AND ag.guru_id = ?';
+    params.push(guruId);
+  }
+  
+  // Get attendance data
+  const [attendanceData] = await db.execute(`
+    SELECT 
+      ag.tanggal,
+      j.hari,
+      j.jam_mulai,
+      j.jam_selesai,
+      m.nama_mapel,
+      k.nama_kelas,
+      g.nama_guru,
+      ag.status,
+      ag.keterangan,
+      CASE 
+        WHEN ag.status = 'hadir' THEN 1
+        ELSE 0
+      END as hadir_score
+    FROM absensi_guru ag
+    JOIN jadwal j ON ag.jadwal_id = j.id
+    JOIN mapel m ON j.mapel_id = m.id
+    JOIN kelas k ON j.kelas_id = k.id
+    JOIN guru g ON ag.guru_id = g.id
+    ${whereClause}
+    ORDER BY ag.tanggal, j.jam_mulai
+  `, params);
+  
+  // Calculate summary statistics
+  const summary = calculateReportSummary(attendanceData);
+  
+  // Generate report based on format
+  if (format === 'excel') {
+    return generateExcelReport(attendanceData, summary);
+  } else if (format === 'pdf') {
+    return generatePDFReport(attendanceData, summary);
+  }
+  
+  return { data: attendanceData, summary };
 };
 ```
 
-### Report Calculation Logic
+### Report Summary Calculation
 ```javascript
-function calculateAttendanceRate(attendances) {
-  const total = attendances.length;
-  const present = attendances.filter(a => a.status === 'Hadir').length;
-  return total > 0 ? (present / total) * 100 : 0;
-}
-
-function calculateAbsenceCount(attendances, status = 'Alpa') {
-  return attendances.filter(a => a.status === status).length;
-}
-
-function determineWarningStatus(absenceCount) {
-  if (absenceCount >= 25) return 'CRITICAL';
-  if (absenceCount >= 20) return 'WARNING';
-  if (absenceCount >= 15) return 'CAUTION';
-  return 'NORMAL';
-}
-```
-
-## 🔄 Data Migration Logic
-
-### Student Data Migration (Completed)
-```javascript
-const migrationRules = {
-  // 1. Migration strategy
-  strategy: 'pengguna_table_consolidation',
+// Calculate report summary statistics
+const calculateReportSummary = (attendanceData) => {
+  const totalSessions = attendanceData.length;
+  const hadirCount = attendanceData.filter(record => record.status === 'hadir').length;
+  const tidakHadirCount = attendanceData.filter(record => record.status === 'tidak_hadir').length;
+  const izinCount = attendanceData.filter(record => record.status === 'izin').length;
+  const sakitCount = attendanceData.filter(record => record.status === 'sakit').length;
   
-  // 2. Data mapping
-  dataMapping: {
-    source: 'siswa_perwakilan',
-    target: 'pengguna',
-    mappings: {
-      'username': 'nama_pengguna',
-      'password': 'kata_sandi', // Default: 'password123'
-      'role': 'peran', // Fixed: 'siswa'
-      'name': 'nama',
-      'email': 'email',
-      'status': 'status'
+  const attendanceRate = totalSessions > 0 ? (hadirCount / totalSessions) * 100 : 0;
+  
+  // Group by teacher
+  const teacherStats = attendanceData.reduce((acc, record) => {
+    const teacherName = record.nama_guru;
+    if (!acc[teacherName]) {
+      acc[teacherName] = {
+        total: 0,
+        hadir: 0,
+        tidakHadir: 0,
+        izin: 0,
+        sakit: 0
+      };
     }
-  },
+    
+    acc[teacherName].total++;
+    acc[teacherName][record.status === 'hadir' ? 'hadir' : 
+                     record.status === 'tidak_hadir' ? 'tidakHadir' :
+                     record.status === 'izin' ? 'izin' : 'sakit']++;
+    
+    return acc;
+  }, {});
   
-  // 3. Validation rules
-  validation: {
-    checkDuplicates: true,
-    validateEmail: true,
-    checkRequiredFields: true,
-    preserveHistory: true
-  },
-  
-  // 4. Rollback strategy
-  rollback: {
-    keepSourceTable: true,
-    backupBeforeMigration: true,
-    reversible: true
-  }
+  return {
+    totalSessions,
+    hadirCount,
+    tidakHadirCount,
+    izinCount,
+    sakitCount,
+    attendanceRate: Math.round(attendanceRate * 100) / 100,
+    teacherStats
+  };
 };
 ```
 
-### Migration Execution Logic
-```javascript
-async function migrateStudentData() {
-  const migrationLog = [];
-  
-  try {
-    // 1. Backup existing data
-    await backupTable('siswa_perwakilan');
-    
-    // 2. Get source data
-    const [sourceData] = await db.execute('SELECT * FROM siswa_perwakilan');
-    
-    // 3. Process each record
-    for (const student of sourceData) {
-      // Check for duplicates
-      const [existing] = await db.execute(
-        'SELECT id FROM pengguna WHERE nama_pengguna = ?',
-        [student.username]
-      );
-      
-      if (existing.length === 0) {
-        // Migrate data
-        const hashedPassword = await bcrypt.hash('password123', 10);
-        await db.execute(
-          `INSERT INTO pengguna (nama_pengguna, kata_sandi, peran, nama, email, status, dibuat_pada, diperbarui_pada)
-           VALUES (?, ?, 'siswa', ?, ?, ?, ?, ?)`,
-          [student.username, hashedPassword, student.nama, student.email, student.status, student.created_at, new Date()]
-        );
-        
-        migrationLog.push({
-          action: 'migrated',
-          username: student.username,
-          status: 'success'
-        });
-      } else {
-        migrationLog.push({
-          action: 'skipped',
-          username: student.username,
-          status: 'duplicate'
-        });
-      }
-    }
-    
-    return migrationLog;
-  } catch (error) {
-    // Rollback on error
-    await rollbackMigration();
-    throw error;
-  }
-}
-```
+## 🔔 Notification Logic
 
-## 🔐 Authentication Business Logic
-
-### Login Validation Rules
+### Attendance Reminder System
 ```javascript
-const loginValidationRules = {
-  // 1. Input validation
-  inputValidation: {
-    username: {
-      required: true,
-      minLength: 3,
-      maxLength: 50,
-      pattern: /^[a-zA-Z0-9_]+$/
-    },
-    password: {
-      required: true,
-      minLength: 6,
-      maxLength: 255
-    }
-  },
+// Send attendance reminders
+const sendAttendanceReminders = async () => {
+  const today = new Date();
+  const currentHour = today.getHours();
   
-  // 2. Account status checks
-  accountStatus: {
-    allowedStatuses: ['aktif', 'active', '1'],
-    blockedStatuses: ['tidak_aktif', 'ditangguhkan', '0'],
-    requireActivation: false
-  },
+  // Send reminders 30 minutes before class
+  const upcomingClasses = await db.execute(`
+    SELECT j.*, g.nama_guru, g.email, k.nama_kelas, m.nama_mapel
+    FROM jadwal j
+    JOIN guru g ON j.guru_id = g.id
+    JOIN kelas k ON j.kelas_id = k.id
+    JOIN mapel m ON j.mapel_id = m.id
+    WHERE j.hari = DAYNAME(?) 
+    AND TIME(j.jam_mulai) = TIME(DATE_ADD(NOW(), INTERVAL 30 MINUTE))
+    AND j.status = 'active'
+  `, [today]);
   
-  // 3. Security rules
-  security: {
-    maxLoginAttempts: 5,
-    lockoutDuration: 15, // minutes
-    passwordExpiry: 90, // days
-    requirePasswordChange: false
+  for (const classSchedule of upcomingClasses) {
+    await sendReminderEmail(classSchedule);
   }
 };
+
+// Send reminder email
+const sendReminderEmail = async (classSchedule) => {
+  const emailContent = {
+    to: classSchedule.email,
+    subject: 'Reminder: Kelas Mendatang',
+    html: `
+      <h2>Reminder Kelas</h2>
+      <p>Halo ${classSchedule.nama_guru},</p>
+      <p>Kelas ${classSchedule.nama_mapel} untuk ${classSchedule.nama_kelas} akan dimulai dalam 30 menit.</p>
+      <p><strong>Jadwal:</strong></p>
+      <ul>
+        <li>Hari: ${classSchedule.hari}</li>
+        <li>Jam: ${classSchedule.jam_mulai} - ${classSchedule.jam_selesai}</li>
+        <li>Kelas: ${classSchedule.nama_kelas}</li>
+      </ul>
+      <p>Silakan siapkan kehadiran Anda.</p>
+    `
+  };
+  
+  // Send email using nodemailer
+  await transporter.sendMail(emailContent);
+};
 ```
+
+### Absence Alert System
+```javascript
+// Alert for consecutive absences
+const checkConsecutiveAbsences = async () => {
+  const [consecutiveAbsences] = await db.execute(`
+    SELECT 
+      ag.guru_id,
+      g.nama_guru,
+      g.email,
+      COUNT(*) as consecutive_days
+    FROM absensi_guru ag
+    JOIN guru g ON ag.guru_id = g.id
+    WHERE ag.status = 'tidak_hadir' 
+    AND ag.tanggal >= DATE_SUB(CURDATE(), INTERVAL 3 DAY)
+    GROUP BY ag.guru_id, g.nama_guru, g.email
+    HAVING consecutive_days >= 3
+  `);
+  
+  for (const absence of consecutiveAbsences) {
+    await sendAbsenceAlert(absence);
+  }
+};
+
+// Send absence alert
+const sendAbsenceAlert = async (absenceData) => {
+  const emailContent = {
+    to: 'admin@school.com',
+    subject: 'Alert: Consecutive Absences Detected',
+    html: `
+      <h2>Absence Alert</h2>
+      <p>Guru ${absenceData.nama_guru} telah tidak hadir selama ${absenceData.consecutive_days} hari berturut-turut.</p>
+      <p>Silakan lakukan tindakan yang diperlukan.</p>
+    `
+  };
+  
+  await transporter.sendMail(emailContent);
+};
+```
+
+## 🔐 Security Business Rules
 
 ### Password Policy
 ```javascript
-const passwordPolicy = {
-  // 1. Complexity requirements
-  complexity: {
-    minLength: 6,
-    requireUppercase: false,
-    requireLowercase: false,
-    requireNumbers: false,
-    requireSpecialChars: false
-  },
-  
-  // 2. Security features
-  security: {
-    hashingAlgorithm: 'bcrypt',
-    saltRounds: 10,
-    pepper: 'absenta-pepper-2025',
-    preventReuse: false
-  },
-  
-  // 3. Validation
-  validation: {
-    checkCommonPasswords: true,
-    checkUserInfo: true,
-    maxAge: 365 // days
-  }
-};
-```
-
-## 📊 Dashboard Business Logic
-
-### Statistics Calculation
-```javascript
-const dashboardStats = {
-  // 1. Real-time calculations
-  realTime: {
-    todayAttendance: async () => {
-      const today = new Date().toISOString().split('T')[0];
-      const [guru] = await db.execute(
-        'SELECT COUNT(*) as count FROM absensi_guru WHERE tanggal = ? AND status = "Hadir"',
-        [today]
-      );
-      const [siswa] = await db.execute(
-        'SELECT COUNT(*) as count FROM absensi_siswa WHERE tanggal = ? AND status = "Hadir"',
-        [today]
-      );
-      return { guru: guru[0].count, siswa: siswa[0].count };
-    },
-    
-    attendanceRate: async (type) => {
-      const total = await getTotalUsers(type);
-      const present = await getPresentUsers(type);
-      return total > 0 ? (present / total) * 100 : 0;
-    }
-  },
-  
-  // 2. Historical data
-  historical: {
-    weeklyTrend: async () => {
-      // Calculate attendance trend for past 7 days
-      const trends = [];
-      for (let i = 6; i >= 0; i--) {
-        const date = new Date();
-        date.setDate(date.getDate() - i);
-        const rate = await calculateDailyRate(date);
-        trends.push({ date: date.toISOString().split('T')[0], rate });
-      }
-      return trends;
-    }
-  }
-};
-```
-
-## 🔄 File Import/Export Logic
-
-### Excel Import Rules
-```javascript
-const excelImportRules = {
-  // 1. File validation
-  fileValidation: {
-    allowedFormats: ['.xlsx', '.xls'],
-    maxSize: 10 * 1024 * 1024, // 10MB
-    requiredSheets: ['Jadwal', 'Guru', 'Mapel', 'Kelas']
-  },
-  
-  // 2. Data validation
-  dataValidation: {
-    requiredColumns: {
-      'Jadwal': ['Kelas', 'Mapel', 'Guru', 'Hari', 'Jam_Mulai', 'Jam_Selesai'],
-      'Guru': ['NIP', 'Nama', 'Email', 'Mapel'],
-      'Mapel': ['Kode', 'Nama'],
-      'Kelas': ['Nama', 'Tingkat']
-    },
-    dataTypes: {
-      'NIP': 'string',
-      'Email': 'email',
-      'Jam_Mulai': 'time',
-      'Jam_Selesai': 'time'
-    }
-  },
-  
-  // 3. Import process
-  importProcess: {
-    validateFirst: true,
-    createBackup: true,
-    batchSize: 100,
-    continueOnError: true
-  }
-};
-```
-
-### Import Execution Logic
-```javascript
-async function importScheduleData(filePath) {
-  const results = {
-    totalRows: 0,
-    successful: 0,
-    errors: [],
-    warnings: []
+// Password validation rules
+const validatePassword = (password) => {
+  const rules = {
+    minLength: 8,
+    maxLength: 128,
+    requireUppercase: true,
+    requireLowercase: true,
+    requireNumbers: true,
+    requireSpecialChars: true,
+    forbiddenPatterns: ['password', '123456', 'qwerty']
   };
   
-  try {
-    // 1. Validate file
-    const validation = await validateExcelFile(filePath);
-    if (!validation.valid) {
-      throw new Error(`File validation failed: ${validation.errors.join(', ')}`);
-    }
-    
-    // 2. Parse Excel data
-    const workbook = new ExcelJS.Workbook();
-    await workbook.xlsx.readFile(filePath);
-    
-    // 3. Process each sheet
-    for (const sheetName of ['Jadwal', 'Guru', 'Mapel', 'Kelas']) {
-      const sheet = workbook.getWorksheet(sheetName);
-      if (!sheet) {
-        results.warnings.push(`Sheet '${sheetName}' not found`);
-        continue;
-      }
-      
-      // 4. Process rows
-      const rows = sheet.getRows();
-      results.totalRows += rows.length;
-      
-      for (const row of rows) {
-        try {
-          await processRowData(sheetName, row);
-          results.successful++;
-        } catch (error) {
-          results.errors.push({
-            sheet: sheetName,
-            row: row.number,
-            error: error.message
-          });
-        }
-      }
-    }
-    
-    return results;
-  } catch (error) {
-    throw new Error(`Import failed: ${error.message}`);
+  const errors = [];
+  
+  if (password.length < rules.minLength) {
+    errors.push(`Password must be at least ${rules.minLength} characters long`);
   }
-}
+  
+  if (password.length > rules.maxLength) {
+    errors.push(`Password must be no more than ${rules.maxLength} characters long`);
+  }
+  
+  if (rules.requireUppercase && !/[A-Z]/.test(password)) {
+    errors.push('Password must contain at least one uppercase letter');
+  }
+  
+  if (rules.requireLowercase && !/[a-z]/.test(password)) {
+    errors.push('Password must contain at least one lowercase letter');
+  }
+  
+  if (rules.requireNumbers && !/\d/.test(password)) {
+    errors.push('Password must contain at least one number');
+  }
+  
+  if (rules.requireSpecialChars && !/[!@#$%^&*(),.?":{}|<>]/.test(password)) {
+    errors.push('Password must contain at least one special character');
+  }
+  
+  for (const pattern of rules.forbiddenPatterns) {
+    if (password.toLowerCase().includes(pattern)) {
+      errors.push(`Password cannot contain common patterns like '${pattern}'`);
+    }
+  }
+  
+  return {
+    isValid: errors.length === 0,
+    errors
+  };
+};
 ```
 
-## 🚨 Business Rule Violations
-
-### Common Violations and Handling
+### Account Lockout Policy
 ```javascript
-const businessRuleViolations = {
-  // 1. Schedule conflicts
-  scheduleConflict: {
-    detection: async (newSchedule) => {
-      const conflicts = await checkScheduleConflicts(newSchedule);
-      return conflicts.length > 0;
-    },
-    handling: 'REJECT_WITH_MESSAGE',
-    message: 'Jadwal bertabrakan dengan jadwal yang sudah ada'
-  },
+// Account lockout after failed attempts
+const handleFailedLogin = async (username) => {
+  const maxAttempts = 5;
+  const lockoutDuration = 30; // minutes
   
-  // 2. Duplicate data
-  duplicateData: {
-    detection: async (table, field, value) => {
-      const [existing] = await db.execute(
-        `SELECT id FROM ${table} WHERE ${field} = ?`,
-        [value]
-      );
-      return existing.length > 0;
-    },
-    handling: 'REJECT_WITH_MESSAGE',
-    message: 'Data sudah ada dalam sistem'
-  },
+  // Get current attempt count
+  const [attempts] = await db.execute(`
+    SELECT failed_attempts, last_attempt, locked_until
+    FROM pengguna 
+    WHERE username = ?
+  `, [username]);
   
-  // 3. Invalid references
-  invalidReference: {
-    detection: async (table, field, value) => {
-      const [existing] = await db.execute(
-        `SELECT id FROM ${table} WHERE id = ?`,
-        [value]
-      );
-      return existing.length === 0;
-    },
-    handling: 'REJECT_WITH_MESSAGE',
-    message: 'Referensi data tidak valid'
+  if (attempts.length === 0) return;
+  
+  const user = attempts[0];
+  const now = new Date();
+  
+  // Check if account is still locked
+  if (user.locked_until && new Date(user.locked_until) > now) {
+    throw new Error('Account is temporarily locked due to too many failed attempts');
+  }
+  
+  // Increment failed attempts
+  const newAttemptCount = (user.failed_attempts || 0) + 1;
+  
+  if (newAttemptCount >= maxAttempts) {
+    // Lock account
+    const lockUntil = new Date(now.getTime() + lockoutDuration * 60000);
+    await db.execute(`
+      UPDATE pengguna 
+      SET failed_attempts = ?, locked_until = ?
+      WHERE username = ?
+    `, [newAttemptCount, lockUntil, username]);
+    
+    throw new Error('Account locked due to too many failed attempts');
+  } else {
+    // Update attempt count
+    await db.execute(`
+      UPDATE pengguna 
+      SET failed_attempts = ?, last_attempt = ?
+      WHERE username = ?
+    `, [newAttemptCount, now, username]);
   }
 };
 ```
 
-## 📋 Data Validation Rules
+## 📊 Data Validation Rules
 
-### Input Validation Patterns
+### Input Validation
 ```javascript
-const validationPatterns = {
-  // 1. User data validation
-  userValidation: {
+// Comprehensive input validation
+const validateUserInput = (input, type) => {
+  const validators = {
     username: {
       required: true,
       minLength: 3,
       maxLength: 50,
       pattern: /^[a-zA-Z0-9_]+$/,
-      unique: true
+      message: 'Username must be 3-50 characters, alphanumeric and underscore only'
     },
     email: {
-      required: false,
+      required: true,
       pattern: /^[^\s@]+@[^\s@]+\.[^\s@]+$/,
-      unique: true
+      message: 'Invalid email format'
     },
     phone: {
       required: false,
-      pattern: /^[0-9+\-\s()]+$/,
-      minLength: 10,
-      maxLength: 20
-    }
-  },
-  
-  // 2. Schedule validation
-  scheduleValidation: {
-    timeFormat: {
-      pattern: /^([01]?[0-9]|2[0-3]):[0-5][0-9]$/,
-      message: 'Format waktu harus HH:MM'
+      pattern: /^(\+62|62|0)[0-9]{9,13}$/,
+      message: 'Invalid Indonesian phone number format'
     },
-    dayValidation: {
-      allowedValues: ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat'],
-      caseSensitive: true
-    }
-  }
-};
-```
-
-## 🔄 State Management Logic
-
-### Application State Rules
-```javascript
-const stateManagementRules = {
-  // 1. User state
-  userState: {
-    initial: null,
-    loading: false,
-    error: null,
-    data: {
-      id: null,
-      username: null,
-      role: null,
-      permissions: []
-    }
-  },
-  
-  // 2. Data state
-  dataState: {
-    students: {
-      loading: false,
-      error: null,
-      data: [],
-      pagination: { page: 1, limit: 10, total: 0 }
+    nis: {
+      required: true,
+      pattern: /^[0-9]{8,12}$/,
+      message: 'NIS must be 8-12 digits'
     },
-    teachers: {
-      loading: false,
-      error: null,
-      data: [],
-      pagination: { page: 1, limit: 10, total: 0 }
+    nip: {
+      required: true,
+      pattern: /^[0-9]{18}$/,
+      message: 'NIP must be exactly 18 digits'
     }
-  },
+  };
   
-  // 3. UI state
-  uiState: {
-    sidebarOpen: false,
-    currentView: 'dashboard',
-    modals: {
-      createUser: false,
-      editUser: false,
-      deleteUser: false
-    }
+  const validator = validators[type];
+  if (!validator) return { isValid: true };
+  
+  const errors = [];
+  
+  if (validator.required && (!input || input.trim() === '')) {
+    errors.push(`${type} is required`);
   }
+  
+  if (input && validator.minLength && input.length < validator.minLength) {
+    errors.push(`${type} must be at least ${validator.minLength} characters`);
+  }
+  
+  if (input && validator.maxLength && input.length > validator.maxLength) {
+    errors.push(`${type} must be no more than ${validator.maxLength} characters`);
+  }
+  
+  if (input && validator.pattern && !validator.pattern.test(input)) {
+    errors.push(validator.message);
+  }
+  
+  return {
+    isValid: errors.length === 0,
+    errors
+  };
 };
 ```
 
-## 🎯 Business Goals and Metrics
+## 🔧 Business Logic Best Practices
 
-### Key Performance Indicators (KPIs)
-```javascript
-const businessKPIs = {
-  // 1. Attendance metrics
-  attendance: {
-    targetRate: 95, // Target attendance rate (%)
-    warningThreshold: 85, // Warning threshold (%)
-    criticalThreshold: 75 // Critical threshold (%)
-  },
-  
-  // 2. System performance
-  performance: {
-    responseTime: 2000, // Max response time (ms)
-    uptime: 99.5, // Target uptime (%)
-    errorRate: 0.1 // Target error rate (%)
-  },
-  
-  // 3. User satisfaction
-  satisfaction: {
-    targetScore: 4.5, // Target satisfaction score (1-5)
-    responseTime: 24, // Max response time for issues (hours)
-    resolutionTime: 72 // Max resolution time (hours)
-  }
-};
-```
+### Error Handling
+- **Graceful Degradation**: Handle errors without crashing
+- **User-Friendly Messages**: Provide clear error messages
+- **Logging**: Log errors for debugging
+- **Recovery**: Implement retry mechanisms
 
-## 🔧 Maintenance and Updates
+### Data Consistency
+- **Transactions**: Use database transactions for complex operations
+- **Validation**: Validate data at multiple levels
+- **Constraints**: Use database constraints
+- **Audit Trail**: Track data changes
 
-### System Update Rules
-```javascript
-const updateRules = {
-  // 1. Data migration
-  dataMigration: {
-    backupBeforeUpdate: true,
-    validateAfterUpdate: true,
-    rollbackOnError: true,
-    notifyUsers: true
-  },
-  
-  // 2. Feature updates
-  featureUpdates: {
-    backwardCompatibility: true,
-    gradualRollout: true,
-    userTraining: true,
-    documentation: true
-  },
-  
-  // 3. Security updates
-  securityUpdates: {
-    immediateDeployment: true,
-    forcePasswordReset: false,
-    notifyAdmins: true,
-    auditLog: true
-  }
-};
-```
+### Performance
+- **Caching**: Cache frequently accessed data
+- **Batch Operations**: Group related operations
+- **Indexing**: Optimize database queries
+- **Pagination**: Implement data pagination

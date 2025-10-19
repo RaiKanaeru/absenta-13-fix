@@ -1,0 +1,279 @@
+---
+alwaysApply: true
+description: Complete system architecture guide for Absenta attendance management system
+---
+
+# Absenta System Architecture - Complete Guide
+
+## 🏗️ System Overview
+
+**Absenta** adalah sistem manajemen kehadiran (attendance management) untuk sekolah menengah kejuruan yang dibangun dengan arsitektur modern full-stack.
+
+### Core Technology Stack
+- **Backend**: Node.js + Express.js + MySQL2
+- **Frontend**: React + TypeScript + Vite
+- **Database**: MySQL 10.4+ (MariaDB compatible)
+- **Authentication**: JWT + bcrypt
+- **Caching**: Redis (optional)
+- **File Processing**: ExcelJS + Multer
+
+## 🏛️ Architecture Layers
+
+### 1. **Presentation Layer (Frontend)**
+```
+frontend/src/
+├── pages/Index_Modern.tsx          # Main app entry point
+├── components/
+│   ├── AdminDashboard_Modern.tsx   # Admin management interface
+│   ├── TeacherDashboard_Modern.tsx # Teacher attendance interface
+│   ├── StudentDashboard_Modern.tsx # Student view interface
+│   └── LoginForm_Modern.tsx        # Authentication form
+├── utils/
+│   ├── api.ts                      # API client utilities
+│   ├── http.ts                     # HTTP request helpers
+│   └── normalize.ts                # Data normalization
+└── hooks/
+    └── use-toast.ts                # UI notification system
+```
+
+### 2. **API Layer (Backend)**
+```
+backend/
+├── controllers/                    # Request handlers
+├── services/                       # Business logic
+├── repositories/                   # Data access layer
+├── routes/                         # API endpoints
+├── middleware/                     # Cross-cutting concerns
+└── utils/                          # Helper functions
+```
+
+### 3. **Data Access Layer**
+```
+db.js                               # Database connection pool
+├── Connection Management
+├── Query Execution
+├── Transaction Handling
+├── Error Recovery
+└── Performance Monitoring
+```
+
+### 4. **Database Layer**
+```
+absenta13 (MySQL Database)
+├── pengguna (User accounts)
+├── guru (Teacher data)
+├── siswa_perwakilan (Student data)
+├── mapel (Subjects)
+├── kelas (Classes)
+├── jadwal (Schedules)
+├── absensi_guru (Teacher attendance)
+├── absensi_siswa (Student attendance)
+└── Supporting tables
+```
+
+## 🔄 Data Flow Architecture
+
+### Authentication Flow
+```
+1. User Login Request
+   ↓
+2. Frontend: LoginForm_Modern.tsx
+   ↓ POST /api/login
+3. Backend: server_modern.js (authenticateToken)
+   ↓ Query pengguna table
+4. Database: MySQL (pengguna)
+   ↓ JWT token generation
+5. Frontend: Store token, redirect to dashboard
+```
+
+### Student Data Management Flow
+```
+1. Admin Dashboard Request
+   ↓
+2. Frontend: AdminDashboard_Modern.tsx
+   ↓ GET /api/admin/siswa-perwakilan
+3. Backend: server_modern.js (siswa-perwakilan endpoint)
+   ↓ Query pengguna table (peran = 'siswa')
+4. Database: MySQL (pengguna)
+   ↓ Student data response
+5. Frontend: Display in data table
+```
+
+### Attendance Processing Flow
+```
+1. Teacher Attendance Input
+   ↓
+2. Frontend: TeacherDashboard_Modern.tsx
+   ↓ POST /api/attendance/submit
+3. Backend: server_modern.js (attendance endpoint)
+   ↓ Transaction: Insert into absensi_guru
+4. Database: MySQL (absensi_guru)
+   ↓ Success response
+5. Frontend: Show confirmation
+```
+
+## 🔐 Security Architecture
+
+### Authentication System
+- **JWT Tokens**: Stateless authentication
+- **Password Hashing**: bcrypt with pepper
+- **Role-Based Access**: admin, guru, siswa
+- **Session Management**: Token-based with refresh
+
+### Authorization Levels
+```
+admin: Full system access
+├── User management
+├── Schedule management
+├── Report generation
+├── System configuration
+└── Data export/import
+
+guru: Teacher-specific access
+├── Class attendance
+├── Schedule viewing
+├── Student data (read-only)
+└── Personal profile
+
+siswa: Student-specific access
+├── Personal attendance view
+├── Schedule viewing
+└── Personal profile
+```
+
+### Data Protection
+- **SQL Injection Prevention**: Parameterized queries
+- **XSS Protection**: Input sanitization
+- **CSRF Protection**: Token validation
+- **Rate Limiting**: Request throttling
+
+## 📊 Database Architecture
+
+### Core Tables Relationship
+```
+pengguna (Users)
+├── guru (Teachers) [1:1 via user_id]
+├── siswa_perwakilan (Students) [1:1 via user_id]
+└── Authentication & Authorization
+
+mapel (Subjects)
+├── jadwal (Schedules) [1:many via mapel_id]
+└── guru (Teachers) [1:many via mapel_id]
+
+kelas (Classes)
+├── jadwal (Schedules) [1:many via kelas_id]
+└── siswa_perwakilan (Students) [1:many via kelas_id]
+
+jadwal (Schedules)
+├── absensi_guru (Teacher Attendance) [1:many via jadwal_id]
+└── absensi_siswa (Student Attendance) [1:many via jadwal_id]
+```
+
+### Data Integrity Rules
+- **Foreign Key Constraints**: Maintain referential integrity
+- **Unique Constraints**: Prevent duplicate data
+- **Check Constraints**: Validate data ranges
+- **Cascade Rules**: Handle data deletion
+
+## 🚀 Performance Architecture
+
+### Caching Strategy
+- **Redis Cache**: API response caching
+- **Database Query Optimization**: Indexed queries
+- **Connection Pooling**: MySQL connection management
+- **Lazy Loading**: Frontend component loading
+
+### Scalability Patterns
+- **Horizontal Scaling**: Load balancer ready
+- **Database Sharding**: Prepared for data partitioning
+- **Microservices Ready**: Modular endpoint structure
+- **CDN Integration**: Static asset optimization
+
+## 🔧 Development Architecture
+
+### Code Organization
+- **Modular Design**: Separated concerns
+- **Error Handling**: Centralized error management
+- **Logging**: Comprehensive logging system
+- **Testing**: Unit and integration test ready
+
+### Deployment Architecture
+- **Environment Configuration**: .env based
+- **Docker Ready**: Containerization support
+- **CI/CD Pipeline**: Automated deployment
+- **Monitoring**: Health check endpoints
+
+## 📱 Frontend Architecture
+
+### Component Structure
+- **Atomic Design**: Reusable components
+- **State Management**: React hooks
+- **Type Safety**: TypeScript interfaces
+- **Responsive Design**: Mobile-first approach
+
+### API Integration
+- **Centralized API Client**: utils/api.ts
+- **Error Handling**: Global error boundary
+- **Loading States**: User feedback
+- **Optimistic Updates**: Better UX
+
+## 🛠️ Maintenance Architecture
+
+### Monitoring & Logging
+- **Application Logs**: Console logging
+- **Error Tracking**: Centralized error handling
+- **Performance Metrics**: Query timing
+- **Health Checks**: System status endpoints
+
+### Backup & Recovery
+- **Database Backups**: Automated backup system
+- **Data Export**: Excel/CSV export
+- **Version Control**: Git-based versioning
+- **Rollback Strategy**: Safe deployment rollback
+
+## 🔄 Integration Points
+
+### External Systems
+- **Excel Import/Export**: Schedule and data management
+- **PDF Generation**: Report generation
+- **Email Integration**: Notification system (planned)
+- **SMS Integration**: Alert system (planned)
+
+### API Endpoints
+- **RESTful Design**: Standard HTTP methods
+- **JSON Responses**: Consistent data format
+- **Error Codes**: Standardized error handling
+- **Documentation**: Swagger/OpenAPI ready
+
+## 📈 Scalability Considerations
+
+### Current Limitations
+- **Single Database**: MySQL single instance
+- **File Storage**: Local file system
+- **Session Storage**: In-memory (stateless)
+
+### Future Enhancements
+- **Database Clustering**: Master-slave setup
+- **Cloud Storage**: AWS S3 integration
+- **Microservices**: Service decomposition
+- **Message Queue**: Async processing
+
+## 🎯 Best Practices
+
+### Code Quality
+- **ESLint**: Code linting
+- **Prettier**: Code formatting
+- **TypeScript**: Type safety
+- **JSDoc**: Documentation
+
+### Security
+- **Input Validation**: All inputs validated
+- **Output Encoding**: XSS prevention
+- **Authentication**: JWT tokens
+- **Authorization**: Role-based access
+
+### Performance
+- **Database Indexing**: Optimized queries
+- **Connection Pooling**: Efficient connections
+- **Caching**: Response caching
+- **Compression**: Gzip compression
