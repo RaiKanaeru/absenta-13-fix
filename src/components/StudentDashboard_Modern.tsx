@@ -497,7 +497,7 @@ const StudentDashboardComponent = ({ userData, onLogout }: StudentDashboardProps
                   telepon_siswa: siswaData.telepon_siswa,
                   jabatan: siswaData.jabatan,
                   nis: siswaData.nis,
-                  kelas: siswaData.kelas
+                  kelas: siswaData.nama_kelas // UBAH dari siswaData.kelas ke siswaData.nama_kelas
               };
             }
             return prevData;
