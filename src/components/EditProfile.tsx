@@ -35,7 +35,8 @@ interface UserProfile {
   kelas?: string; // For students
   alamat?: string;
   no_telepon?: string; // For teachers
-  telepon_orangtua?: string; // For students
+  telepon_orangtua?: string; // For students and teachers (aliased from no_telepon)
+  telepon_siswa?: string; // For students
   jenis_kelamin?: 'L' | 'P'; // For teachers and students
   mata_pelajaran?: string; // For teachers
   jabatan?: string; // For students
@@ -59,12 +60,35 @@ export const EditProfile = ({ userData, onUpdate, onClose, role }: EditProfilePr
     username: userData.username || '',
     email: userData.email || '',
     alamat: userData.alamat || '',
-    no_telepon: userData.no_telepon || userData.telepon_orangtua || '',
+    no_telepon: role === 'siswa' ? (userData.telepon_orangtua || '') : (userData.no_telepon || ''),
     telepon_siswa: userData.telepon_siswa || '',
     jenis_kelamin: userData.jenis_kelamin || '',
     mata_pelajaran: userData.mata_pelajaran || '',
     jabatan: userData.jabatan || 'Siswa'
   });
+
+  // Update formData when userData changes
+  useEffect(() => {
+    console.log('🔄 EditProfile: userData changed:', userData);
+    console.log('🔄 EditProfile: role:', role);
+    console.log('🔄 EditProfile: telepon_orangtua:', userData.telepon_orangtua);
+    console.log('🔄 EditProfile: telepon_siswa:', userData.telepon_siswa);
+    console.log('🔄 EditProfile: email:', userData.email);
+    console.log('🔄 EditProfile: alamat:', userData.alamat);
+    console.log('🔄 EditProfile: jenis_kelamin:', userData.jenis_kelamin);
+    
+    setFormData({
+      nama: userData.nama || '',
+      username: userData.username || '',
+      email: userData.email || '',
+      alamat: userData.alamat || '',
+      no_telepon: role === 'siswa' ? (userData.telepon_orangtua || '') : (userData.no_telepon || ''),
+      telepon_siswa: userData.telepon_siswa || '',
+      jenis_kelamin: userData.jenis_kelamin || '',
+      mata_pelajaran: userData.mata_pelajaran || '',
+      jabatan: userData.jabatan || 'Siswa'
+    });
+  }, [userData, role]);
 
   const [passwordData, setPasswordData] = useState({
     newPassword: '',
@@ -81,13 +105,15 @@ export const EditProfile = ({ userData, onUpdate, onClose, role }: EditProfilePr
       newErrors.nama = 'Nama minimal 2 karakter';
     }
 
-    // Validate username
-    if (!formData.username.trim()) {
-      newErrors.username = 'Username harus diisi';
-    } else if (formData.username.trim().length < 3) {
-      newErrors.username = 'Username minimal 3 karakter';
-    } else if (!/^[a-zA-Z0-9_]+$/.test(formData.username.trim())) {
-      newErrors.username = 'Username hanya boleh huruf, angka, dan underscore';
+    // Validate username only if not disabled
+    if (role === 'admin') {
+      if (!formData.username.trim()) {
+        newErrors.username = 'Username harus diisi';
+      } else if (formData.username.trim().length < 3) {
+        newErrors.username = 'Username minimal 3 karakter';
+      } else if (!/^[a-zA-Z0-9_]+$/.test(formData.username.trim())) {
+        newErrors.username = 'Username hanya boleh huruf, angka, dan underscore';
+      }
     }
 
     // Validate email if provided
@@ -95,14 +121,18 @@ export const EditProfile = ({ userData, onUpdate, onClose, role }: EditProfilePr
       newErrors.email = 'Format email tidak valid';
     }
 
-    // Validate phone number if provided
-    if (formData.no_telepon && !/^[0-9+\-\s()]+$/.test(formData.no_telepon)) {
-      newErrors.no_telepon = 'Format nomor telepon tidak valid';
+    // Validate phone number if provided and not disabled
+    if (role === 'admin') {
+      if (formData.no_telepon && !/^[0-9+\-\s()]+$/.test(formData.no_telepon)) {
+        newErrors.no_telepon = 'Format nomor telepon tidak valid';
+      }
     }
 
     // Validate telepon_siswa if provided (for students)
-    if (formData.telepon_siswa && !/^(\+62|62|0)[0-9]{9,13}$/.test(formData.telepon_siswa)) {
-      newErrors.telepon_siswa = 'Format nomor telepon tidak valid. Gunakan format Indonesia (08xx, +62xx, atau 62xx)';
+    if (role === 'siswa') {
+      if (formData.telepon_siswa && !/^(\+62|62|0)[0-9]{9,13}$/.test(formData.telepon_siswa)) {
+        newErrors.telepon_siswa = 'Format nomor telepon tidak valid. Gunakan format Indonesia (08xx, +62xx, atau 62xx)';
+      }
     }
 
     // Validate jenis kelamin if provided
@@ -159,17 +189,25 @@ export const EditProfile = ({ userData, onUpdate, onClose, role }: EditProfilePr
 
     setLoading(true);
     try {
-      const result = await endpoints.updateProfile(role, {
+      const payload: Record<string, string | null> = {
         nama: formData.nama.trim(),
-        username: formData.username.trim(),
         email: formData.email.trim() || null,
         alamat: formData.alamat.trim() || null,
-        no_telepon: formData.no_telepon.trim() || null,
-        telepon_siswa: formData.telepon_siswa?.trim() || null,
         jenis_kelamin: formData.jenis_kelamin || null,
-        mata_pelajaran: formData.mata_pelajaran.trim() || null,
-        jabatan: formData.jabatan.trim() || null
-      });
+      };
+
+      if (role === 'admin') {
+        payload.username = formData.username.trim();
+        payload.no_telepon = formData.no_telepon.trim() || null;
+      } else if (role === 'guru') {
+        // Guru tidak bisa mengubah no_telepon, hanya admin yang bisa
+        payload.mata_pelajaran = formData.mata_pelajaran.trim() || null;
+      } else if (role === 'siswa') {
+        payload.telepon_siswa = formData.telepon_siswa?.trim() || null;
+        payload.jabatan = formData.jabatan.trim() || null;
+      }
+
+      const result = await endpoints.updateProfile(role, payload);
 
       toast({
         title: "Berhasil!",
@@ -183,11 +221,12 @@ export const EditProfile = ({ userData, onUpdate, onClose, role }: EditProfilePr
       });
       
       onClose();
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error updating profile:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Terjadi kesalahan saat memperbarui profil';
       toast({
         title: "Error",
-        description: error.error || error.message || 'Terjadi kesalahan saat memperbarui profil',
+        description: errorMessage,
         variant: "destructive"
       });
     } finally {
@@ -390,8 +429,14 @@ export const EditProfile = ({ userData, onUpdate, onClose, role }: EditProfilePr
                     value={formData.username}
                     onChange={(e) => handleInputChange('username', e.target.value)}
                     placeholder="Masukkan username"
-                    className={errors.username ? 'border-red-500' : ''}
+                    className={`${errors.username ? 'border-red-500' : ''} ${role !== 'admin' ? 'bg-gray-50' : ''}`}
+                    disabled={role !== 'admin'} // Disable for non-admin roles
                   />
+                  {role !== 'admin' && (
+                    <p className="text-xs text-gray-500 mt-1">
+                      Username hanya dapat diubah oleh Administrator.
+                    </p>
+                  )}
                   {errors.username && (
                     <p className="text-red-500 text-xs mt-1 flex items-center gap-1">
                       <AlertCircle className="w-3 h-3" />
@@ -420,7 +465,7 @@ export const EditProfile = ({ userData, onUpdate, onClose, role }: EditProfilePr
                   )}
                 </div>
                 
-                {role !== 'siswa' && (
+                {role === 'admin' ? (
                   <div>
                     <Label htmlFor="no_telepon">Nomor Telepon</Label>
                     <Input
@@ -437,30 +482,56 @@ export const EditProfile = ({ userData, onUpdate, onClose, role }: EditProfilePr
                       </p>
                     )}
                   </div>
-                )}
+                ) : role === 'guru' ? (
+                  <div>
+                    <Label htmlFor="no_telepon">Nomor Telepon</Label>
+                    <Input
+                      id="no_telepon"
+                      value={userData.no_telepon || ''}
+                      disabled
+                      className="bg-gray-50"
+                    />
+                    <p className="text-xs text-gray-500 mt-1">
+                      Hubungi admin untuk mengubah nomor telepon.
+                    </p>
+                  </div>
+                ) : null}
               </div>
 
-              {role === 'siswa' && (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <Label htmlFor="telepon_siswa">Telepon Siswa</Label>
-                    <Input
-                      id="telepon_siswa"
-                      type="tel"
-                      value={formData.telepon_siswa || ''}
-                      onChange={(e) => handleInputChange('telepon_siswa', e.target.value)}
-                      placeholder="Masukkan nomor telepon pribadi siswa (08xx, +62xx, atau 62xx)"
-                      className={errors.telepon_siswa ? 'border-red-500' : ''}
-                    />
-                    {errors.telepon_siswa && (
-                      <p className="text-red-500 text-xs mt-1 flex items-center gap-1">
-                        <AlertCircle className="w-3 h-3" />
-                        {errors.telepon_siswa}
+                {role === 'siswa' && (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <Label htmlFor="telepon_orangtua">Telepon Orang Tua</Label>
+                      <Input
+                        id="telepon_orangtua"
+                        type="tel"
+                        value={userData.telepon_orangtua || ''} // Use userData.telepon_orangtua directly
+                        disabled // Always disabled for students
+                        className="bg-gray-50"
+                      />
+                      <p className="text-xs text-gray-500 mt-1">
+                        Hubungi admin untuk mengubah nomor telepon orang tua.
                       </p>
-                    )}
+                    </div>
+                    <div>
+                      <Label htmlFor="telepon_siswa">Telepon Siswa</Label>
+                      <Input
+                        id="telepon_siswa"
+                        type="tel"
+                        value={formData.telepon_siswa || ''}
+                        onChange={(e) => handleInputChange('telepon_siswa', e.target.value)}
+                        placeholder="Masukkan nomor telepon pribadi siswa (08xx, +62xx, atau 62xx)"
+                        className={errors.telepon_siswa ? 'border-red-500' : ''}
+                      />
+                      {errors.telepon_siswa && (
+                        <p className="text-red-500 text-xs mt-1 flex items-center gap-1">
+                          <AlertCircle className="w-3 h-3" />
+                          {errors.telepon_siswa}
+                        </p>
+                      )}
+                    </div>
                   </div>
-                </div>
-              )}
+                )}
 
               {role !== 'admin' && (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

@@ -333,38 +333,39 @@ app.get('/api/guru/info', authenticateToken, requireRole(['guru', 'admin']), asy
             return res.status(400).json({ error: 'guru_id tidak ditemukan pada token pengguna' });
         }
 
-        const [guruData] = await db.execute(
-            `SELECT g.*, m.nama_mapel, u.username, u.email, u.nama as user_nama
-             FROM guru g 
-             LEFT JOIN mapel m ON g.mapel_id = m.id_mapel 
-             LEFT JOIN users u ON g.user_id = u.id
-             WHERE g.id_guru = ?`,
-            [guruId]
-        );
+            const [guruData] = await db.execute(
+                `SELECT g.*, m.nama_mapel, u.username, u.email, u.nama as user_nama, u.nomor_telepon as user_no_telepon
+                 FROM guru g 
+                 LEFT JOIN mapel m ON g.mapel_id = m.id_mapel 
+                 LEFT JOIN users u ON g.user_id = u.id
+                 WHERE g.id_guru = ?`,
+                [guruId]
+            );
 
         if (guruData.length === 0) {
             return res.status(404).json({ error: 'Data guru tidak ditemukan' });
         }
 
         const guru = guruData[0];
-        res.json({
-            success: true,
-            data: {
-                id: guru.id_guru,
-                guru_id: guru.id_guru,
-                nama: guru.nama || guru.user_nama,
-                nip: guru.nip,
-                email: guru.email,
-                mata_pelajaran: guru.nama_mapel,
-                no_telepon: guru.no_telp,
-                alamat: guru.alamat,
-                jenis_kelamin: guru.jenis_kelamin,
-                status: guru.status,
-                created_at: guru.created_at,
-                updated_at: guru.updated_at
-            },
-            message: 'Guru info retrieved successfully'
-        });
+            res.json({
+                success: true,
+                data: {
+                    id: guru.id_guru,
+                    guru_id: guru.id_guru,
+                    nama: guru.nama || guru.user_nama,
+                    nip: guru.nip,
+                    username: guru.username,
+                    email: guru.email,
+                    mata_pelajaran: guru.nama_mapel,
+                    no_telepon: guru.no_telp || guru.user_no_telepon || '',
+                    alamat: guru.alamat,
+                    jenis_kelamin: guru.jenis_kelamin,
+                    status: guru.status,
+                    created_at: guru.created_at,
+                    updated_at: guru.updated_at
+                },
+                message: 'Guru info retrieved successfully'
+            });
     } catch (error) {
         console.error('❌ Error getting guru info:', error);
         res.status(500).json({ error: 'Gagal mengambil informasi guru' });
@@ -381,40 +382,42 @@ app.get('/api/siswa/info', authenticateToken, requireRole(['siswa', 'admin']), a
             return res.status(400).json({ error: 'siswa_id tidak ditemukan pada token pengguna' });
         }
 
-        const [siswaData] = await db.execute(
-            `SELECT s.*, k.nama_kelas, u.username, u.email, u.nama as user_nama
-             FROM siswa s 
-             LEFT JOIN kelas k ON s.kelas_id = k.id_kelas 
-             LEFT JOIN users u ON s.user_id = u.id
-             WHERE s.id_siswa = ?`,
-            [siswaId]
-        );
+            const [siswaData] = await db.execute(
+                `SELECT s.*, k.nama_kelas, u.username, u.email, u.nama as user_nama, u.nomor_telepon as user_no_telepon
+                 FROM siswa s 
+                 LEFT JOIN kelas k ON s.kelas_id = k.id_kelas 
+                 LEFT JOIN users u ON s.user_id = u.id
+                 WHERE s.id_siswa = ?`,
+                [siswaId]
+            );
 
         if (siswaData.length === 0) {
             return res.status(404).json({ error: 'Data siswa tidak ditemukan' });
         }
 
         const siswa = siswaData[0];
-        res.json({
-            success: true,
-            data: {
-                id: siswa.id_siswa,
-                siswa_id: siswa.id_siswa,
-                nama: siswa.nama || siswa.user_nama,
-                nis: siswa.nis,
-                email: siswa.email,
-                kelas: siswa.nama_kelas,
-                kelas_id: siswa.kelas_id,
-                alamat: siswa.alamat,
-                telepon_siswa: siswa.telepon_siswa,
-                jenis_kelamin: siswa.jenis_kelamin,
-                jabatan: siswa.jabatan,
-                status: siswa.status,
-                created_at: siswa.created_at,
-                updated_at: siswa.updated_at
-            },
-            message: 'Siswa info retrieved successfully'
-        });
+            res.json({
+                success: true,
+                data: {
+                    id: siswa.id_siswa,
+                    siswa_id: siswa.id_siswa,
+                    nama: siswa.nama || siswa.user_nama,
+                    nis: siswa.nis,
+                    username: siswa.username, // Add username
+                    email: siswa.email,
+                    kelas: siswa.nama_kelas,
+                    kelas_id: siswa.kelas_id,
+                    alamat: siswa.alamat,
+                    telepon_orangtua: siswa.telepon_orangtua || siswa.user_no_telepon, // Prioritize siswa.telepon_orangtua, fallback to users.nomor_telepon
+                    telepon_siswa: siswa.telepon_siswa,
+                    jenis_kelamin: siswa.jenis_kelamin,
+                    jabatan: siswa.jabatan,
+                    status: siswa.status,
+                    created_at: siswa.created_at,
+                    updated_at: siswa.updated_at
+                },
+                message: 'Siswa info retrieved successfully'
+            });
     } catch (error) {
         console.error('❌ Error getting siswa info:', error);
         res.status(500).json({ error: 'Gagal mengambil informasi siswa' });
@@ -448,38 +451,64 @@ app.put('/api/admin/update-profile', authenticateToken, requireRole(['admin']), 
 });
 
 app.put('/api/guru/update-profile', authenticateToken, requireRole(['guru', 'admin']), async (req, res) => {
-    try {
-        const userId = req.user.id;
-        const guruId = req.user.guru_id;
-        const { nama, username, email, no_telepon, mata_pelajaran } = req.body;
-        
-        console.log(`📝 Updating guru profile for user_id: ${userId}, guru_id: ${guruId}`);
-        
-        if (!guruId) {
-            return res.status(400).json({ error: 'guru_id tidak ditemukan pada token pengguna' });
-        }
-        
-        // Update users table
-        await db.execute(
-            `UPDATE users SET 
-                nama = ?, username = ?, email = ?, nomor_telepon = ?, updated_at = NOW()
-             WHERE id = ?`,
-            [nama, username, email, no_telepon, userId]
-        );
-        
-        // Update guru table
-        await db.execute(
-            `UPDATE guru SET 
-                nama = ?, no_telp = ?, updated_at = NOW()
-             WHERE id_guru = ?`,
-            [nama, no_telepon, guruId]
-        );
-        
-        res.json({
-            success: true,
-            message: 'Profil guru berhasil diperbarui',
-            data: { nama, username, email, no_telepon }
-        });
+        try {
+            const userId = req.user.id;
+            const guruId = req.user.guru_id;
+            const { nama, username, email, no_telepon, mata_pelajaran } = req.body;
+            const userRole = req.user.role;
+            
+            console.log(`📝 Updating guru profile for user_id: ${userId}, guru_id: ${guruId}, role: ${userRole}`);
+            
+            if (!guruId) {
+                return res.status(400).json({ error: 'guru_id tidak ditemukan pada token pengguna' });
+            }
+            
+            // Only update username if role is admin
+            if (userRole === 'admin') {
+                await db.execute(
+                    `UPDATE users SET 
+                        nama = ?, username = ?, email = ?, nomor_telepon = ?, updated_at = NOW()
+                     WHERE id = ?`,
+                    [nama, username, email, no_telepon, userId]
+                );
+            } else {
+                // For non-admin, only update nama, email, nomor_telepon
+                await db.execute(
+                    `UPDATE users SET 
+                        nama = ?, email = ?, nomor_telepon = ?, updated_at = NOW()
+                     WHERE id = ?`,
+                    [nama, email, no_telepon, userId]
+                );
+            }
+            
+            // Update guru table
+            await db.execute(
+                `UPDATE guru SET 
+                    nama = ?, no_telp = ?, updated_at = NOW()
+                 WHERE id_guru = ?`,
+                [nama, no_telepon, guruId]
+            );
+            
+            // Get updated data to return
+            const [updatedGuru] = await db.execute(
+                `SELECT g.*, u.username, u.email, u.nomor_telepon as user_no_telepon
+                 FROM guru g 
+                 LEFT JOIN users u ON g.user_id = u.id
+                 WHERE g.id_guru = ?`,
+                [guruId]
+            );
+            
+            const guru = updatedGuru[0];
+            res.json({
+                success: true,
+                message: 'Profil guru berhasil diperbarui',
+                data: { 
+                    nama, 
+                    username: guru.username, 
+                    email: guru.email, 
+                    no_telepon: guru.no_telp || guru.user_no_telepon || ''
+                }
+            });
     } catch (error) {
         console.error('❌ Error updating guru profile:', error);
         res.status(500).json({ error: 'Gagal memperbarui profil guru' });
@@ -487,39 +516,73 @@ app.put('/api/guru/update-profile', authenticateToken, requireRole(['guru', 'adm
 });
 
 app.put('/api/siswa/update-profile', authenticateToken, requireRole(['siswa', 'admin']), async (req, res) => {
-    try {
-        const userId = req.user.id;
-        const siswaId = req.user.siswa_id;
-        const { nama, username, email, no_telepon, telepon_siswa, jabatan } = req.body;
-        
-        console.log(`📝 Updating siswa profile for user_id: ${userId}, siswa_id: ${siswaId}`);
-        
-        if (!siswaId) {
-            return res.status(400).json({ error: 'siswa_id tidak ditemukan pada token pengguna' });
-        }
-        
-        // Update users table
-        await db.execute(
-            `UPDATE users SET 
-                nama = ?, username = ?, email = ?, nomor_telepon = ?, updated_at = NOW()
-             WHERE id = ?`,
-            [nama, username, email, no_telepon, userId]
-        );
-        
-        // Update siswa table
-        await db.execute(
-            `UPDATE siswa SET 
-                nama = ?, telepon_orangtua = ?, telepon_siswa = ?, 
-                jabatan = ?, updated_at = NOW()
-             WHERE id_siswa = ?`,
-            [nama, no_telepon, telepon_siswa, jabatan, siswaId]
-        );
-        
-        res.json({
-            success: true,
-            message: 'Profil siswa berhasil diperbarui',
-            data: { nama, username, email, no_telepon, telepon_siswa, jabatan }
-        });
+        try {
+            const userId = req.user.id;
+            const siswaId = req.user.siswa_id;
+            const { nama, username, email, no_telepon, telepon_siswa, jabatan } = req.body;
+            const userRole = req.user.role;
+            
+            console.log(`📝 Updating siswa profile for user_id: ${userId}, siswa_id: ${siswaId}, role: ${userRole}`);
+            
+            if (!siswaId) {
+                return res.status(400).json({ error: 'siswa_id tidak ditemukan pada token pengguna' });
+            }
+            
+            // Get current siswa data to preserve telepon_orangtua for non-admin
+            const [currentSiswa] = await db.execute(
+                `SELECT telepon_orangtua FROM siswa WHERE id_siswa = ?`,
+                [siswaId]
+            );
+            
+            // Only update username if role is admin
+            if (userRole === 'admin') {
+                await db.execute(
+                    `UPDATE users SET 
+                        nama = ?, username = ?, email = ?, nomor_telepon = ?, updated_at = NOW()
+                     WHERE id = ?`,
+                    [nama, username, email, no_telepon, userId]
+                );
+            } else {
+                // For non-admin, only update nama, email
+                await db.execute(
+                    `UPDATE users SET 
+                        nama = ?, email = ?, updated_at = NOW()
+                     WHERE id = ?`,
+                    [nama, email, userId]
+                );
+            }
+            
+            // Update siswa table - only admin can update telepon_orangtua
+            await db.execute(
+                `UPDATE siswa SET 
+                    nama = ?, telepon_orangtua = ?, telepon_siswa = ?, 
+                    jabatan = ?, updated_at = NOW()
+                 WHERE id_siswa = ?`,
+                [nama, userRole === 'admin' ? no_telepon : currentSiswa[0].telepon_orangtua, telepon_siswa, jabatan, siswaId]
+            );
+            
+            // Get updated data to return
+            const [updatedSiswa] = await db.execute(
+                `SELECT s.*, u.username, u.email
+                 FROM siswa s 
+                 LEFT JOIN users u ON s.user_id = u.id
+                 WHERE s.id_siswa = ?`,
+                [siswaId]
+            );
+            
+            const siswa = updatedSiswa[0];
+            res.json({
+                success: true,
+                message: 'Profil siswa berhasil diperbarui',
+                data: { 
+                    nama, 
+                    username: siswa.username, 
+                    email: siswa.email, 
+                    telepon_orangtua: siswa.telepon_orangtua,
+                    telepon_siswa, 
+                    jabatan 
+                }
+            });
     } catch (error) {
         console.error('❌ Error updating siswa profile:', error);
         res.status(500).json({ error: 'Gagal memperbarui profil siswa' });
@@ -5816,6 +5879,72 @@ app.post('/api/siswa/:siswaId/banding-absen-kelas', authenticateToken, requireRo
     }
 });
 
+// Get attendance records for students in same class
+app.get('/api/siswa/:siswaId/attendance-records', authenticateToken, requireRole(['siswa']), async (req, res) => {
+    try {
+        const { siswaId } = req.params;
+        const { jadwal_id, tanggal_absen } = req.query;
+        
+        console.log('📊 Getting attendance records for siswa:', siswaId, 'jadwal:', jadwal_id, 'tanggal:', tanggal_absen);
+
+        // Validate parameters
+        if (!jadwal_id || !tanggal_absen) {
+            return res.status(400).json({
+                success: false,
+                error: 'Parameter jadwal_id dan tanggal_absen diperlukan'
+            });
+        }
+
+        // Check if jadwal exists and get kelas_id
+        const [jadwalCheck] = await db.execute(
+            `SELECT kelas_id FROM jadwal WHERE id_jadwal = ?`,
+            [jadwal_id]
+        );
+
+        if (jadwalCheck.length === 0) {
+            return res.status(404).json({
+                success: false,
+                error: 'Jadwal tidak ditemukan'
+            });
+        }
+
+        // Get students in same class with attendance status
+        const [attendanceRecords] = await db.execute(
+            `SELECT 
+                s.id_siswa as siswa_id,
+                s.nama,
+                s.nis,
+                a.status,
+                a.keterangan,
+                CASE WHEN a.id IS NOT NULL THEN 1 ELSE 0 END as has_attendance
+            FROM siswa s
+            INNER JOIN kelas k ON s.kelas_id = k.id_kelas
+            INNER JOIN jadwal j ON k.id_kelas = j.kelas_id
+            LEFT JOIN absensi_siswa a ON s.id_siswa = a.siswa_id 
+                AND a.jadwal_id = ? 
+                AND a.tanggal = ?
+            WHERE j.id_jadwal = ?
+                AND s.kelas_id = (SELECT kelas_id FROM siswa WHERE id_siswa = ?)
+                AND s.status = 'aktif'
+            ORDER BY s.nama`,
+            [jadwal_id, tanggal_absen, jadwal_id, siswaId]
+        );
+
+        console.log('✅ Attendance records loaded:', attendanceRecords.length, 'students');
+
+        res.json({
+            success: true,
+            data: attendanceRecords,
+            message: 'Attendance records retrieved successfully'
+        });
+    } catch (error) {
+        console.error('❌ Error getting attendance records:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Gagal mengambil data kehadiran siswa'
+        });
+    }
+});
 
 // Get banding absen for teacher to process
 app.get('/api/guru/:guruId/banding-absen', authenticateToken, requireRole(['guru']), async (req, res) => {

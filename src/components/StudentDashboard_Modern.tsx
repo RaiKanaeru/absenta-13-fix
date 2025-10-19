@@ -25,6 +25,14 @@ interface StudentDashboardProps {
     username: string;
     nama: string;
     role: string;
+    email?: string;
+    alamat?: string;
+    jenis_kelamin?: 'L' | 'P';
+    telepon_orangtua?: string;
+    telepon_siswa?: string;
+    jabatan?: string;
+    nis?: string;
+    kelas?: string;
   };
   onLogout: () => void;
 }
@@ -65,6 +73,14 @@ interface StudentDashboardProps {
     username: string;
     nama: string;
     role: string;
+    email?: string;
+    alamat?: string;
+    jenis_kelamin?: 'L' | 'P';
+    telepon_orangtua?: string;
+    telepon_siswa?: string;
+    jabatan?: string;
+    nis?: string;
+    kelas?: string;
   };
   onLogout: () => void;
 }
@@ -79,6 +95,7 @@ interface JadwalHariIni {
   nama_guru: string;
   nip: string;
   nama_kelas: string;
+  kelas_id?: number; // TAMBAHKAN field ini
   status_kehadiran: string;
   keterangan?: string;
   waktu_catat?: string;
@@ -344,11 +361,14 @@ const StudentDashboardComponent = ({ userData, onLogout }: StudentDashboardProps
   const [formBandingKelas, setFormBandingKelas] = useState({
     jadwal_id: '',
     tanggal_absen: '',
+    kelas_id: '', // TAMBAHKAN field ini
     siswa_banding: {
+      id: '' as number | '', // UBAH dari nama ke id
       nama: '',
       status_asli: 'alpa' as 'hadir' | 'izin' | 'sakit' | 'alpa' | 'dispen',
       status_diajukan: 'hadir' as 'hadir' | 'izin' | 'sakit' | 'alpa' | 'dispen',
-      alasan: ''
+      alasan: '',
+      bukti: '' // UBAH dari bukti_pendukung ke bukti
     }
   });
   
@@ -467,9 +487,17 @@ const StudentDashboardComponent = ({ userData, onLogout }: StudentDashboardProps
               return {
                 ...prevData,
                   id: siswaData.id,
-                  username: siswaData.username,
+                  username: siswaData.username || prevData.username, // Preserve existing username if API doesn't provide it
                   nama: siswaData.nama,
-                  role: siswaData.role
+                  role: siswaData.role || prevData.role, // Preserve existing role if API doesn't provide it
+                  email: siswaData.email || prevData.email,
+                  alamat: siswaData.alamat || prevData.alamat,
+                  jenis_kelamin: siswaData.jenis_kelamin || prevData.jenis_kelamin,
+                  telepon_orangtua: siswaData.telepon_orangtua,
+                  telepon_siswa: siswaData.telepon_siswa,
+                  jabatan: siswaData.jabatan,
+                  nis: siswaData.nis,
+                  kelas: siswaData.kelas
               };
             }
             return prevData;
@@ -941,8 +969,13 @@ const StudentDashboardComponent = ({ userData, onLogout }: StudentDashboardProps
       return;
     }
 
-    if (!formBandingKelas.siswa_banding.nama || !formBandingKelas.siswa_banding.alasan.trim()) {
-      toast({ title: "Error", description: "Nama siswa dan alasan wajib diisi", variant: "destructive" });
+    if (!formBandingKelas.kelas_id) { // TAMBAHKAN validasi ini
+      toast({ title: "Error", description: "Kelas ID tidak ditemukan", variant: "destructive" });
+      return;
+    }
+
+    if (!formBandingKelas.siswa_banding.id || !formBandingKelas.siswa_banding.nama || !formBandingKelas.siswa_banding.alasan.trim()) {
+      toast({ title: "Error", description: "Data siswa dan alasan wajib diisi", variant: "destructive" });
       return;
     }
 
@@ -955,13 +988,15 @@ const StudentDashboardComponent = ({ userData, onLogout }: StudentDashboardProps
       const payload = {
         jadwal_id: parseInt(formBandingKelas.jadwal_id),
         tanggal_absen: formBandingKelas.tanggal_absen,
+        kelas_id: formBandingKelas.kelas_id, // PASTIKAN field ini ada
         siswa_banding: {
+          id: formBandingKelas.siswa_banding.id, // UBAH struktur sesuai backend
           nama: formBandingKelas.siswa_banding.nama,
           status_asli: formBandingKelas.siswa_banding.status_asli,
           status_diajukan: formBandingKelas.siswa_banding.status_diajukan,
-          alasan_banding: formBandingKelas.siswa_banding.alasan
-        },
-        kelas_id: siswaId
+          alasan: formBandingKelas.siswa_banding.alasan,
+          bukti: formBandingKelas.siswa_banding.bukti || null
+        }
       };
 
       const response = await fetch(`/api/siswa/${siswaId}/banding-absen-kelas`, {
@@ -982,7 +1017,8 @@ const StudentDashboardComponent = ({ userData, onLogout }: StudentDashboardProps
         setFormBandingKelas({
           jadwal_id: '',
           tanggal_absen: '',
-          siswa_banding: { nama: '', status_asli: 'alpa', status_diajukan: 'hadir', alasan: '' }
+          kelas_id: '',
+          siswa_banding: { id: '', nama: '', status_asli: 'alpa', status_diajukan: 'hadir', alasan: '', bukti: '' }
         });
         setShowFormBandingKelas(false);
         
@@ -1834,11 +1870,12 @@ const StudentDashboardComponent = ({ userData, onLogout }: StudentDashboardProps
                       setFormBandingKelas({
                         jadwal_id: '',
                         tanggal_absen: tanggal,
-                        siswa_banding: { nama: '', status_asli: 'alpa', status_diajukan: 'hadir', alasan: '' }
+                        kelas_id: '', // tambahkan field ini
+                        siswa_banding: { id: '', nama: '', status_asli: 'alpa', status_diajukan: 'hadir', alasan: '', bukti: '' }
                       });
                       setAttendanceRecords([]); // Reset attendance records
                       if (tanggal) {
-                        // Load jadwal by date functionality removed
+                        loadJadwalByDate(tanggal); // UNCOMMENT DAN PANGGIL FUNGSI INI
                       } else {
                         setJadwalBerdasarkanTanggal([]);
                       }
@@ -1856,7 +1893,12 @@ const StudentDashboardComponent = ({ userData, onLogout }: StudentDashboardProps
                     value={formBandingKelas.jadwal_id}
                     onChange={(e) => {
                       const jadwalId = e.target.value;
-                      setFormBandingKelas({...formBandingKelas, jadwal_id: jadwalId});
+                      const selectedJadwal = jadwalBerdasarkanTanggal.find(j => j.id_jadwal === parseInt(jadwalId));
+                      setFormBandingKelas({
+                        ...formBandingKelas, 
+                        jadwal_id: jadwalId,
+                        kelas_id: (selectedJadwal as JadwalHariIni & { kelas_id?: number })?.kelas_id || '' // TAMBAHKAN ini
+                      });
                       // Load attendance records when jadwal is selected
                       if (jadwalId && formBandingKelas.tanggal_absen) {
                         loadAttendanceRecords(parseInt(jadwalId), formBandingKelas.tanggal_absen);
@@ -1897,16 +1939,18 @@ const StudentDashboardComponent = ({ userData, onLogout }: StudentDashboardProps
                             <select
                             id="banding_siswa_nama"
                               className="w-full px-3 py-2 border border-gray-300 rounded-md"
-                            value={formBandingKelas.siswa_banding.nama}
+                            value={formBandingKelas.siswa_banding.id} // UBAH ke id
                               onChange={(e) => {
-                              const selectedSiswa = daftarSiswa.find(s => s.nama === e.target.value);
-                              const attendanceRecord = attendanceRecords.find(r => r.siswa_id === selectedSiswa?.id);
+                              const siswaId = parseInt(e.target.value);
+                              const selectedSiswa = daftarSiswa.find(s => s.id === siswaId);
+                              const attendanceRecord = attendanceRecords.find(r => r.siswa_id === siswaId);
                               
                               setFormBandingKelas({
                                 ...formBandingKelas,
                                 siswa_banding: {
                                   ...formBandingKelas.siswa_banding,
-                                  nama: e.target.value,
+                                  id: siswaId, // UBAH ke id
+                                  nama: selectedSiswa?.nama || '',
                                   status_asli: (attendanceRecord?.status as 'hadir' | 'izin' | 'sakit' | 'alpa' | 'dispen') || 'alpa'
                                 }
                               });
@@ -1917,8 +1961,8 @@ const StudentDashboardComponent = ({ userData, onLogout }: StudentDashboardProps
                               {daftarSiswa.map((s) => {
                                 const attendanceRecord = attendanceRecords.find(r => r.siswa_id === s.id);
                                 return (
-                                <option key={s.id} value={s.nama}>
-                                  {s.nama} {attendanceRecord ? `(${attendanceRecord.status})` : '(Belum ada catatan)'}
+                                <option key={s.id} value={s.id}> {/* UBAH ke s.id */}
+                                  {s.nama} {attendanceRecord?.has_attendance ? `(${attendanceRecord.status})` : '(Belum Absen)'}
                                   </option>
                                 );
                               })}
@@ -2014,7 +2058,8 @@ const StudentDashboardComponent = ({ userData, onLogout }: StudentDashboardProps
                     setFormBandingKelas({
                       jadwal_id: '',
                       tanggal_absen: '',
-                      siswa_banding: { nama: '', status_asli: 'alpa', status_diajukan: 'hadir', alasan: '' }
+                      kelas_id: '',
+                      siswa_banding: { id: '', nama: '', status_asli: 'alpa', status_diajukan: 'hadir', alasan: '', bukti: '' }
                     });
                   }}
                 >
@@ -2589,12 +2634,15 @@ const StudentDashboardComponent = ({ userData, onLogout }: StudentDashboardProps
       
       {/* Edit Profile Modal */}
       {showEditProfile && (
-        <EditProfile
-          userData={currentUserData}
-          onUpdate={handleUpdateProfile}
-          onClose={() => setShowEditProfile(false)}
-          role="siswa"
-        />
+        <>
+          {console.log('🔍 StudentDashboard: Opening EditProfile with currentUserData:', currentUserData)}
+          <EditProfile
+            userData={currentUserData}
+            onUpdate={handleUpdateProfile}
+            onClose={() => setShowEditProfile(false)}
+            role="siswa"
+          />
+        </>
       )}
       </div>
     </ErrorBoundary>

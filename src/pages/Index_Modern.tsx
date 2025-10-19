@@ -14,7 +14,12 @@ interface UserData {
   username: string;
   nama: string;
   role: UserRole;
+  // Common fields
+  email?: string;
+  alamat?: string;
+  jenis_kelamin?: 'L' | 'P';
   // Admin specific
+  no_telepon?: string;
   // Guru specific
   guru_id?: number;
   nip?: string;
@@ -24,6 +29,9 @@ interface UserData {
   nis?: string;
   kelas?: string;
   kelas_id?: number;
+  telepon_orangtua?: string;
+  telepon_siswa?: string;
+  jabatan?: string;
 }
 
 const Index = () => {
@@ -115,12 +123,31 @@ const Index = () => {
                     siswa_id: profileInfo.id_siswa || profileInfo.siswa_id,
                     nis: profileInfo.nis,
                     kelas: profileInfo.nama_kelas || profileInfo.kelas,
-                    kelas_id: profileInfo.kelas_id
+                    kelas_id: profileInfo.kelas_id,
+                    // Include additional fields for siswa
+                    email: profileInfo.email,
+                    alamat: profileInfo.alamat,
+                    jenis_kelamin: profileInfo.jenis_kelamin,
+                    telepon_orangtua: profileInfo.telepon_orangtua,
+                    telepon_siswa: profileInfo.telepon_siswa,
+                    jabatan: profileInfo.jabatan
                   }),
                   ...(normalizedUserData.role === 'guru' && {
                     guru_id: profileInfo.guru_id || profileInfo.id, // Use guru_id if available, fallback to id
                     nip: profileInfo.nip,
-                    mapel: profileInfo.mata_pelajaran || profileInfo.mapel
+                    mapel: profileInfo.mata_pelajaran || profileInfo.mapel,
+                    // Include additional fields for guru
+                    email: profileInfo.email,
+                    alamat: profileInfo.alamat,
+                    jenis_kelamin: profileInfo.jenis_kelamin,
+                    no_telepon: profileInfo.no_telepon
+                  }),
+                  ...(normalizedUserData.role === 'admin' && {
+                    // Include additional fields for admin
+                    email: profileInfo.email,
+                    alamat: profileInfo.alamat,
+                    jenis_kelamin: profileInfo.jenis_kelamin,
+                    no_telepon: profileInfo.no_telepon
                   })
                 };
                 // ✅ FIX: Data sudah dinormalisasi, langsung set

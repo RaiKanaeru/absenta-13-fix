@@ -2921,15 +2921,19 @@ export const TeacherDashboard = ({ userData, onLogout }: TeacherDashboardProps) 
       try {
         const profileResponse = await apiCall('/api/guru/info');
         if (profileResponse.success) {
-          setCurrentUserData({
-            id: profileResponse.id,
-            username: profileResponse.username,
-            nama: profileResponse.nama,
-            role: profileResponse.role,
-            guru_id: profileResponse.guru_id,
-            nip: profileResponse.nip,
-            mapel: profileResponse.mata_pelajaran
-          });
+          setCurrentUserData(prevData => ({
+            ...prevData,
+            id: profileResponse.data.id || prevData.id,
+            username: profileResponse.data.username || prevData.username, // Preserve existing username if API omits it
+            nama: profileResponse.data.nama || prevData.nama,
+            role: profileResponse.data.role || prevData.role,
+            guru_id: profileResponse.data.guru_id || prevData.guru_id,
+            nip: profileResponse.data.nip || prevData.nip,
+            mapel: profileResponse.data.mata_pelajaran || prevData.mapel,
+            no_telepon: profileResponse.data.no_telepon,
+            alamat: profileResponse.data.alamat,
+            jenis_kelamin: profileResponse.data.jenis_kelamin
+          }));
         }
       } catch (error) {
         console.error('Failed to load latest profile data:', error);

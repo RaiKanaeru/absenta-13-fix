@@ -8505,6 +8505,9 @@ export const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
     role: string;
     created_at?: string;
     updated_at?: string;
+    no_telepon?: string;
+    alamat?: string;
+    jenis_kelamin?: 'L' | 'P';
   } | null>(null);
 
   // Check token validity on component mount and load latest profile data
@@ -8525,7 +8528,10 @@ export const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
               email: profileResponse.data.email || userData?.email,
               role: profileResponse.data.role || userData?.role,
               created_at: profileResponse.data.created_at || userData?.created_at,
-              updated_at: profileResponse.data.updated_at || userData?.updated_at
+              updated_at: profileResponse.data.updated_at || userData?.updated_at,
+              no_telepon: profileResponse.data.no_telepon || userData?.no_telepon,
+              alamat: profileResponse.data.alamat || userData?.alamat,
+              jenis_kelamin: profileResponse.data.jenis_kelamin || userData?.jenis_kelamin
             });
           }
         } catch (profileErr) {
