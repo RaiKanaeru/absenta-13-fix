@@ -206,17 +206,17 @@ export const getDashboardStatistics = async () => {
         
         // Calculate additional metrics
         const dashboardStats = {
-        //     total_users: systemStats.data.users.total,
-        //     active_users: systemStats.data.users.active,
-        //     total_teachers: systemStats.data.teachers.total,
-        //     active_teachers: systemStats.data.teachers.active,
-        //     total_students: systemStats.data.students.total,
-        //     active_students: systemStats.data.students.active,
-        //     total_schedules: systemStats.data.schedules.total,
-        //     active_schedules: systemStats.data.schedules.active,
-        //     total_subjects: systemStats.data.subjects.total,
-        //     active_subjects: systemStats.data.subjects.active
-        // };
+            total_users: systemStats.data.users?.total || 0,
+            active_users: systemStats.data.users?.active || 0,
+            total_teachers: systemStats.data.teachers?.total || 0,
+            active_teachers: systemStats.data.teachers?.active || 0,
+            total_students: systemStats.data.students?.total || 0,
+            active_students: systemStats.data.students?.active || 0,
+            total_schedules: systemStats.data.schedules?.total || 0,
+            active_schedules: systemStats.data.schedules?.active || 0,
+            total_subjects: systemStats.data.subjects?.total || 0,
+            active_subjects: systemStats.data.subjects?.active || 0
+        };
         
         return {
             success: true,

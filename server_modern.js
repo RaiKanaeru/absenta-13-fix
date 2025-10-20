@@ -3096,6 +3096,490 @@ app.get('/api/guru/download-attendance-excel', authenticateToken, requireRole(['
         res.status(500).json({ error: 'Internal server error' });
     }
 });
+
+// ================================================
+// LAPORAN KEHADIRAN SISWA ENDPOINTS (GURU)
+// ================================================
+
+// Get student attendance report for teacher
+app.get('/api/guru/laporan-kehadiran-siswa', authenticateToken, requireRole(['guru']), async (req, res) => {
+    try {
+        const { kelas_id, startDate, endDate, mapel_id } = req.query;
+        const guruId = req.user.guru_id;
+        
+        // Validate required parameters
+        if (!kelas_id || !startDate || !endDate) {
+            return res.status(400).json({ 
+                success: false, 
+                error: 'Parameter kelas_id, startDate, dan endDate wajib diisi' 
+            });
+        }
+        
+        console.log(`📊 Generating student attendance report for guru_id: ${guruId}, kelas_id: ${kelas_id}, periode: ${startDate} - ${endDate}`);
+        
+        // Step 1: Get schedule information (jadwal pertemuan)
+        let scheduleQuery = `
+            SELECT DISTINCT 
+                j.id_jadwal, 
+                j.hari, 
+                j.jam_ke, 
+                j.jam_mulai,
+                j.jam_selesai,
+                m.id_mapel, 
+                m.nama_mapel, 
+                m.kode_mapel
+            FROM jadwal j
+            JOIN mapel m ON j.mapel_id = m.id_mapel
+            WHERE j.guru_id = ? 
+              AND j.kelas_id = ?
+              AND j.status = 'aktif'
+        `;
+        
+        const scheduleParams = [guruId, kelas_id];
+        if (mapel_id && mapel_id !== '') {
+            scheduleQuery += ' AND j.mapel_id = ?';
+            scheduleParams.push(mapel_id);
+        }
+        scheduleQuery += ' ORDER BY j.hari, j.jam_ke';
+        
+        const [schedules] = await db.execute(scheduleQuery, scheduleParams);
+        
+        if (schedules.length === 0) {
+            return res.json({
+                success: true,
+                data: [],
+                mapel_info: null,
+                pertemuan_dates: [],
+                periode: {
+                    start: startDate,
+                    end: endDate,
+                    total_hari: 0
+                }
+            });
+        }
+        
+        // Get mapel info (use first schedule's mapel info)
+        const mapelInfo = {
+            id_mapel: schedules[0].id_mapel,
+            nama_mapel: schedules[0].nama_mapel,
+            kode_mapel: schedules[0].kode_mapel
+        };
+        
+        // Step 2: Get students in the class
+        const [students] = await db.execute(`
+            SELECT id_siswa, nama, nis
+            FROM siswa
+            WHERE kelas_id = ? AND status = 'aktif'
+            ORDER BY nama
+        `, [kelas_id]);
+        
+        if (students.length === 0) {
+            return res.json({
+                success: true,
+                data: [],
+                mapel_info: mapelInfo,
+                pertemuan_dates: [],
+                periode: {
+                    start: startDate,
+                    end: endDate,
+                    total_hari: 0
+                }
+            });
+        }
+        
+        // Step 3: Generate meeting dates based on schedule and date range
+        const pertemuanDates = [];
+        const start = new Date(startDate);
+        const end = new Date(endDate);
+        
+        // Create a map of day names to numbers
+        const dayMap = {
+            'Senin': 1, 'Selasa': 2, 'Rabu': 3, 'Kamis': 4, 'Jumat': 5, 'Sabtu': 6, 'Minggu': 0
+        };
+        
+        // Generate dates for each schedule
+        for (const schedule of schedules) {
+            const dayNumber = dayMap[schedule.hari];
+            if (dayNumber === undefined) continue;
+            
+            const current = new Date(start);
+            while (current <= end) {
+                if (current.getDay() === dayNumber) {
+                    const dateStr = current.toISOString().split('T')[0];
+                    if (!pertemuanDates.includes(dateStr)) {
+                        pertemuanDates.push(dateStr);
+                    }
+                }
+                current.setDate(current.getDate() + 1);
+            }
+        }
+        
+        pertemuanDates.sort();
+        
+        // Step 4: Get attendance data
+        const jadwalIds = schedules.map(s => s.id_jadwal);
+        const placeholders = jadwalIds.map(() => '?').join(',');
+        
+        let attendanceQuery = `
+            SELECT 
+                a.siswa_id,
+                a.jadwal_id,
+                a.tanggal,
+                a.status,
+                a.keterangan
+            FROM absensi_siswa a
+            WHERE a.jadwal_id IN (${placeholders})
+              AND a.tanggal BETWEEN ? AND ?
+        `;
+        
+        const attendanceParams = [...jadwalIds, startDate, endDate];
+        const [attendanceData] = await db.execute(attendanceQuery, attendanceParams);
+        
+        // Step 5: Process and aggregate data per student
+        const reportData = students.map(student => {
+            const studentAttendance = attendanceData.filter(att => att.siswa_id === student.id_siswa);
+            
+            // Count attendance by status
+            const counts = {
+                hadir: 0,
+                izin: 0,
+                sakit: 0,
+                alpa: 0,
+                dispen: 0
+            };
+            
+            const detailPertemuan = {};
+            
+            // Process each meeting date
+            pertemuanDates.forEach(date => {
+                const attendance = studentAttendance.find(att => att.tanggal === date);
+                const status = attendance ? attendance.status : 'Alpa';
+                
+                detailPertemuan[date] = status;
+                if (counts.hasOwnProperty(status.toLowerCase())) {
+                    counts[status.toLowerCase()]++;
+                }
+            });
+            
+            const totalPertemuan = pertemuanDates.length;
+            const hadirCount = counts.hadir;
+            const persentaseKehadiran = totalPertemuan > 0 ? (hadirCount / totalPertemuan) * 100 : 0;
+            
+            return {
+                id_siswa: student.id_siswa,
+                nama: student.nama,
+                nis: student.nis,
+                total_pertemuan: totalPertemuan,
+                hadir: counts.hadir,
+                izin: counts.izin,
+                sakit: counts.sakit,
+                alpa: counts.alpa,
+                dispen: counts.dispen,
+                persentase_kehadiran: Math.round(persentaseKehadiran * 100) / 100,
+                detail_pertemuan: detailPertemuan
+            };
+        });
+        
+        // Calculate total days in period
+        const totalHari = Math.ceil((end - start) / (1000 * 60 * 60 * 24)) + 1;
+        
+        res.json({
+            success: true,
+            data: reportData,
+            mapel_info: mapelInfo,
+            pertemuan_dates: pertemuanDates,
+            periode: {
+                start: startDate,
+                end: endDate,
+                total_hari: totalHari
+            }
+        });
+        
+    } catch (error) {
+        console.error('❌ Error getting student attendance report:', error);
+        res.status(500).json({ 
+            success: false, 
+            error: 'Internal server error',
+            message: error.message 
+        });
+    }
+});
+
+// Download student attendance report as Excel
+app.get('/api/guru/download-laporan-kehadiran-siswa', authenticateToken, requireRole(['guru']), async (req, res) => {
+    try {
+        const { kelas_id, startDate, endDate, mapel_id } = req.query;
+        const guruId = req.user.guru_id;
+        
+        // Validate required parameters
+        if (!kelas_id || !startDate || !endDate) {
+            return res.status(400).json({ 
+                success: false, 
+                error: 'Parameter kelas_id, startDate, dan endDate wajib diisi' 
+            });
+        }
+        
+        console.log(`📊 Downloading student attendance report for guru_id: ${guruId}, kelas_id: ${kelas_id}, periode: ${startDate} - ${endDate}`);
+        
+        // Get the same data as the main endpoint
+        let scheduleQuery = `
+            SELECT DISTINCT 
+                j.id_jadwal, 
+                j.hari, 
+                j.jam_ke, 
+                j.jam_mulai,
+                j.jam_selesai,
+                m.id_mapel, 
+                m.nama_mapel, 
+                m.kode_mapel
+            FROM jadwal j
+            JOIN mapel m ON j.mapel_id = m.id_mapel
+            WHERE j.guru_id = ? 
+              AND j.kelas_id = ?
+              AND j.status = 'aktif'
+        `;
+        
+        const scheduleParams = [guruId, kelas_id];
+        if (mapel_id && mapel_id !== '') {
+            scheduleQuery += ' AND j.mapel_id = ?';
+            scheduleParams.push(mapel_id);
+        }
+        scheduleQuery += ' ORDER BY j.hari, j.jam_ke';
+        
+        const [schedules] = await db.execute(scheduleQuery, scheduleParams);
+        
+        if (schedules.length === 0) {
+            return res.status(404).json({ 
+                success: false, 
+                error: 'Tidak ada jadwal ditemukan untuk guru dan kelas ini' 
+            });
+        }
+        
+        const mapelInfo = {
+            id_mapel: schedules[0].id_mapel,
+            nama_mapel: schedules[0].nama_mapel,
+            kode_mapel: schedules[0].kode_mapel
+        };
+        
+        // Get students
+        const [students] = await db.execute(`
+            SELECT id_siswa, nama, nis
+            FROM siswa
+            WHERE kelas_id = ? AND status = 'aktif'
+            ORDER BY nama
+        `, [kelas_id]);
+        
+        if (students.length === 0) {
+            return res.status(404).json({ 
+                success: false, 
+                error: 'Tidak ada siswa ditemukan di kelas ini' 
+            });
+        }
+        
+        // Generate meeting dates
+        const pertemuanDates = [];
+        const start = new Date(startDate);
+        const end = new Date(endDate);
+        
+        const dayMap = {
+            'Senin': 1, 'Selasa': 2, 'Rabu': 3, 'Kamis': 4, 'Jumat': 5, 'Sabtu': 6, 'Minggu': 0
+        };
+        
+        for (const schedule of schedules) {
+            const dayNumber = dayMap[schedule.hari];
+            if (dayNumber === undefined) continue;
+            
+            const current = new Date(start);
+            while (current <= end) {
+                if (current.getDay() === dayNumber) {
+                    const dateStr = current.toISOString().split('T')[0];
+                    if (!pertemuanDates.includes(dateStr)) {
+                        pertemuanDates.push(dateStr);
+                    }
+                }
+                current.setDate(current.getDate() + 1);
+            }
+        }
+        
+        pertemuanDates.sort();
+        
+        // Get attendance data
+        const jadwalIds = schedules.map(s => s.id_jadwal);
+        const placeholders = jadwalIds.map(() => '?').join(',');
+        
+        let attendanceQuery = `
+            SELECT 
+                a.siswa_id,
+                a.jadwal_id,
+                a.tanggal,
+                a.status,
+                a.keterangan
+            FROM absensi_siswa a
+            WHERE a.jadwal_id IN (${placeholders})
+              AND a.tanggal BETWEEN ? AND ?
+        `;
+        
+        const attendanceParams = [...jadwalIds, startDate, endDate];
+        const [attendanceData] = await db.execute(attendanceQuery, attendanceParams);
+        
+        // Process data for Excel
+        const reportData = students.map(student => {
+            const studentAttendance = attendanceData.filter(att => att.siswa_id === student.id_siswa);
+            
+            const counts = {
+                hadir: 0,
+                izin: 0,
+                sakit: 0,
+                alpa: 0,
+                dispen: 0
+            };
+            
+            const detailPertemuan = {};
+            
+            pertemuanDates.forEach(date => {
+                const attendance = studentAttendance.find(att => att.tanggal === date);
+                const status = attendance ? attendance.status : 'Alpa';
+                
+                detailPertemuan[date] = status;
+                if (counts.hasOwnProperty(status.toLowerCase())) {
+                    counts[status.toLowerCase()]++;
+                }
+            });
+            
+            const totalPertemuan = pertemuanDates.length;
+            const hadirCount = counts.hadir;
+            const persentaseKehadiran = totalPertemuan > 0 ? (hadirCount / totalPertemuan) * 100 : 0;
+            
+            return {
+                nama: student.nama,
+                nis: student.nis,
+                total_pertemuan: totalPertemuan,
+                hadir: counts.hadir,
+                izin: counts.izin,
+                sakit: counts.sakit,
+                alpa: counts.alpa,
+                dispen: counts.dispen,
+                persentase_kehadiran: Math.round(persentaseKehadiran * 100) / 100,
+                detail_pertemuan: detailPertemuan
+            };
+        });
+        
+        // Create Excel workbook
+        const workbook = new ExcelJS.Workbook();
+        const sheet = workbook.addWorksheet('Laporan Kehadiran Siswa');
+        
+        // Set up columns
+        const columns = [
+            { header: 'No', key: 'no', width: 5 },
+            { header: 'Nama Siswa', key: 'nama', width: 25 },
+            { header: 'NIS', key: 'nis', width: 15 },
+            { header: 'Total Pertemuan', key: 'total_pertemuan', width: 15 },
+            { header: 'Hadir', key: 'hadir', width: 8 },
+            { header: 'Izin', key: 'izin', width: 8 },
+            { header: 'Sakit', key: 'sakit', width: 8 },
+            { header: 'Alpa', key: 'alpa', width: 8 },
+            { header: 'Dispen', key: 'dispen', width: 8 },
+            { header: 'Persentase (%)', key: 'persentase_kehadiran', width: 15 }
+        ];
+        
+        // Add columns for each meeting date
+        pertemuanDates.forEach(date => {
+            columns.push({
+                header: date,
+                key: `pertemuan_${date}`,
+                width: 10
+            });
+        });
+        
+        sheet.columns = columns;
+        
+        // Style header row
+        sheet.getRow(1).eachCell(cell => {
+            cell.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+            cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1F2937' } };
+            cell.alignment = { vertical: 'middle', horizontal: 'center' };
+            cell.border = { 
+                top: {style:'thin'}, 
+                left:{style:'thin'}, 
+                bottom:{style:'thin'}, 
+                right:{style:'thin'} 
+            };
+        });
+        
+        // Add data rows
+        reportData.forEach((student, index) => {
+            const rowData = {
+                no: index + 1,
+                nama: student.nama,
+                nis: student.nis,
+                total_pertemuan: student.total_pertemuan,
+                hadir: student.hadir,
+                izin: student.izin,
+                sakit: student.sakit,
+                alpa: student.alpa,
+                dispen: student.dispen,
+                persentase_kehadiran: student.persentase_kehadiran
+            };
+            
+            // Add meeting date columns
+            pertemuanDates.forEach(date => {
+                rowData[`pertemuan_${date}`] = student.detail_pertemuan[date] || 'Alpa';
+            });
+            
+            sheet.addRow(rowData);
+        });
+        
+        // Style data rows
+        const colorMap = { 
+            'Hadir': 'FF10B981', 
+            'Izin': 'FF3B82F6', 
+            'Sakit': 'FFEF4444', 
+            'Alpa': 'FFF59E0B', 
+            'Dispen': 'FF8B5CF6' 
+        };
+        
+        // Apply color coding to meeting date columns
+        pertemuanDates.forEach((date, dateIndex) => {
+            const colIndex = 11 + dateIndex; // Start after summary columns
+            const column = sheet.getColumn(colIndex);
+            
+            column.eachCell((cell, rowNumber) => {
+                if (rowNumber === 1) return; // Skip header
+                
+                const status = cell.value;
+                if (colorMap[status]) {
+                    cell.fill = { 
+                        type: 'pattern', 
+                        pattern: 'solid', 
+                        fgColor: { argb: colorMap[status] } 
+                    };
+                    cell.font = { bold: true, color: { argb: 'FF000000' } };
+                }
+                cell.alignment = { horizontal: 'center' };
+            });
+        });
+        
+        // Format percentage column
+        sheet.getColumn('persentase_kehadiran').numFmt = '0.00%';
+        
+        // Set response headers
+        res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        res.setHeader('Content-Disposition', `attachment; filename=laporan-kehadiran-siswa-${startDate}-${endDate}.xlsx`);
+        
+        // Write Excel file
+        await workbook.xlsx.write(res);
+        res.end();
+        
+    } catch (error) {
+        console.error('❌ Error downloading student attendance report:', error);
+        res.status(500).json({ 
+            success: false, 
+            error: 'Internal server error',
+            message: error.message 
+        });
+    }
+});
+
 // ================================================
 // BANDING ABSEN ENDPOINTS  
 // ================================================
@@ -3485,17 +3969,11 @@ app.get('/api/guru/jadwal', authenticateToken, requireRole(['guru', 'admin']), a
                 j.status,
                 mp.nama_mapel,
                 mp.kode_mapel,
-                k.nama_kelas,
-                CASE
-                    WHEN j.guru_id = ? THEN 'primary'
-                    WHEN JSON_CONTAINS(j.guru_ids, CAST(? AS JSON)) THEN 'secondary'
-                    ELSE 'assistant'
-                END as teacher_role
+                k.nama_kelas
             FROM jadwal j
             JOIN mapel mp ON j.mapel_id = mp.id_mapel
             JOIN kelas k ON j.kelas_id = k.id_kelas
-            WHERE (j.guru_id = ? OR JSON_CONTAINS(j.guru_ids, CAST(? AS JSON))) 
-            AND j.status = 'aktif'
+            WHERE j.guru_id = ? AND j.status = 'aktif'
             ORDER BY CASE j.hari 
                 WHEN 'Senin' THEN 1
                 WHEN 'Selasa' THEN 2
@@ -3505,7 +3983,7 @@ app.get('/api/guru/jadwal', authenticateToken, requireRole(['guru', 'admin']), a
                 WHEN 'Sabtu' THEN 6
                 WHEN 'Minggu' THEN 7
             END, j.jam_mulai
-        `, [guruId, JSON.stringify(guruId), guruId, JSON.stringify(guruId)]);
+        `, [guruId]);
 
         console.log(`✅ Found ${jadwal.length} schedule entries for guru_id: ${guruId}`);
         res.json({ success: true, data: jadwal });
@@ -3531,20 +4009,15 @@ app.get('/api/guru/history', authenticateToken, requireRole(['guru', 'admin']), 
                 ag.status, 
                 ag.keterangan, 
                 k.nama_kelas, 
-                mp.nama_mapel,
-                CASE
-                    WHEN j.guru_id = ? THEN 'primary'
-                    WHEN JSON_CONTAINS(j.guru_ids, CAST(? AS JSON)) THEN 'secondary'
-                    ELSE 'assistant'
-                END as teacher_role
+                mp.nama_mapel
             FROM absensi_guru ag
             JOIN jadwal j ON ag.jadwal_id = j.id_jadwal
             JOIN kelas k ON j.kelas_id = k.id_kelas
             JOIN mapel mp ON j.mapel_id = mp.id_mapel
-            WHERE (j.guru_id = ? OR JSON_CONTAINS(j.guru_ids, CAST(? AS JSON)))
+            WHERE j.guru_id = ?
             ORDER BY ag.tanggal DESC, j.jam_mulai ASC
             LIMIT 50
-        `, [guruId, JSON.stringify(guruId), guruId, JSON.stringify(guruId)]);
+        `, [guruId]);
 
         console.log(`✅ Found ${history.length} attendance history records for guru_id ${guruId}`);
         res.json({ success: true, data: history });
@@ -4315,12 +4788,12 @@ app.get('/api/siswa/:siswa_id/jadwal-hari-ini', authenticateToken, requireRole([
         );
 
         if (siswaData.length === 0) {
-            return res.status(404).json({ error: 'Siswa tidak ditemukan' });
+            return res.status(404).json({ success: false, error: 'Siswa tidak ditemukan' });
         }
 
         const kelasId = siswaData[0].kelas_id;
 
-        // Get today's schedule for the class
+        // Get today's schedule for the class - support both exact day name and DAYNAME() function
         const [jadwalData] = await db.execute(`
             SELECT 
                 j.id_jadwal,
@@ -4332,24 +4805,39 @@ app.get('/api/siswa/:siswa_id/jadwal-hari-ini', authenticateToken, requireRole([
                 g.nama as nama_guru,
                 g.nip,
                 k.nama_kelas,
-                COALESCE(ag.status, 'belum_diambil') as status_kehadiran
+                j.kelas_id,
+                COALESCE(ag.status, 'belum_diambil') as status_kehadiran,
+                ag.keterangan,
+                ag.waktu_catat,
+                ag.tanggal as tanggal_target
             FROM jadwal j
             JOIN mapel mp ON j.mapel_id = mp.id_mapel
             JOIN guru g ON j.guru_id = g.id_guru
             JOIN kelas k ON j.kelas_id = k.id_kelas
             LEFT JOIN absensi_guru ag ON j.id_jadwal = ag.jadwal_id 
                 AND ag.tanggal = CURDATE()
-            WHERE j.kelas_id = ? AND j.hari = ?
+            WHERE j.kelas_id = ? 
+                AND (j.hari = ? OR j.hari = DAYNAME(CURDATE()) OR LOWER(j.hari) = LOWER(?))
+                AND j.status = 'aktif'
             ORDER BY j.jam_ke
-        `, [kelasId, currentDay]);
+        `, [kelasId, currentDay, currentDay]);
 
         console.log('✅ Jadwal retrieved:', jadwalData.length, 'items');
 
-        res.json(jadwalData);
+        // Return with success wrapper
+        res.json({
+            success: true,
+            data: jadwalData,
+            message: `Berhasil memuat ${jadwalData.length} jadwal untuk hari ${currentDay}`
+        });
 
     } catch (error) {
         console.error('❌ Error getting jadwal hari ini:', error);
-        res.status(500).json({ error: 'Gagal memuat jadwal hari ini' });
+        res.status(500).json({ 
+            success: false, 
+            error: 'Gagal memuat jadwal hari ini',
+            message: error.message 
+        });
     }
 });
 
@@ -5724,6 +6212,70 @@ app.get('/api/admin/system-performance', authenticateToken, requireRole(['admin'
     } catch (error) {
         console.error('❌ Error getting system performance data:', error);
         res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
+// ================================================
+// LOAD BALANCER ENDPOINTS (ADMIN)
+// ================================================
+
+// Toggle load balancer status
+app.post('/api/admin/toggle-load-balancer', authenticateToken, requireRole(['admin']), async (req, res) => {
+    try {
+        const { enabled } = req.body;
+        console.log(`🔄 Toggling load balancer: ${enabled ? 'enabled' : 'disabled'}`);
+        
+        // Simulate load balancer toggle
+        const loadBalancerStatus = {
+            enabled: enabled || false,
+            timestamp: new Date().toISOString(),
+            status: enabled ? 'active' : 'inactive',
+            message: enabled ? 'Load balancer activated' : 'Load balancer deactivated'
+        };
+        
+        console.log(`✅ Load balancer ${enabled ? 'enabled' : 'disabled'} successfully`);
+        res.json({
+            success: true,
+            data: loadBalancerStatus
+        });
+    } catch (error) {
+        console.error('❌ Error toggling load balancer:', error);
+        res.status(500).json({ 
+            success: false,
+            error: 'Internal server error' 
+        });
+    }
+});
+
+// Get load balancer status
+app.get('/api/admin/load-balancer-status', authenticateToken, requireRole(['admin']), async (req, res) => {
+    try {
+        console.log('📊 Getting load balancer status');
+        
+        // Simulate load balancer status
+        const loadBalancerStatus = {
+            enabled: true,
+            status: 'active',
+            totalRequests: 1000 + Math.floor(Math.random() * 500),
+            activeRequests: Math.floor(Math.random() * 50),
+            completedRequests: 950 + Math.floor(Math.random() * 100),
+            failedRequests: Math.floor(Math.random() * 10),
+            averageResponseTime: 50 + Math.random() * 100,
+            uptime: process.uptime(),
+            lastUpdated: new Date().toISOString()
+        };
+        
+        console.log('✅ Load balancer status retrieved successfully');
+        res.json({
+            success: true,
+            data: loadBalancerStatus
+        });
+    } catch (error) {
+        console.error('❌ Error getting load balancer status:', error);
+        res.status(500).json({ 
+            success: false,
+            error: 'Internal server error' 
+        });
     }
 });
 

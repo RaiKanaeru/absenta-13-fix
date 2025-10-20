@@ -211,7 +211,7 @@ async function optimizeMySQLConfig() {
         console.log('   sudo systemctl restart mysql');
         console.log('');
         console.log('5. Verifikasi konfigurasi:');
-        console.log('   mysql -u root -p -e "SHOW VARIABLES LIKE \\'innodb_buffer_pool_size\\';"');
+        console.log('   mysql -u root -p -e "SHOW VARIABLES LIKE \'innodb_buffer_pool_size\';"');
         
         // 5. Monitoring dan Maintenance
         console.log('\n📋 5. MONITORING DAN MAINTENANCE');
@@ -220,18 +220,18 @@ async function optimizeMySQLConfig() {
         console.log('📊 Query untuk monitoring performa:');
         console.log('');
         console.log('# Cek status MySQL');
-        console.log('SHOW STATUS LIKE \\'Uptime\\';');
-        console.log('SHOW STATUS LIKE \\'Connections\\';');
-        console.log('SHOW STATUS LIKE \\'Threads_connected\\';');
+        console.log('SHOW STATUS LIKE \'Uptime\';');
+        console.log('SHOW STATUS LIKE \'Connections\';');
+        console.log('SHOW STATUS LIKE \'Threads_connected\';');
         console.log('');
         console.log('# Cek query cache');
-        console.log('SHOW STATUS LIKE \\'Qcache%\\';');
+        console.log('SHOW STATUS LIKE \'Qcache%\';');
         console.log('');
         console.log('# Cek InnoDB status');
-        console.log('SHOW STATUS LIKE \\'Innodb%\\';');
+        console.log('SHOW STATUS LIKE \'Innodb%\';');
         console.log('');
         console.log('# Cek slow queries');
-        console.log('SHOW STATUS LIKE \\'Slow_queries\\';');
+        console.log('SHOW STATUS LIKE \'Slow_queries\';');
         console.log('');
         console.log('🔧 Maintenance rutin:');
         console.log('- OPTIMIZE TABLE untuk table yang sering diupdate');

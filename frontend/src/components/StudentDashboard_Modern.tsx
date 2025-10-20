@@ -571,16 +571,19 @@ const StudentDashboardComponent = ({ userData, onLogout }: StudentDashboardProps
     setLoadingRef.current('jadwal', true);
     try {
       await executeWithRetryRef.current(async () => {
-        const data = await apiCall(`/api/siswa/${siswaId}/jadwal-hari-ini`, {
+        const response = await apiCall(`/api/siswa/${siswaId}/jadwal-hari-ini`, {
           signal: request.signal
         });
 
-          setJadwalHariIni(data);
-          console.log('📊 Raw data from API (normal mode):', data);
+          // Handle response with success wrapper
+          const jadwalData = response.success ? response.data : (Array.isArray(response) ? response : []);
+          
+          setJadwalHariIni(jadwalData);
+          console.log('📊 Raw data from API (normal mode):', jadwalData);
           
           // Initialize kehadiran data
           const initialKehadiran: KehadiranData = {};
-          data.forEach((jadwal: JadwalHariIni) => {
+          jadwalData.forEach((jadwal: JadwalHariIni) => {
             console.log(`🔍 Processing jadwal ${jadwal.id_jadwal} (normal mode):`, {
               status: jadwal.status_kehadiran,
               keterangan: jadwal.keterangan,
@@ -1142,6 +1145,17 @@ const StudentDashboardComponent = ({ userData, onLogout }: StudentDashboardProps
     }
   }, []);
 
+  // Smart array selection: prefer mode-specific array, fallback to the other
+  const getActiveJadwalArray = useCallback(() => {
+    if (isEditMode) {
+      // In edit mode: prefer dated array, fallback to today if dated is empty
+      return jadwalBerdasarkanTanggal.length > 0 ? jadwalBerdasarkanTanggal : jadwalHariIni;
+    } else {
+      // In normal mode: prefer today array, fallback to dated if today is empty
+      return jadwalHariIni.length > 0 ? jadwalHariIni : jadwalBerdasarkanTanggal;
+    }
+  }, [isEditMode, jadwalBerdasarkanTanggal, jadwalHariIni]);
+
   const renderKehadiranContent = () => {
     if (isLoading('jadwal')) {
       return (
@@ -1157,7 +1171,15 @@ const StudentDashboardComponent = ({ userData, onLogout }: StudentDashboardProps
       );
     }
 
-    if ((isEditMode ? jadwalBerdasarkanTanggal : jadwalHariIni).length === 0) {
+    // Add debug logging
+    console.log('🎯 Render decision:', {
+      isEditMode,
+      jadwalHariIniLength: jadwalHariIni.length,
+      jadwalBerdasarkanTanggalLength: jadwalBerdasarkanTanggal.length,
+      activeArrayLength: getActiveJadwalArray().length
+    });
+
+    if (jadwalHariIni.length === 0 && jadwalBerdasarkanTanggal.length === 0) {
       return (
         <div className="space-y-6">
           <Card>
@@ -1391,7 +1413,7 @@ const StudentDashboardComponent = ({ userData, onLogout }: StudentDashboardProps
                 <div className="text-center py-8">
                   <p className="text-gray-500">Tidak ada jadwal untuk tanggal {selectedDate}</p>
                 </div>
-              ) : (isEditMode ? jadwalBerdasarkanTanggal : jadwalHariIni).map((jadwal, index) => (
+              ) : getActiveJadwalArray().map((jadwal, index) => (
                 <div key={jadwal.id_jadwal} className="border rounded-lg p-4">
                   <div className="flex justify-between items-start mb-4">
                     <div>
@@ -1591,7 +1613,7 @@ const StudentDashboardComponent = ({ userData, onLogout }: StudentDashboardProps
                     ).length} item)
                   </h4>
                   <div className="space-y-2">
-                    {(isEditMode ? jadwalBerdasarkanTanggal : jadwalHariIni).map((jadwal) => {
+                    {getActiveJadwalArray().map((jadwal) => {
                       const keterangan = kehadiranData[jadwal.id_jadwal]?.keterangan;
                       const status = kehadiranData[jadwal.id_jadwal]?.status || jadwal.status_kehadiran || 'belum_diambil';
                       if (!keterangan || keterangan.trim() === '') return null;

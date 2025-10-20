@@ -21,7 +21,7 @@
     "server:modern": "node scripts/maintenance/server_modern.js",
     "server:optimized": "node scripts/maintenance/server_optimized.js",
     "server:https": "node scripts/maintenance/server_https.js",
-    "test": "jest",
+    "test": "jest --config=config/jest.config.js",
     "test:unit": "jest tests/unit",
     "test:integration": "jest tests/integration",
     "test:security": "jest tests/security",

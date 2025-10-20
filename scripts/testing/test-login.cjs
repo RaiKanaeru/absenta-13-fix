@@ -1,4 +1,4 @@
-import { db } from './db.js';
+const { db } = require('../../db.js');
 
 async function testLogin() {
     try {

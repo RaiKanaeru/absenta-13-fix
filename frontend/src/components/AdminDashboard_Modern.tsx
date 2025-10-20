@@ -3074,7 +3074,7 @@ const LiveSummaryView = ({ onLogout }: { onLogout: () => void }) => {
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {(liveData.ongoing_classes || []).map((kelas, index) => (
-                <Card key={`ongoing-class-${kelas.id || kelas.kelas || index}`} className="border-l-4 border-l-blue-500">
+                <Card key={`ongoing-class-${kelas.id || `${kelas.kelas}-${index}`}`} className="border-l-4 border-l-blue-500">
                   <CardContent className="p-4">
                     <div className="space-y-2">
                       <div className="flex items-center justify-between">
@@ -3573,34 +3573,62 @@ const ManageSchedulesView = ({ onBack, onLogout }: { onBack: () => void; onLogou
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50">
-      {/* Header dengan design yang lebih modern */}
-      <div className="bg-white shadow-sm border-b">
-        <div className="px-6 py-6">
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50">
+      {/* Header dengan design yang lebih modern dan serasi */}
+      <div className="bg-white shadow-lg border-b border-gray-200/50">
+        <div className="px-6 py-8">
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <Button variant="outline" size="icon" onClick={onBack} className="hover:bg-blue-50 hover:border-blue-200">
+            <div className="flex items-center gap-6">
+              <Button 
+                variant="outline" 
+                size="icon" 
+                onClick={onBack} 
+                className="hover:bg-blue-50 hover:border-blue-400 hover:text-blue-800 transition-all duration-200 shadow-sm border-gray-300 text-gray-700"
+              >
                 <ArrowLeft className="w-4 h-4" />
               </Button>
-              <div>
-                <h1 className="text-3xl font-bold text-gray-900">Kelola Jadwal</h1>
-                <p className="text-gray-600 mt-1">Atur jadwal pelajaran untuk setiap kelas dengan mudah</p>
+              <div className="flex items-center gap-4">
+                <div className="p-3 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl shadow-lg">
+                  <Calendar className="w-6 h-6 text-white" />
+                </div>
+                <div>
+                  <h1 className="text-3xl font-bold text-gray-900 mb-1">Kelola Jadwal</h1>
+                  <p className="text-gray-600 text-sm">Atur jadwal pelajaran untuk setiap kelas dengan mudah</p>
+                </div>
               </div>
             </div>
             <div className="flex gap-3 flex-wrap">
-              <Button onClick={checkConflicts} disabled={isLoading} variant="outline" className="hover:bg-red-50 hover:border-red-200 hover:text-red-700">
+              <Button 
+                onClick={checkConflicts} 
+                disabled={isLoading} 
+                variant="outline" 
+                className="hover:bg-red-50 hover:border-red-400 hover:text-red-800 transition-all duration-200 shadow-sm border-gray-300 text-gray-700"
+              >
                 <AlertTriangle className="w-4 h-4 mr-2" />
                 Cek Bentrok
               </Button>
-              <Button onClick={generatePreview} disabled={isLoading} variant="outline" className="hover:bg-blue-50 hover:border-blue-200 hover:text-blue-700">
+              <Button 
+                onClick={generatePreview} 
+                disabled={isLoading} 
+                variant="outline" 
+                className="hover:bg-blue-50 hover:border-blue-400 hover:text-blue-800 transition-all duration-200 shadow-sm border-gray-300 text-gray-700"
+              >
                 <Eye className="w-4 h-4 mr-2" />
                 Preview Jadwal
               </Button>
-              <Button onClick={() => setShowAdvancedImport(true)} variant="outline" className="hover:bg-green-50 hover:border-green-200 hover:text-green-700">
+              <Button 
+                onClick={() => setShowAdvancedImport(true)} 
+                variant="outline" 
+                className="hover:bg-green-50 hover:border-green-400 hover:text-green-800 transition-all duration-200 shadow-sm border-gray-300 text-gray-700"
+              >
                 <FileText className="w-4 h-4 mr-2" />
                 Import Advanced
               </Button>
-              <Button onClick={() => setShowImport(true)} variant="outline" className="hover:bg-purple-50 hover:border-purple-200 hover:text-purple-700">
+              <Button 
+                onClick={() => setShowImport(true)} 
+                variant="outline" 
+                className="hover:bg-purple-50 hover:border-purple-400 hover:text-purple-800 transition-all duration-200 shadow-sm border-gray-300 text-gray-700"
+              >
                 <Download className="w-4 h-4 mr-2" />
                 Import Excel
               </Button>
@@ -3609,35 +3637,37 @@ const ManageSchedulesView = ({ onBack, onLogout }: { onBack: () => void; onLogou
         </div>
       </div>
 
-      <div className="px-6 py-6 space-y-6">
+      <div className="px-6 py-8 space-y-8">
 
       {/* Conflicts Modal */}
       {showConflicts && (
-        <Card className="mt-6">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <AlertTriangle className="w-5 h-5 text-red-500" />
+        <Card className="mt-6 shadow-xl border-0 bg-white rounded-xl overflow-hidden">
+          <CardHeader className="bg-gradient-to-r from-red-500 to-red-600 text-white">
+            <CardTitle className="flex items-center gap-2 text-white">
+              <AlertTriangle className="w-5 h-5" />
               Daftar Bentrok Jadwal ({conflicts.length})
             </CardTitle>
           </CardHeader>
           <CardContent>
             {conflicts.length === 0 ? (
               <div className="text-center py-8 text-green-600">
-                <CheckCircle className="w-12 h-12 mx-auto mb-2" />
+                <div className="w-16 h-16 bg-gradient-to-br from-green-100 to-green-200 rounded-full flex items-center justify-center mx-auto mb-4 shadow-lg">
+                  <CheckCircle className="w-8 h-8" />
+                </div>
                 <p className="text-lg font-medium">Tidak ada bentrok jadwal</p>
                 <p className="text-sm">Semua jadwal sudah tersusun dengan baik</p>
               </div>
             ) : (
               <div className="space-y-4">
                 {conflicts.map((conflict, index) => (
-                  <div key={`conflict-${conflict.type}-${index}`} className="border border-red-200 rounded-lg p-4 bg-red-50">
+                  <div key={`conflict-${conflict.type}-${index}`} className="border border-red-200 rounded-xl p-4 bg-gradient-to-r from-red-50 to-red-100 hover:shadow-md transition-all duration-200">
                     <div className="flex items-center gap-2 mb-2">
                       <AlertTriangle className="w-4 h-4 text-red-500" />
                       <span className="font-medium text-red-800">
                         Bentrok {conflict.type === 'guru' ? 'Guru' : 'Kelas'}
                       </span>
                       {conflict.severity && (
-                        <Badge key={`severity-${conflict.type}-${index}`} variant="destructive" className="text-xs">
+                        <Badge key={`severity-${conflict.type}-${index}`} variant="destructive" className="text-xs animate-pulse">
                           {conflict.severity === 'high' ? 'Tinggi' : 'Rendah'}
                         </Badge>
                       )}
@@ -3678,8 +3708,8 @@ const ManageSchedulesView = ({ onBack, onLogout }: { onBack: () => void; onLogou
                 ))}
               </div>
             )}
-            <div className="mt-4 flex justify-end">
-              <Button onClick={() => setShowConflicts(false)} variant="outline">
+            <div className="mt-6 flex justify-end">
+              <Button onClick={() => setShowConflicts(false)} variant="outline" className="hover:bg-gray-50 hover:border-gray-400 text-gray-700 hover:text-gray-900 transition-all duration-200 border-gray-300">
                 Tutup
               </Button>
             </div>
@@ -3689,28 +3719,31 @@ const ManageSchedulesView = ({ onBack, onLogout }: { onBack: () => void; onLogou
 
       {/* Preview Modal */}
       {showPreview && preview && (
-        <Card className="mt-6">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Eye className="w-5 h-5 text-blue-500" />
+        <Card className="mt-6 shadow-xl border-0 bg-white rounded-xl overflow-hidden">
+          <CardHeader className="bg-gradient-to-r from-blue-500 to-blue-600 text-white">
+            <CardTitle className="flex items-center gap-2 text-white">
+              <Eye className="w-5 h-5" />
               Preview Jadwal
             </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="space-y-6">
               {Object.entries(preview).map(([kelas, jadwalHari]: [string, Record<string, Schedule[]>]) => (
-                <div key={kelas} className="border rounded-lg p-4">
-                  <h3 className="text-lg font-semibold mb-3 text-blue-800">{kelas}</h3>
-                  <div className="grid grid-cols-6 gap-2">
+                <div key={kelas} className="border border-gray-200 rounded-xl p-6 bg-gradient-to-br from-gray-50 to-white hover:shadow-md transition-all duration-200">
+                  <h3 className="text-lg font-semibold mb-4 text-blue-800 flex items-center gap-2">
+                    <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
+                    {kelas}
+                  </h3>
+                  <div className="grid grid-cols-6 gap-3">
                     {['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'].map(hari => (
-                      <div key={hari} className="border rounded p-2">
-                        <h4 className="font-medium text-sm mb-2 text-center">{hari}</h4>
-                        <div className="space-y-1">
+                      <div key={hari} className="border border-gray-200 rounded-lg p-3 bg-white hover:shadow-sm transition-all duration-200">
+                        <h4 className="font-medium text-sm mb-3 text-center text-gray-700">{hari}</h4>
+                        <div className="space-y-2">
                           {jadwalHari[hari]?.map((jadwal: Schedule, index: number) => (
-                            <div key={`schedule-${jadwal.id || jadwal.nama_mapel}-${index}`} className="text-xs bg-blue-50 p-1 rounded">
-                              <p className="font-medium">{jadwal.jam_mulai}-{jadwal.jam_selesai}</p>
-                              <p className="text-gray-600">{jadwal.nama_mapel}</p>
-                              <p className="text-gray-500">{jadwal.guru_names || jadwal.nama_guru}</p>
+                            <div key={`schedule-${jadwal.id || jadwal.nama_mapel}-${index}`} className="text-xs bg-gradient-to-r from-blue-50 to-blue-100 p-2 rounded-lg border border-blue-200 hover:shadow-sm transition-all duration-200">
+                              <p className="font-medium text-blue-800">{jadwal.jam_mulai}-{jadwal.jam_selesai}</p>
+                              <p className="text-gray-700 font-medium">{jadwal.nama_mapel}</p>
+                              <p className="text-gray-600">{jadwal.guru_names || jadwal.nama_guru}</p>
                             </div>
                           )) || <p className="text-xs text-gray-400 text-center">-</p>}
                         </div>
@@ -3720,8 +3753,8 @@ const ManageSchedulesView = ({ onBack, onLogout }: { onBack: () => void; onLogou
                 </div>
               ))}
             </div>
-            <div className="mt-4 flex justify-end">
-              <Button onClick={() => setShowPreview(false)} variant="outline">
+            <div className="mt-6 flex justify-end">
+              <Button onClick={() => setShowPreview(false)} variant="outline" className="hover:bg-gray-50 hover:border-gray-400 text-gray-700 hover:text-gray-900 transition-all duration-200 border-gray-300">
                 Tutup
               </Button>
             </div>
@@ -3729,21 +3762,21 @@ const ManageSchedulesView = ({ onBack, onLogout }: { onBack: () => void; onLogou
         </Card>
       )}
 
-        {/* Form Section dengan design yang lebih modern */}
-        <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
+        {/* Form Section dengan design yang lebih modern dan responsif */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           {/* Form Card */}
-          <div className="xl:col-span-1">
-            <Card className="shadow-xl border-0 bg-white rounded-xl overflow-hidden">
+          <div className="lg:col-span-1">
+            <Card className="shadow-xl border-0 bg-white rounded-xl overflow-hidden hover:shadow-2xl transition-all duration-300">
               <CardHeader className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white">
                 <CardTitle className="flex items-center gap-3 text-xl">
-                  <div className="p-2 bg-white/20 rounded-lg">
+                  <div className="p-2 bg-white/20 rounded-lg shadow-sm">
                     <Calendar className="w-5 h-5" />
                   </div>
                   <div>
-                    <div className="font-bold">
+                    <div className="font-bold text-white">
                       {editingId ? 'Edit Jadwal' : 'Tambah Jadwal'}
                     </div>
-                    <div className="text-blue-100 font-normal">
+                    <div className="text-blue-100 font-normal text-sm">
                       {editingId ? 'Perbarui informasi jadwal' : 'Buat jadwal pelajaran baru'}
                     </div>
                   </div>
@@ -3754,7 +3787,7 @@ const ManageSchedulesView = ({ onBack, onLogout }: { onBack: () => void; onLogou
                   {/* Kelas dan Mata Pelajaran */}
                   <div className="space-y-4">
                     <div className="flex items-center gap-3 mb-4">
-                      <div className="w-2 h-8 bg-gradient-to-b from-blue-500 to-indigo-500 rounded-full"></div>
+                      <div className="w-2 h-8 bg-gradient-to-b from-blue-500 to-indigo-500 rounded-full shadow-sm"></div>
                       <h4 className="font-semibold text-gray-800 text-lg">Informasi Dasar</h4>
                     </div>
                     
@@ -3808,7 +3841,7 @@ const ManageSchedulesView = ({ onBack, onLogout }: { onBack: () => void; onLogou
                   {/* Guru dan Ruang */}
                   <div className="space-y-4">
                     <div className="flex items-center gap-2 mb-3">
-                      <div className="w-1 h-6 bg-green-500 rounded-full"></div>
+                      <div className="w-1 h-6 bg-green-500 rounded-full shadow-sm"></div>
                       <h4 className="font-semibold text-gray-800">Penanggung Jawab</h4>
                     </div>
                     
@@ -3892,7 +3925,7 @@ const ManageSchedulesView = ({ onBack, onLogout }: { onBack: () => void; onLogou
                   {/* Waktu dan Hari */}
                   <div className="space-y-4">
                     <div className="flex items-center gap-2 mb-3">
-                      <div className="w-1 h-6 bg-orange-500 rounded-full"></div>
+                      <div className="w-1 h-6 bg-orange-500 rounded-full shadow-sm"></div>
                       <h4 className="font-semibold text-gray-800">Waktu Pelaksanaan</h4>
                     </div>
                     
@@ -3997,9 +4030,9 @@ const ManageSchedulesView = ({ onBack, onLogout }: { onBack: () => void; onLogou
                   </div>
 
                   {/* Action Buttons */}
-                  <div className="pt-4 border-t">
+                  <div className="pt-4 border-t border-gray-200">
                     <div className="flex gap-3">
-                      <Button type="submit" disabled={isLoading} className="flex-1 bg-blue-600 hover:bg-blue-700">
+                      <Button type="submit" disabled={isLoading} className="flex-1 bg-blue-600 hover:bg-blue-700 shadow-lg hover:shadow-xl transition-all duration-200 text-white font-medium">
                         {isLoading ? (
                           <div className="flex items-center gap-2">
                             <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
@@ -4028,7 +4061,7 @@ const ManageSchedulesView = ({ onBack, onLogout }: { onBack: () => void; onLogou
                     jam_ke: ''
                   });
                   setConsecutiveHours(1);
-                        }} className="px-6">
+                        }} className="px-6 hover:bg-gray-50 hover:border-gray-400 text-gray-700 hover:text-gray-900 transition-all duration-200 border-gray-300">
                   Cancel
                 </Button>
               )}
@@ -4040,9 +4073,9 @@ const ManageSchedulesView = ({ onBack, onLogout }: { onBack: () => void; onLogou
           </div>
 
           {/* Schedule List dengan design yang lebih modern */}
-          <div className="xl:col-span-2">
+          <div className="lg:col-span-2">
             <Card className="shadow-xl border-0 bg-white rounded-xl overflow-hidden">
-              <CardHeader className="bg-gradient-to-r from-slate-600 to-slate-700 text-white">
+              <CardHeader className="bg-gradient-to-r from-slate-700 to-slate-800 text-white">
                 <div className="flex items-center justify-between">
                   <CardTitle className="flex items-center gap-3 text-xl">
                     <div className="p-2 bg-white/20 rounded-lg">
@@ -4053,67 +4086,69 @@ const ManageSchedulesView = ({ onBack, onLogout }: { onBack: () => void; onLogou
                       <div className="text-slate-200 font-normal">
                         {filteredSchedules.length} dari {ensureArray<Schedule>(schedules).length} jadwal
                         {(searchTerm || filterDay || filterClass) && (
-                          <span className="text-blue-300 ml-1">(difilter)</span>
+                          <span className="text-amber-300 ml-1 font-medium">(difilter)</span>
                         )}
                       </div>
                     </div>
                   </CardTitle>
                   
                   {/* Search dan Filter */}
-                  <div className="flex gap-3 flex-wrap">
-                    <div className="relative">
+                  <div className="flex flex-col lg:flex-row gap-3 flex-wrap">
+                    <div className="relative flex-1 min-w-[200px]">
                       <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
                       <Input 
                         placeholder="Cari jadwal..." 
-                        className="pl-10 w-64 bg-white/90 border-white/20 focus:bg-white focus:border-white/40"
+                        className="pl-10 w-full bg-white border-gray-300 focus:bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all duration-200 text-gray-900 placeholder-gray-500"
                         value={searchTerm}
                         onChange={(e) => setSearchTerm(e.target.value)}
                       />
                     </div>
                     
-                    <Select value={filterDay} onValueChange={setFilterDay}>
-                      <SelectTrigger className="w-32 bg-white/90 border-white/20 focus:bg-white focus:border-white/40">
-                        <SelectValue placeholder="Hari" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">Semua Hari</SelectItem>
-                        {daysOfWeek.map(day => (
-                          <SelectItem key={day} value={day}>{day}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    
-                    <Select value={filterClass} onValueChange={setFilterClass}>
-                      <SelectTrigger className="w-40 bg-white/90 border-white/20 focus:bg-white focus:border-white/40">
-                        <SelectValue placeholder="Kelas" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">Semua Kelas</SelectItem>
-                        {ensureArray<Kelas>(classes).filter(kelas => hasValidId(kelas)).map((kelas) => {
-                          const value = getSelectValue(kelas.id);
-                          return value ? (
-                            <SelectItem key={kelas.id} value={value}>
-                              {kelas.nama_kelas}
-                            </SelectItem>
-                          ) : null;
-                        })}
-                      </SelectContent>
-                    </Select>
-                    
-                    {(searchTerm || filterDay || filterClass) && (
-                      <Button 
-                        variant="outline" 
-                        size="sm"
-                        className="bg-white/90 border-white/20 hover:bg-white hover:border-white/40"
-                        onClick={() => {
-                          setSearchTerm('');
-                          setFilterDay('');
-                          setFilterClass('');
-                        }}
-                      >
-                        Clear
-                      </Button>
-                    )}
+                    <div className="flex gap-3 flex-wrap">
+                      <Select value={filterDay} onValueChange={setFilterDay}>
+                        <SelectTrigger className="w-32 bg-white border-gray-300 focus:bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all duration-200 text-gray-900">
+                          <SelectValue placeholder="Hari" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">Semua Hari</SelectItem>
+                          {daysOfWeek.map(day => (
+                            <SelectItem key={day} value={day}>{day}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      
+                      <Select value={filterClass} onValueChange={setFilterClass}>
+                        <SelectTrigger className="w-40 bg-white border-gray-300 focus:bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all duration-200 text-gray-900">
+                          <SelectValue placeholder="Kelas" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">Semua Kelas</SelectItem>
+                          {ensureArray<Kelas>(classes).filter(kelas => hasValidId(kelas)).map((kelas) => {
+                            const value = getSelectValue(kelas.id);
+                            return value ? (
+                              <SelectItem key={kelas.id} value={value}>
+                                {kelas.nama_kelas}
+                              </SelectItem>
+                            ) : null;
+                          })}
+                        </SelectContent>
+                      </Select>
+                      
+                      {(searchTerm || filterDay || filterClass) && (
+                        <Button 
+                          variant="outline" 
+                          size="sm"
+                          className="bg-white border-gray-300 hover:bg-gray-50 hover:border-gray-400 text-gray-700 hover:text-gray-900 transition-all duration-200"
+                          onClick={() => {
+                            setSearchTerm('');
+                            setFilterDay('');
+                            setFilterClass('');
+                          }}
+                        >
+                          Clear
+                        </Button>
+                      )}
+                    </div>
                   </div>
                 </div>
               </CardHeader>
@@ -4124,14 +4159,14 @@ const ManageSchedulesView = ({ onBack, onLogout }: { onBack: () => void; onLogou
                     <div className="text-center py-16">
                       {ensureArray<Schedule>(schedules).length === 0 ? (
                         <>
-                          <div className="w-20 h-20 bg-gradient-to-br from-blue-100 to-indigo-100 rounded-full flex items-center justify-center mx-auto mb-6">
+                          <div className="w-20 h-20 bg-gradient-to-br from-blue-100 to-indigo-100 rounded-full flex items-center justify-center mx-auto mb-6 shadow-lg">
                             <Calendar className="w-10 h-10 text-blue-600" />
                           </div>
                           <h3 className="text-xl font-semibold text-gray-900 mb-3">Belum ada jadwal</h3>
                           <p className="text-gray-500 mb-6 max-w-md mx-auto">Mulai dengan menambahkan jadwal pelajaran pertama untuk mengatur kegiatan belajar mengajar</p>
                           <Button 
                             onClick={() => document.getElementById('kelas_id')?.scrollIntoView({ behavior: 'smooth' })}
-                            className="bg-blue-600 hover:bg-blue-700"
+                            className="bg-blue-600 hover:bg-blue-700 shadow-lg hover:shadow-xl transition-all duration-200"
                           >
                             <Plus className="w-4 h-4 mr-2" />
                             Tambah Jadwal
@@ -4139,14 +4174,14 @@ const ManageSchedulesView = ({ onBack, onLogout }: { onBack: () => void; onLogou
                         </>
                       ) : (
                         <>
-                          <div className="w-20 h-20 bg-gradient-to-br from-yellow-100 to-orange-100 rounded-full flex items-center justify-center mx-auto mb-6">
+                          <div className="w-20 h-20 bg-gradient-to-br from-yellow-100 to-orange-100 rounded-full flex items-center justify-center mx-auto mb-6 shadow-lg">
                             <Search className="w-10 h-10 text-yellow-600" />
                           </div>
                           <h3 className="text-xl font-semibold text-gray-900 mb-3">Tidak ada jadwal yang cocok</h3>
                           <p className="text-gray-500 mb-6 max-w-md mx-auto">Coba ubah kata kunci pencarian atau filter untuk menemukan jadwal yang Anda cari</p>
                           <Button 
                             variant="outline"
-                            className="border-gray-300 hover:bg-gray-50"
+                            className="border-gray-400 hover:bg-gray-50 hover:border-gray-500 text-gray-700 hover:text-gray-900 transition-all duration-200"
                             onClick={() => {
                               setSearchTerm('');
                               setFilterDay('');
@@ -4162,16 +4197,16 @@ const ManageSchedulesView = ({ onBack, onLogout }: { onBack: () => void; onLogou
                   ) : (
                     <div className="divide-y divide-gray-100">
                       {filteredSchedules.map((schedule) => (
-                        <div key={schedule.id} className={`p-6 hover:bg-gradient-to-r hover:from-blue-50 hover:to-indigo-50 transition-all duration-200 ${schedule.has_conflict ? 'bg-red-50 border-l-4 border-red-500' : 'bg-white'}`}>
+                        <div key={schedule.id} className={`p-6 hover:bg-gradient-to-r hover:from-blue-50 hover:to-indigo-50 transition-all duration-300 group ${schedule.has_conflict ? 'bg-red-50 border-l-4 border-red-500' : 'bg-white hover:shadow-md'}`}>
                           <div className="flex items-start justify-between">
                             <div className="flex-1">
-                              <div className="flex items-center gap-4 mb-3">
+                              <div className="flex items-center gap-4 mb-4">
                                 <div className="flex items-center gap-3">
-                                  <div className="w-3 h-3 bg-gradient-to-r from-blue-500 to-indigo-500 rounded-full"></div>
-                                  <h4 className="font-bold text-gray-900 text-lg">{schedule.nama_kelas}</h4>
+                                  <div className="w-4 h-4 bg-gradient-to-r from-blue-500 to-indigo-500 rounded-full shadow-sm"></div>
+                                  <h4 className="font-bold text-gray-900 text-lg group-hover:text-blue-700 transition-colors duration-200">{schedule.nama_kelas}</h4>
                                 </div>
                                 {schedule.has_conflict && (
-                                  <Badge variant="destructive" className="text-xs px-3 py-1">
+                                  <Badge variant="destructive" className="text-xs px-3 py-1 animate-pulse">
                                     <AlertTriangle className="w-3 h-3 mr-1" />
                                     Bentrok
                                   </Badge>
@@ -4180,48 +4215,48 @@ const ManageSchedulesView = ({ onBack, onLogout }: { onBack: () => void; onLogou
                               
                               <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-4">
                                 <div className="space-y-3">
-                                  <div className="flex items-center gap-3 p-3 bg-blue-50 rounded-lg">
-                                    <div className="p-2 bg-blue-100 rounded-lg">
-                                      <BookOpen className="w-4 h-4 text-blue-600" />
+                                  <div className="flex items-center gap-3 p-4 bg-gradient-to-r from-blue-50 to-blue-100 rounded-xl border border-blue-300 hover:shadow-sm transition-all duration-200">
+                                    <div className="p-2 bg-blue-200 rounded-lg shadow-sm">
+                                      <BookOpen className="w-4 h-4 text-blue-800" />
                                     </div>
                                     <div>
-                                      <p className="text-xs text-blue-600 font-medium">Mata Pelajaran</p>
+                                      <p className="text-xs text-blue-800 font-medium uppercase tracking-wide">Mata Pelajaran</p>
                                       <p className="text-sm font-semibold text-gray-900">{schedule.nama_mapel}</p>
                                     </div>
                                   </div>
-                                  <div className="flex items-center gap-3 p-3 bg-green-50 rounded-lg">
-                                    <div className="p-2 bg-green-100 rounded-lg">
-                                      <Users className="w-4 h-4 text-green-600" />
+                                  <div className="flex items-center gap-3 p-4 bg-gradient-to-r from-green-50 to-green-100 rounded-xl border border-green-300 hover:shadow-sm transition-all duration-200">
+                                    <div className="p-2 bg-green-200 rounded-lg shadow-sm">
+                                      <Users className="w-4 h-4 text-green-800" />
                                     </div>
                                     <div>
-                                      <p className="text-xs text-green-600 font-medium">Guru</p>
+                                      <p className="text-xs text-green-800 font-medium uppercase tracking-wide">Guru</p>
                                       <p className="text-sm font-semibold text-gray-900">{schedule.guru_names || schedule.nama_guru}</p>
                                     </div>
                                   </div>
                                 </div>
                                 
                                 <div className="space-y-3">
-                                  <div className="flex items-center gap-3 p-3 bg-orange-50 rounded-lg">
-                                    <div className="p-2 bg-orange-100 rounded-lg">
-                                      <Clock className="w-4 h-4 text-orange-600" />
+                                  <div className="flex items-center gap-3 p-4 bg-gradient-to-r from-orange-50 to-orange-100 rounded-xl border border-orange-300 hover:shadow-sm transition-all duration-200">
+                                    <div className="p-2 bg-orange-200 rounded-lg shadow-sm">
+                                      <Clock className="w-4 h-4 text-orange-800" />
                                     </div>
                                     <div>
-                                      <p className="text-xs text-orange-600 font-medium">Waktu</p>
+                                      <p className="text-xs text-orange-800 font-medium uppercase tracking-wide">Waktu</p>
                                       <p className="text-sm font-semibold text-gray-900">
                                         {schedule.hari}, Jam {schedule.jam_ke}
                                       </p>
-                                      <p className="text-xs text-gray-600">{schedule.jam_mulai}-{schedule.jam_selesai}</p>
+                                      <p className="text-xs text-gray-700 font-medium">{schedule.jam_mulai}-{schedule.jam_selesai}</p>
                                     </div>
                                   </div>
                                   {schedule.nama_ruang && (
-                                    <div className="flex items-center gap-3 p-3 bg-purple-50 rounded-lg">
-                                      <div className="p-2 bg-purple-100 rounded-lg">
-                                        <MapPin className="w-4 h-4 text-purple-600" />
+                                    <div className="flex items-center gap-3 p-4 bg-gradient-to-r from-purple-50 to-purple-100 rounded-xl border border-purple-300 hover:shadow-sm transition-all duration-200">
+                                      <div className="p-2 bg-purple-200 rounded-lg shadow-sm">
+                                        <MapPin className="w-4 h-4 text-purple-800" />
                                       </div>
                                       <div>
-                                        <p className="text-xs text-purple-600 font-medium">Ruang</p>
+                                        <p className="text-xs text-purple-800 font-medium uppercase tracking-wide">Ruang</p>
                                         <p className="text-sm font-semibold text-gray-900">{schedule.nama_ruang}</p>
-                                        <p className="text-xs text-gray-600">({schedule.kode_ruang})</p>
+                                        <p className="text-xs text-gray-700 font-medium">({schedule.kode_ruang})</p>
                                       </div>
                                     </div>
                                   )}
@@ -4234,7 +4269,7 @@ const ManageSchedulesView = ({ onBack, onLogout }: { onBack: () => void; onLogou
                                 size="sm" 
                                 variant="outline" 
                                 onClick={() => handleEdit(schedule)}
-                                className="hover:bg-blue-50 hover:border-blue-300 hover:text-blue-700 transition-colors"
+                                className="hover:bg-blue-50 hover:border-blue-400 hover:text-blue-800 transition-all duration-200 shadow-sm border-gray-300 text-gray-700"
                               >
                                 <Edit className="w-4 h-4 mr-1" />
                                 Edit
@@ -4243,7 +4278,7 @@ const ManageSchedulesView = ({ onBack, onLogout }: { onBack: () => void; onLogou
                                 size="sm" 
                                 variant="destructive" 
                                 onClick={() => handleDelete(schedule.id)}
-                                className="hover:bg-red-600 transition-colors"
+                                className="hover:bg-red-600 hover:shadow-md transition-all duration-200 bg-red-500 text-white"
                               >
                                 <Trash2 className="w-4 h-4 mr-1" />
                                 Delete

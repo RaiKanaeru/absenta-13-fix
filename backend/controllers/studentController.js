@@ -5,7 +5,7 @@
 
 import { getUserInfo, updateProfile } from '../services/userService.js';
 import { getSchedulesByClass } from '../services/scheduleService.js';
-import { getStudentAttendanceHistory } from '../services/attendanceService.js';
+import { getStudentAttendanceHistory as fetchStudentAttendanceHistory } from '../services/attendanceService.js';
 import { sendSuccess, sendError, sendNotFound } from '../utils/responseHelper.js';
 import { asyncHandler } from '../middleware/errorHandler.js';
 
@@ -78,7 +78,7 @@ export const getStudentAttendanceHistory = asyncHandler(async (req, res, next) =
     const defaultEndDate = endDate || new Date().toISOString().split('T')[0];
     const defaultStartDate = startDate || new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
     
-    const result = await getStudentAttendanceHistory(siswaId, defaultStartDate, defaultEndDate);
+    const result = await fetchStudentAttendanceHistory(siswaId, defaultStartDate, defaultEndDate);
     
     return sendSuccess(res, result, 'Student attendance history retrieved successfully', 200);
 });
@@ -143,7 +143,7 @@ export const getStudentAttendanceSummary = asyncHandler(async (req, res, next) =
             endDate = today;
     }
     
-    const result = await getStudentAttendanceHistory(
+    const result = await fetchStudentAttendanceHistory(
         siswaId, 
         startDate.toISOString().split('T')[0], 
         endDate.toISOString().split('T')[0]

@@ -146,68 +146,55 @@ const LoadBalancerView: React.FC = () => {
         }
 
         try {
-            const token = localStorage.getItem('token');
-            const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
-            const response = await fetch(`${API_BASE_URL}/api/admin/system-performance`, {
-                credentials: 'include',
-                headers: {
-                    'Content-Type': 'application/json',
-                    ...(token && { 'Authorization': `Bearer ${token}` }),
-                }
-            });
+            const response = await apiCall('/api/admin/system-performance');
             
-            if (!response.ok) {
-                if (response.status === 401) {
-                    throw new Error('Sesi Anda telah berakhir. Silakan login kembali.');
-                }
-                throw new Error('Failed to fetch performance data');
-            }
-            
-            const result = await response.json();
-            // Handle response structure: { success: true, data: { ... } } or direct data
-            const data = result.data || result;
-            
-            // Validate and sanitize memory data
-            if (data && data.system && data.system.memory) {
-                const memory = data.system.memory;
-                // Ensure all memory values are valid numbers
-                memory.used = typeof memory.used === 'number' && !isNaN(memory.used) ? memory.used : 0;
-                memory.total = typeof memory.total === 'number' && !isNaN(memory.total) ? memory.total : 1;
-                memory.external = typeof memory.external === 'number' && !isNaN(memory.external) ? memory.external : 0;
-                memory.arrayBuffers = typeof memory.arrayBuffers === 'number' && !isNaN(memory.arrayBuffers) ? memory.arrayBuffers : 0;
+            if (response.success) {
+                const data = response.data;
                 
-                // Ensure total is not zero to prevent division by zero
-                if (memory.total === 0) memory.total = 1;
+                // Validate and sanitize memory data
+                if (data && data.system && data.system.memory) {
+                    const memory = data.system.memory;
+                    // Ensure all memory values are valid numbers
+                    memory.used = typeof memory.used === 'number' && !isNaN(memory.used) ? memory.used : 0;
+                    memory.total = typeof memory.total === 'number' && !isNaN(memory.total) ? memory.total : 1;
+                    memory.external = typeof memory.external === 'number' && !isNaN(memory.external) ? memory.external : 0;
+                    memory.arrayBuffers = typeof memory.arrayBuffers === 'number' && !isNaN(memory.arrayBuffers) ? memory.arrayBuffers : 0;
+                    
+                    // Ensure total is not zero to prevent division by zero
+                    if (memory.total === 0) memory.total = 1;
+                }
+                
+                // Add load balancer data if not present
+                if (!data.loadBalancer) {
+                    data.loadBalancer = {
+                        totalRequests: Math.floor(Math.random() * 1000) + 500,
+                        activeRequests: Math.floor(Math.random() * 50),
+                        completedRequests: Math.floor(Math.random() * 800) + 400,
+                        failedRequests: Math.floor(Math.random() * 10),
+                        averageResponseTime: Math.random() * 100 + 50,
+                        circuitBreakerTrips: Math.floor(Math.random() * 5),
+                        burstDetections: Math.floor(Math.random() * 3),
+                        lastBurstTime: new Date().toISOString(),
+                        circuitBreaker: {
+                            isOpen: false,
+                            failureCount: Math.floor(Math.random() * 5),
+                            successCount: Math.floor(Math.random() * 100) + 50
+                        },
+                        queueSizes: {
+                            critical: Math.floor(Math.random() * 5),
+                            high: Math.floor(Math.random() * 10),
+                            normal: Math.floor(Math.random() * 20),
+                            low: Math.floor(Math.random() * 15)
+                        },
+                        totalQueueSize: Math.floor(Math.random() * 50)
+                    };
+                }
+                
+                setPerformance(data);
+                setError(null);
+            } else {
+                throw new Error(response.error || 'Failed to fetch performance data');
             }
-            
-            // Add load balancer data if not present
-            if (!data.loadBalancer) {
-                data.loadBalancer = {
-                    totalRequests: Math.floor(Math.random() * 1000) + 500,
-                    activeRequests: Math.floor(Math.random() * 50),
-                    completedRequests: Math.floor(Math.random() * 800) + 400,
-                    failedRequests: Math.floor(Math.random() * 10),
-                    averageResponseTime: Math.random() * 100 + 50,
-                    circuitBreakerTrips: Math.floor(Math.random() * 5),
-                    burstDetections: Math.floor(Math.random() * 3),
-                    lastBurstTime: new Date().toISOString(),
-                    circuitBreaker: {
-                        isOpen: false,
-                        failureCount: Math.floor(Math.random() * 5),
-                        successCount: Math.floor(Math.random() * 100) + 50
-                    },
-                    queueSizes: {
-                        critical: Math.floor(Math.random() * 5),
-                        high: Math.floor(Math.random() * 10),
-                        normal: Math.floor(Math.random() * 20),
-                        low: Math.floor(Math.random() * 15)
-                    },
-                    totalQueueSize: Math.floor(Math.random() * 50)
-                };
-            }
-            
-            setPerformance(data);
-            setError(null);
         } catch (err) {
             setError(err instanceof Error ? err.message : 'Unknown error');
         } finally {
@@ -273,18 +260,12 @@ const LoadBalancerView: React.FC = () => {
     const toggleLoadBalancer = async () => {
         try {
             const newState = !loadBalancerEnabled;
-            const token = localStorage.getItem('token');
-            const response = await fetch('/api/admin/toggle-load-balancer', {
+            const response = await apiCall('/api/admin/toggle-load-balancer', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    ...(token && { 'Authorization': `Bearer ${token}` }),
-                },
-                credentials: 'include',
                 body: JSON.stringify({ enabled: newState })
             });
             
-            if (response.ok) {
+            if (response.success) {
                 setLoadBalancerEnabled(newState);
                 localStorage.setItem('loadBalancerEnabled', JSON.stringify(newState));
                 // Refresh data to show updated state
@@ -358,15 +339,10 @@ const LoadBalancerView: React.FC = () => {
                         size="sm"
                         onClick={async () => {
                             try {
-                                const token = localStorage.getItem('token');
-                                const response = await fetch('/api/admin/populate-cache', {
-                                    method: 'POST',
-                                    headers: {
-                                        ...(token && { 'Authorization': `Bearer ${token}` }),
-                                    },
-                                    credentials: 'include'
+                                const response = await apiCall('/api/admin/populate-cache', {
+                                    method: 'POST'
                                 });
-                                if (response.ok) {
+                                if (response.success) {
                                     fetchPerformanceData(); // Refresh data
                                 }
                             } catch (error) {
@@ -384,15 +360,10 @@ const LoadBalancerView: React.FC = () => {
                         size="sm"
                         onClick={async () => {
                             try {
-                                const token = localStorage.getItem('token');
-                                const response = await fetch('/api/admin/clear-cache', {
-                                    method: 'POST',
-                                    headers: {
-                                        ...(token && { 'Authorization': `Bearer ${token}` }),
-                                    },
-                                    credentials: 'include'
+                                const response = await apiCall('/api/admin/clear-cache', {
+                                    method: 'POST'
                                 });
-                                if (response.ok) {
+                                if (response.success) {
                                     fetchPerformanceData(); // Refresh data
                                 }
                             } catch (error) {

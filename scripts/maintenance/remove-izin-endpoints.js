@@ -22,16 +22,16 @@ async function removeIzinEndpoints() {
             /\/\/ ================================================\s*\n\/\/ PENGAJUAN IZIN SISWA ENDPOINTS\s*\n\/\/ ================================================.*?(?=\/\/ ================================================|$)/gs,
             
             // Individual izin endpoints - fixed regex
-            /\/\/ Get pengajuan izin by siswa ID[\s\S]*?});/g,
-            /\/\/ Submit new pengajuan izin[\s\S]*?});/g,
-            /\/\/ Get pengajuan izin for guru[\s\S]*?});/g,
-            /\/\/ Approve or reject pengajuan izin[\s\S]*?});/g,
-            /\/\/ Approve or reject pengajuan izin by ID[\s\S]*?});/g,
-            /\/\/ Submit pengajuan izin kelas[\s\S]*?});/g,
-            /\/\/ Get riwayat pengajuan izin for admin[\s\S]*?});/g,
+            /\/\/ Get pengajuan izin by siswa ID[\s\S]*?\}\);/g,
+            /\/\/ Submit new pengajuan izin[\s\S]*?\}\);/g,
+            /\/\/ Get pengajuan izin for guru[\s\S]*?\}\);/g,
+            /\/\/ Approve or reject pengajuan izin[\s\S]*?\}\);/g,
+            /\/\/ Approve or reject pengajuan izin by ID[\s\S]*?\}\);/g,
+            /\/\/ Submit pengajuan izin kelas[\s\S]*?\}\);/g,
+            /\/\/ Get riwayat pengajuan izin for admin[\s\S]*?\}\);/g,
             
             // Any remaining izin references
-            /app\.(get|post|put|delete)\('\/api\/.*?izin.*?\)[\s\S]*?});/g,
+            /app\.(get|post|put|delete)\('\/api\/.*?izin.*?\)[\s\S]*?\}\);/g,
             /app\.(get|post|put|delete)\('\/api\/.*?pengajuan.*?\)[\s\S]*?});/g,
         ];
         
