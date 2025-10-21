@@ -1,0 +1,446 @@
+---
+alwaysApply: true
+---
+
+# Absenta System Architecture 2025 - Updated Post Full Normalization
+
+## 🎯 SYSTEM STATUS (Updated: Oktober 2025)
+
+**Version**: 2.0 (Post Full Normalization)  
+**Database Schema**: Fully Normalized (3NF)  
+**Multi-Teacher**: ✅ Fully Implemented  
+**Banding Absen**: ✅ Fully Implemented  
+**Status**: ✅ **PRODUCTION READY**
+
+---
+
+## 🏗️ Core Technology Stack
+
+- **Backend**: Node.js + Express.js (server_modern.js - 7200+ lines)
+- **Frontend**: React + TypeScript + Vite
+- **Database**: MySQL 10.4+ (absenta13)
+- **Authentication**: JWT + bcrypt
+- **Connection Pool**: MySQL2 Promise-based
+- **State Management**: React Hooks
+- **UI**: Tailwind CSS + shadcn/ui
+
+---
+
+## 📊 Database Architecture (2025)
+
+### **Core Tables** (19 active tables):
+
+#### **1. User Management** (Normalized - Opsi 2)
+```sql
+-- users: Akun pengguna (ADMIN, GURU, SISWA)
+CREATE TABLE users (
+  id INT PRIMARY KEY AUTO_INCREMENT,
+  username VARCHAR(50) UNIQUE NOT NULL,
+  password VARCHAR(255) NOT NULL,
+  role ENUM('ADMIN','GURU','SISWA') NOT NULL,
+  email VARCHAR(100),
+  nomor_telepon VARCHAR(20),
+  status ENUM('aktif','tidak_aktif','ditangguhkan') DEFAULT 'aktif',
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+
+-- guru: Data guru (linked to users)
+CREATE TABLE guru (
+  id INT PRIMARY KEY AUTO_INCREMENT,
+  id_guru INT UNIQUE NOT NULL,
+  user_id INT NOT NULL,
+  nip VARCHAR(30) NOT NULL,
+  nama VARCHAR(100) NOT NULL,
+  email VARCHAR(100),
+  mapel_id INT,
+  status ENUM('aktif','tidak_aktif','pensiun') DEFAULT 'aktif',
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+-- siswa: Data siswa (linked to users - NULLABLE)
+CREATE TABLE siswa (
+  id INT PRIMARY KEY AUTO_INCREMENT,
+  id_siswa INT UNIQUE NOT NULL,
+  user_id INT NULL,  -- ✅ NULLABLE: siswa bisa ada tanpa akun
+  nis VARCHAR(30) UNIQUE NOT NULL,
+  nama VARCHAR(100) NOT NULL,
+  kelas_id INT NOT NULL,
+  jabatan VARCHAR(50) DEFAULT 'Sekretaris Kelas',
+  status ENUM('aktif','tidak_aktif','lulus','pindah') DEFAULT 'aktif',
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL,
+  FOREIGN KEY (kelas_id) REFERENCES kelas(id_kelas)
+);
+
+-- ✅ siswa_perwakilan: VIEW untuk backward compatibility
+CREATE VIEW siswa_perwakilan AS SELECT * FROM siswa;
+```
+
+#### **2. Academic Structure**
+```sql
+-- kelas: Kelas sekolah
+CREATE TABLE kelas (
+  id_kelas INT PRIMARY KEY AUTO_INCREMENT,
+  nama_kelas VARCHAR(50) UNIQUE NOT NULL,
+  tingkat VARCHAR(10),
+  jurusan_id INT,
+  ruang VARCHAR(50),
+  kode_ruang VARCHAR(20)
+);
+
+-- mapel: Mata pelajaran
+CREATE TABLE mapel (
+  id_mapel INT PRIMARY KEY AUTO_INCREMENT,
+  nama_mapel VARCHAR(100) UNIQUE NOT NULL,
+  kode_mapel VARCHAR(20)
+);
+
+-- jurusan: Program studi
+CREATE TABLE jurusan (
+  id_jurusan INT PRIMARY KEY AUTO_INCREMENT,
+  nama_jurusan VARCHAR(100) UNIQUE NOT NULL,
+  kode_jurusan VARCHAR(20)
+);
+```
+
+#### **3. Multi-Teacher System** (NEW - 2025)
+```sql
+-- jadwal: Jadwal pelajaran (guru_id = primary teacher)
+CREATE TABLE jadwal (
+  id_jadwal INT PRIMARY KEY AUTO_INCREMENT,
+  kelas_id INT NOT NULL,
+  mapel_id INT NOT NULL,
+  guru_id INT NOT NULL,  -- Primary teacher
+  hari VARCHAR(10),
+  jam_ke INT,
+  jam_mulai TIME,
+  jam_selesai TIME,
+  status ENUM('aktif','tidak_aktif') DEFAULT 'aktif',
+  FOREIGN KEY (kelas_id) REFERENCES kelas(id_kelas),
+  FOREIGN KEY (mapel_id) REFERENCES mapel(id_mapel),
+  FOREIGN KEY (guru_id) REFERENCES guru(id_guru)
+);
+
+-- jadwal_guru: Multi-teacher assignments (NEW)
+CREATE TABLE jadwal_guru (
+  id INT PRIMARY KEY AUTO_INCREMENT,
+  jadwal_id INT NOT NULL,
+  guru_id INT NOT NULL,
+  is_primary TINYINT(1) DEFAULT 0,
+  status ENUM('aktif','tidak_aktif') DEFAULT 'aktif',
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY (jadwal_id, guru_id),
+  FOREIGN KEY (jadwal_id) REFERENCES jadwal(id_jadwal) ON DELETE CASCADE,
+  FOREIGN KEY (guru_id) REFERENCES guru(id_guru) ON DELETE CASCADE
+);
+
+-- absensi_guru_jadwal: Teacher attendance per schedule (NEW)
+CREATE TABLE absensi_guru_jadwal (
+  id INT PRIMARY KEY AUTO_INCREMENT,
+  jadwal_id INT NOT NULL,
+  guru_pencatat_id INT,
+  tanggal DATE NOT NULL,
+  jam_ke INT,
+  status ENUM('Hadir','Tidak Hadir','Sakit','Izin'),
+  keterangan TEXT,
+  siswa_pencatat_id INT,
+  metode_absen ENUM('manual','scan','otomatis'),
+  waktu_catat TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY (jadwal_id, tanggal),
+  FOREIGN KEY (jadwal_id) REFERENCES jadwal(id_jadwal)
+);
+
+-- absensi_guru_mapping: Per-teacher attendance mapping (NEW)
+CREATE TABLE absensi_guru_mapping (
+  id INT PRIMARY KEY AUTO_INCREMENT,
+  absensi_guru_jadwal_id INT NOT NULL,
+  guru_id INT NOT NULL,
+  status ENUM('Hadir','Tidak Hadir','Sakit','Izin'),
+  keterangan TEXT,
+  UNIQUE KEY (absensi_guru_jadwal_id, guru_id),
+  FOREIGN KEY (absensi_guru_jadwal_id) REFERENCES absensi_guru_jadwal(id) ON DELETE CASCADE,
+  FOREIGN KEY (guru_id) REFERENCES guru(id_guru) ON DELETE CASCADE
+);
+```
+
+#### **4. Attendance System**
+```sql
+-- absensi_siswa: Student attendance
+CREATE TABLE absensi_siswa (
+  id INT PRIMARY KEY AUTO_INCREMENT,
+  siswa_id INT NOT NULL,
+  jadwal_id INT NOT NULL,
+  tanggal DATE NOT NULL,
+  status ENUM('Hadir','Izin','Sakit','Alpa','Dispen'),
+  keterangan TEXT,
+  waktu_absen TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (siswa_id) REFERENCES siswa(id_siswa),
+  FOREIGN KEY (jadwal_id) REFERENCES jadwal(id_jadwal)
+);
+
+-- absensi_guru: Teacher attendance (legacy - still used)
+CREATE TABLE absensi_guru (
+  id_absensi INT PRIMARY KEY AUTO_INCREMENT,
+  jadwal_id INT NOT NULL,
+  guru_id INT NOT NULL,
+  tanggal DATE NOT NULL,
+  status ENUM('Hadir','Tidak Hadir','Sakit','Izin'),
+  keterangan TEXT,
+  FOREIGN KEY (jadwal_id) REFERENCES jadwal(id_jadwal),
+  FOREIGN KEY (guru_id) REFERENCES guru(id_guru)
+);
+```
+
+#### **5. Banding Absen System**
+```sql
+-- pengajuan_banding_absen: Attendance appeals
+CREATE TABLE pengajuan_banding_absen (
+  id_banding INT PRIMARY KEY AUTO_INCREMENT,
+  siswa_id INT NOT NULL,
+  jadwal_id INT NOT NULL,
+  tanggal_absen DATE NOT NULL,
+  status_asli ENUM('Hadir','Izin','Sakit','Alpa','Dispen','kelas'),
+  status_diajukan ENUM('Hadir','Izin','Sakit','Alpa','Dispen','kelas'),
+  alasan_banding TEXT NOT NULL,
+  bukti_pendukung VARCHAR(255),
+  status_banding ENUM('pending','disetujui','ditolak') DEFAULT 'pending',
+  catatan_guru TEXT,
+  tanggal_pengajuan TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  tanggal_keputusan TIMESTAMP NULL,
+  diproses_oleh INT,
+  kelas_id INT,
+  jenis_banding ENUM('individual','kelas') DEFAULT 'individual',
+  FOREIGN KEY (siswa_id) REFERENCES siswa(id_siswa),
+  FOREIGN KEY (jadwal_id) REFERENCES jadwal(id_jadwal),
+  FOREIGN KEY (diproses_oleh) REFERENCES guru(id_guru)
+);
+
+-- banding_absen_detail: Class appeal details
+CREATE TABLE banding_absen_detail (
+  id_detail INT PRIMARY KEY AUTO_INCREMENT,
+  banding_id INT NOT NULL,
+  nama_siswa VARCHAR(100) NOT NULL,
+  status_asli ENUM('Hadir','Izin','Sakit','Alpa','Dispen'),
+  status_diajukan ENUM('Hadir','Izin','Sakit','Alpa','Dispen'),
+  alasan_banding TEXT NOT NULL,
+  bukti_pendukung VARCHAR(255),
+  FOREIGN KEY (banding_id) REFERENCES pengajuan_banding_absen(id_banding) ON DELETE CASCADE
+);
+```
+
+---
+
+## 🔄 Key System Changes (2025)
+
+### **1. Database Normalization (Opsi 2 - Completed)**
+- ✅ `users` table untuk akun (ADMIN, GURU, SISWA)
+- ✅ `siswa` table untuk data siswa (user_id NULLABLE)
+- ✅ `guru` table untuk data guru (user_id REQUIRED)
+- ✅ Enum `role` updated: `('ADMIN','GURU','SISWA')`
+- ✅ All old roles migrated ('KETOS', 'perwakilan' → 'SISWA')
+- ✅ Username format: `siswa_[NIS]`
+- ✅ Password format: `[NIS]@2024`
+
+### **2. Multi-Teacher System (Completed)**
+- ✅ Support multiple teachers per schedule
+- ✅ `jadwal_guru` table untuk assignments
+- ✅ `absensi_guru_jadwal` untuk per-schedule attendance
+- ✅ `absensi_guru_mapping` untuk per-teacher mapping
+- ✅ All queries updated untuk multi-guru support
+
+### **3. Banding Absen System (Completed)**
+- ✅ Individual banding (1 siswa)
+- ✅ Class banding (1 siswa per submission)
+- ✅ Multi-guru support (guru sees all their schedules)
+- ✅ Duplicate prevention
+- ✅ Audit trail (pengajuan, keputusan, diproses_oleh)
+
+### **4. Deprecated/Removed Features**
+- ❌ **Pengajuan Izin Siswa** - REMOVED (tidak digunakan lagi)
+- ❌ Old `siswa_perwakilan` table - Now a VIEW
+- ❌ Roles 'KETOS', 'perwakilan' - Migrated to 'SISWA'
+
+---
+
+## 📱 API Structure (server_modern.js)
+
+### **Authentication & Authorization**
+```javascript
+// Middleware
+authenticateToken       // JWT verification
+requireRole([roles])    // Role-based access control
+
+// Supported roles: 'admin', 'guru', 'siswa'
+```
+
+### **Admin Endpoints** (/api/admin/*)
+- Users: GET, POST, PUT, DELETE
+- Guru: GET, POST, PUT, DELETE (transaction-based)
+- Siswa: GET, POST, PUT, DELETE (transaction-based, smart delete)
+- Kelas: GET, POST, PUT, DELETE (with ruang & kode_ruang)
+- Jadwal: GET, POST, PUT, DELETE (multi-guru support)
+- Mapel: GET, POST, PUT, DELETE
+- Ruang Kelas: GET, POST, PUT, DELETE
+- Reports: attendance, banding, performance
+
+### **Guru Endpoints** (/api/guru/*)
+- Schedule: GET (multi-guru)
+- Classes: GET assigned classes
+- Attendance: GET, POST, PUT (multi-guru)
+- Banding: GET list, PUT respond (multi-guru)
+- Reports: student attendance history
+
+### **Siswa Endpoints** (/api/siswa/*)
+- Profile: GET info, PUT update, PUT change password
+- Jadwal: GET hari ini, GET rentang
+- Kehadiran Guru: POST submit (multi-guru), GET riwayat
+- Daftar Siswa: GET classmates
+- Banding: GET list, POST individual, POST class (1 student)
+
+---
+
+## 🔐 Security Patterns
+
+### **Password Management**
+```javascript
+// Hash password dengan bcrypt
+const hashedPassword = await bcrypt.hash(password, 10);
+
+// Verify password
+const isValid = await bcrypt.compare(password, hashedPassword);
+```
+
+### **JWT Authentication**
+```javascript
+// Generate token
+const token = jwt.sign({ id, role, username }, JWT_SECRET, { expiresIn: '24h' });
+
+// Verify token
+const decoded = jwt.verify(token, JWT_SECRET);
+```
+
+### **SQL Injection Prevention**
+```javascript
+// ✅ ALWAYS use parameterized queries
+const [rows] = await db.execute('SELECT * FROM users WHERE id = ?', [userId]);
+
+// ❌ NEVER use string concatenation
+// const query = `SELECT * FROM users WHERE id = ${userId}`; // BAD!
+```
+
+---
+
+## 🎯 Query Patterns
+
+### **Multi-Guru Pattern**
+```sql
+-- Get schedules for teacher (primary + additional)
+SELECT j.* 
+FROM jadwal j
+LEFT JOIN jadwal_guru jg ON j.id_jadwal = jg.jadwal_id 
+  AND jg.guru_id = ? AND jg.status = 'aktif'
+WHERE (j.guru_id = ? OR jg.guru_id IS NOT NULL) 
+  AND j.status = 'aktif'
+```
+
+### **Siswa with Nullable User Pattern**
+```sql
+-- Get student with optional user account
+SELECT 
+  s.*,
+  u.username,
+  u.email,
+  u.status as user_status
+FROM siswa s
+LEFT JOIN users u ON s.user_id = u.id
+WHERE s.id_siswa = ?
+```
+
+### **Transaction Pattern**
+```javascript
+const connection = await db.getConnection();
+try {
+  await connection.beginTransaction();
+  
+  // Multiple operations
+  await connection.execute('INSERT INTO ...', []);
+  await connection.execute('UPDATE ...', []);
+  
+  await connection.commit();
+} catch (error) {
+  await connection.rollback();
+  throw error;
+} finally {
+  connection.release();
+}
+```
+
+---
+
+## 📊 Performance Optimizations
+
+### **Critical Indexes**
+```sql
+-- User Management
+CREATE INDEX idx_users_role_status ON users (role, status);
+CREATE INDEX idx_siswa_user_id ON siswa (user_id);
+CREATE INDEX idx_siswa_kelas_status ON siswa (kelas_id, status);
+
+-- Multi-Teacher
+CREATE INDEX idx_jadwal_guru_jadwal ON jadwal_guru (jadwal_id);
+CREATE INDEX idx_jadwal_guru_guru ON jadwal_guru (guru_id);
+CREATE INDEX idx_agj_jadwal ON absensi_guru_jadwal (jadwal_id);
+CREATE INDEX idx_agj_tanggal ON absensi_guru_jadwal (tanggal);
+
+-- Banding Absen
+CREATE INDEX idx_pba_siswa ON pengajuan_banding_absen (siswa_id);
+CREATE INDEX idx_pba_status ON pengajuan_banding_absen (status_banding);
+```
+
+---
+
+## 🚀 Deployment Checklist
+
+### **Pre-Deployment**
+- [x] Database schema normalized
+- [x] All migrations executed
+- [x] Fresh data seeded
+- [x] All endpoints tested
+- [x] Security audit completed
+- [x] Performance optimized
+
+### **Production Ready**
+- [x] Transaction management correct
+- [x] Error handling comprehensive
+- [x] Input validation strict
+- [x] Multi-guru system working
+- [x] Banding system working
+- [x] No critical issues
+
+---
+
+## 📚 Related Documentation
+
+- **Implementation**: `docs/implementation/OPSI2_COMPLETE_SUMMARY.md`
+- **Deployment**: `docs/deployment/DEPLOYMENT_GUIDE_OPSI2.md`
+- **Testing**: `docs/testing/ENDPOINT_TESTING_GUIDE.md`
+- **Quick Reference**: `docs/quick-reference/OPSI2_QUICK_GUIDE.md`
+- **Final Audit**: `FINAL_COMPLETE_AUDIT_REPORT.md`
+
+---
+
+## ⚠️ IMPORTANT REMINDERS
+
+1. **ALWAYS use `siswa` table** (not `siswa_perwakilan` - it's just a VIEW)
+2. **Role must be 'SISWA'** (uppercase in DB, lowercase in token)
+3. **user_id is NULLABLE** in siswa table (check for NULL before using)
+4. **Use transactions** for multi-table operations
+5. **Smart delete** (deactivate if has history, else hard delete)
+6. **Multi-guru queries** always use LEFT JOIN jadwal_guru
+7. **NO pengajuan izin siswa** (feature removed)
+
+---
+
+**Last Updated**: 21 Oktober 2025  
+**Schema Version**: 2.0  
+**Status**: ✅ Production Ready

@@ -1,4 +1,4 @@
-const mysql = require('mysql2/promise');
+import mysql from 'mysql2/promise';
 
 async function addAdaTugasColumns() {
     let connection;
@@ -14,24 +14,44 @@ async function addAdaTugasColumns() {
 
         console.log('🔗 Connected to database');
 
-        // Add ada_tugas column
-        await connection.execute(`
-            ALTER TABLE absensi_siswa 
-            ADD COLUMN ada_tugas BOOLEAN DEFAULT FALSE COMMENT 'Status ada tugas'
+        // Check if columns already exist
+        const [columns] = await connection.execute(`
+            SELECT COLUMN_NAME 
+            FROM INFORMATION_SCHEMA.COLUMNS 
+            WHERE TABLE_SCHEMA = 'absenta13' 
+            AND TABLE_NAME = 'absensi_siswa' 
+            AND COLUMN_NAME IN ('ada_tugas', 'terlambat')
         `);
-        console.log('✅ Added ada_tugas column');
 
-        // Add terlambat column
-        await connection.execute(`
-            ALTER TABLE absensi_siswa 
-            ADD COLUMN terlambat BOOLEAN DEFAULT FALSE COMMENT 'Status terlambat'
-        `);
-        console.log('✅ Added terlambat column');
+        const existingColumns = columns.map(col => col.COLUMN_NAME);
 
-        console.log('🎉 Successfully added columns to absensi_siswa table');
+        // Add ada_tugas column if not exists
+        if (!existingColumns.includes('ada_tugas')) {
+            await connection.execute(`
+                ALTER TABLE absensi_siswa 
+                ADD COLUMN ada_tugas BOOLEAN DEFAULT FALSE COMMENT 'Status ada tugas'
+            `);
+            console.log('✅ Added ada_tugas column');
+        } else {
+            console.log('ℹ️  Column ada_tugas already exists');
+        }
+
+        // Add terlambat column if not exists
+        if (!existingColumns.includes('terlambat')) {
+            await connection.execute(`
+                ALTER TABLE absensi_siswa 
+                ADD COLUMN terlambat BOOLEAN DEFAULT FALSE COMMENT 'Status terlambat'
+            `);
+            console.log('✅ Added terlambat column');
+        } else {
+            console.log('ℹ️  Column terlambat already exists');
+        }
+
+        console.log('🎉 Successfully processed columns in absensi_siswa table');
 
     } catch (error) {
         console.error('❌ Error adding columns:', error);
+        process.exit(1);
     } finally {
         if (connection) {
             await connection.end();

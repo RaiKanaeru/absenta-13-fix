@@ -1,0 +1,529 @@
+---
+globs: *.js,*.ts,server*.js
+description: Updated API patterns for Absenta system after Opsi 2 Full Normalization (2025)
+---
+
+# Absenta API Patterns - UPDATED 2025
+
+## 🎯 CRITICAL CHANGES (Post Opsi 2)
+
+**Last Updated**: 21 Oktober 2025  
+**Status**: ✅ Full Normalization Complete
+
+## 🔐 Authentication Patterns (UPDATED)
+
+### Login Endpoint - UPDATED Pattern
+```javascript
+// POST /api/login - Support for new 'SISWA' role
+app.post('/api/login', async (req, res) => {
+  const { username, password } = req.body;
+  
+  // 1. Get user with role check
+  const [users] = await db.execute(
+    'SELECT * FROM users WHERE username = ? AND status = "aktif"',
+    [username]
+  );
+  
+  if (users.length === 0) {
+    return res.status(401).json({ error: 'Invalid credentials' });
+  }
+  
+  const user = users[0];
+  
+  // 2. Verify password
+  const validPassword = await bcrypt.compare(password, user.password);
+  if (!validPassword) {
+    return res.status(401).json({ error: 'Invalid credentials' });
+  }
+  
+  // 3. Handle SISWA role (NEW)
+  if (user.role === 'SISWA' || user.role === 'siswa' || user.role === 'perwakilan') {
+    const [siswaData] = await db.execute(
+      `SELECT s.*, k.nama_kelas 
+       FROM siswa s 
+       JOIN kelas k ON s.kelas_id = k.id_kelas 
+       WHERE s.user_id = ?`,
+      [user.id]
+    );
+    
+    if (siswaData.length > 0) {
+      additionalData = {
+        siswa_id: siswaData[0].id_siswa,
+        nis: siswaData[0].nis,
+        kelas: siswaData[0].nama_kelas,
+        kelas_id: siswaData[0].kelas_id
+      };
+    }
+  }
+  
+  // 4. Generate JWT token
+  const tokenPayload = {
+    id: user.id,
+    username: user.username,
+    role: user.role === 'perwakilan' ? 'siswa' : user.role.toLowerCase(),
+    ...additionalData
+  };
+  
+  const token = jwt.sign(tokenPayload, process.env.JWT_SECRET);
+  
+  res.json({ success: true, data: { token, ...tokenPayload } });
+});
+```
+
+## 👨‍🎓 Student Management Endpoints (UPDATED)
+
+### POST /api/admin/siswa - Create Student (NEW PATTERN)
+```javascript
+// ✅ CORRECT: Auto-create user account in transaction
+app.post('/api/admin/siswa', authenticateToken, requireRole(['admin']), async (req, res) => {
+  let connection;
+  
+  try {
+    const { nis, nama, kelas_id, username, password, email } = req.body;
+    
+    // Validation
+    if (!nis || !nama || !kelas_id || !username || !password) {
+      return res.status(400).json({ error: 'Required fields missing' });
+    }
+    
+    // Hash password
+    const hashedPassword = await bcrypt.hash(password, 10);
+    
+    // Get connection for transaction
+    connection = await db.getConnection();
+    await connection.beginTransaction();
+    
+    // 1. Create user account first
+    const [userResult] = await connection.execute(
+      'INSERT INTO users (username, password, role, nama, email, status, created_at) VALUES (?, ?, "SISWA", ?, ?, "aktif", NOW())',
+      [username, hashedPassword, nama, email || null]
+    );
+    
+    const userId = userResult.insertId;
+    
+    // 2. Create siswa record with user_id reference
+    await connection.execute(
+      `INSERT INTO siswa (nis, nama, kelas_id, user_id, status, created_at) 
+       VALUES (?, ?, ?, ?, "aktif", NOW())`,
+      [nis, nama, kelas_id, userId]
+    );
+    
+    await connection.commit();
+    
+    res.json({ 
+      success: true, 
+      data: {
+        user_id: userId,
+        username: username,
+        default_password: password
+      }
+    });
+    
+  } catch (error) {
+    if (connection) await connection.rollback();
+    console.error('Create siswa error:', error);
+    
+    if (error.code === 'ER_DUP_ENTRY') {
+      res.status(400).json({ error: 'NIS or username already exists' });
+    } else {
+      res.status(500).json({ error: 'Failed to create student' });
+    }
+  } finally {
+    if (connection) connection.release();
+  }
+});
+```
+
+### PUT /api/admin/students/:id - Update Student (NEW PATTERN)
+```javascript
+// ✅ CORRECT: Atomically update both users and siswa tables
+app.put('/api/admin/students/:id', authenticateToken, requireRole(['admin']), async (req, res) => {
+  let connection;
+  
+  try {
+    const { id } = req.params;
+    const { nama, username, password, nis, kelas_id, email, status } = req.body;
+    
+    // Validation
+    if (!nama || !username || !nis || !kelas_id) {
+      return res.status(400).json({ error: 'Required fields missing' });
+    }
+    
+    // Get connection for transaction
+    connection = await db.getConnection();
+    await connection.beginTransaction();
+    
+    // Check if user exists and is SISWA role
+    const [currentUser] = await connection.execute(
+      'SELECT id, role FROM users WHERE id = ?',
+      [id]
+    );
+    
+    if (currentUser.length === 0) {
+      await connection.rollback();
+      return res.status(404).json({ error: 'User not found' });
+    }
+    
+    if (currentUser[0].role !== 'SISWA') {
+      await connection.rollback();
+      return res.status(400).json({ error: 'Not a student account' });
+    }
+    
+    // Update user account
+    if (password) {
+      const hashedPassword = await bcrypt.hash(password, 10);
+      await connection.execute(
+        'UPDATE users SET username = ?, password = ?, nama = ?, email = ?, status = ?, updated_at = NOW() WHERE id = ?',
+        [username, hashedPassword, nama, email || null, status || 'aktif', id]
+      );
+    } else {
+      await connection.execute(
+        'UPDATE users SET username = ?, nama = ?, email = ?, status = ?, updated_at = NOW() WHERE id = ?',
+        [username, nama, email || null, status || 'aktif', id]
+      );
+    }
+    
+    // Update siswa data
+    await connection.execute(
+      `UPDATE siswa 
+       SET nis = ?, nama = ?, kelas_id = ?, updated_at = NOW() 
+       WHERE user_id = ?`,
+      [nis, nama, kelas_id, id]
+    );
+    
+    await connection.commit();
+    
+    res.json({ 
+      success: true,
+      message: 'Student updated successfully'
+    });
+    
+  } catch (error) {
+    if (connection) await connection.rollback();
+    console.error('Update student error:', error);
+    res.status(500).json({ error: 'Failed to update student' });
+  } finally {
+    if (connection) connection.release();
+  }
+});
+```
+
+### DELETE /api/admin/students/:id - Delete Student (SMART DELETE)
+```javascript
+// ✅ CORRECT: Smart delete - deactivate if has history, else hard delete
+app.delete('/api/admin/students/:id', authenticateToken, requireRole(['admin']), async (req, res) => {
+  let connection;
+  
+  try {
+    const { id } = req.params;
+    
+    // Get connection for transaction
+    connection = await db.getConnection();
+    await connection.beginTransaction();
+    
+    // Check if user exists and is SISWA role
+    const [userResult] = await connection.execute(
+      'SELECT id, username, role FROM users WHERE id = ?',
+      [id]
+    );
+    
+    if (userResult.length === 0) {
+      await connection.rollback();
+      return res.status(404).json({ error: 'User not found' });
+    }
+    
+    if (userResult[0].role !== 'SISWA') {
+      await connection.rollback();
+      return res.status(400).json({ error: 'Not a student account' });
+    }
+    
+    // Check if siswa has attendance records
+    const [attendanceRecords] = await connection.execute(
+      'SELECT COUNT(*) as count FROM absensi_siswa WHERE siswa_id IN (SELECT id_siswa FROM siswa WHERE user_id = ?)',
+      [id]
+    );
+    
+    if (attendanceRecords[0].count > 0) {
+      // Deactivate instead of delete (preserve history)
+      await connection.execute(
+        'UPDATE users SET status = "tidak_aktif", updated_at = NOW() WHERE id = ?',
+        [id]
+      );
+      await connection.execute(
+        'UPDATE siswa SET status = "tidak_aktif", updated_at = NOW() WHERE user_id = ?',
+        [id]
+      );
+      
+      await connection.commit();
+      
+      res.json({ 
+        success: true,
+        message: 'Student account deactivated (has attendance records)',
+        action: 'deactivated'
+      });
+    } else {
+      // Safe to hard delete - no attendance records
+      await connection.execute('DELETE FROM siswa WHERE user_id = ?', [id]);
+      await connection.execute('DELETE FROM users WHERE id = ?', [id]);
+      
+      await connection.commit();
+      
+      res.json({ 
+        success: true,
+        message: 'Student account deleted successfully',
+        action: 'deleted'
+      });
+    }
+    
+  } catch (error) {
+    if (connection) await connection.rollback();
+    console.error('Delete student error:', error);
+    res.status(500).json({ error: 'Failed to delete student' });
+  } finally {
+    if (connection) connection.release();
+  }
+});
+```
+
+### GET /api/admin/siswa-perwakilan - List Students (UPDATED)
+```javascript
+// ✅ CORRECT: Use siswa table with LEFT JOIN to users
+app.get('/api/admin/siswa-perwakilan', authenticateToken, requireRole(['admin']), async (req, res) => {
+  try {
+    const [students] = await db.execute(`
+      SELECT 
+        s.id_siswa,
+        s.nis,
+        s.nama,
+        s.kelas_id,
+        s.jabatan,
+        s.jenis_kelamin,
+        s.email,
+        s.status as siswa_status,
+        u.id as user_id,
+        u.username,
+        u.email as user_email,
+        u.status as user_status,
+        k.nama_kelas,
+        k.tingkat
+      FROM siswa s
+      LEFT JOIN users u ON s.user_id = u.id
+      JOIN kelas k ON s.kelas_id = k.id_kelas
+      WHERE s.status = 'aktif'
+      ORDER BY s.nama
+    `);
+    
+    res.json({ success: true, data: students });
+    
+  } catch (error) {
+    console.error('Get students error:', error);
+    res.status(500).json({ error: 'Failed to get students' });
+  }
+});
+```
+
+## 📊 Query Patterns (UPDATED)
+
+### ✅ CORRECT Patterns
+```javascript
+// 1. Get student with user account (if exists)
+const [students] = await db.execute(`
+  SELECT 
+    s.*,
+    u.username,
+    u.email as user_email,
+    u.status as user_status
+  FROM siswa s
+  LEFT JOIN users u ON s.user_id = u.id
+  WHERE s.id_siswa = ?
+`, [siswaId]);
+
+// 2. Student login authentication
+const [userData] = await db.execute(`
+  SELECT 
+    u.*,
+    s.id_siswa,
+    s.nis,
+    s.nama,
+    s.kelas_id
+  FROM users u
+  JOIN siswa s ON u.id = s.user_id
+  WHERE u.username = ? 
+    AND u.role = 'SISWA'
+    AND u.status = 'aktif'
+`, [username]);
+
+// 3. Get students by class
+const [students] = await db.execute(`
+  SELECT 
+    s.id_siswa,
+    s.nis,
+    s.nama,
+    s.status as siswa_status,
+    u.username,
+    u.status as user_status
+  FROM siswa s
+  LEFT JOIN users u ON s.user_id = u.id
+  WHERE s.kelas_id = ? AND s.status = 'aktif'
+  ORDER BY s.nama
+`, [kelasId]);
+```
+
+### ❌ DEPRECATED Patterns (DO NOT USE)
+```javascript
+// DON'T USE: siswa_perwakilan as main table
+SELECT * FROM siswa_perwakilan WHERE id_siswa = ?;
+
+// DON'T USE: Old role values
+SELECT * FROM users WHERE role IN ('KETOS', 'perwakilan');
+
+// DON'T USE: Assuming user_id is NOT NULL
+SELECT * FROM siswa WHERE user_id = ? AND user_id IS NOT NULL;
+```
+
+## 🔒 Middleware Patterns (NEW)
+
+### User-Siswa Validation Middleware
+```javascript
+// File: backend/middleware/userSiswaValidation.js
+
+const validateUserSiswa = async (req, res, next) => {
+  try {
+    const { userId, siswaId } = req.params;
+    
+    if (userId && siswaId) {
+      // Validate relationship exists
+      const [result] = await db.execute(
+        'SELECT 1 FROM siswa WHERE id_siswa = ? AND user_id = ?',
+        [siswaId, userId]
+      );
+      
+      if (result.length === 0) {
+        return res.status(400).json({
+          success: false,
+          error: 'User-Siswa relationship invalid'
+        });
+      }
+    }
+    
+    next();
+  } catch (error) {
+    console.error('Validation error:', error);
+    res.status(500).json({ error: 'Validation failed' });
+  }
+};
+
+// Usage
+app.get('/api/siswa/:siswaId/user/:userId', 
+  authenticateToken,
+  validateUserSiswa,
+  async (req, res) => {
+    // Handler
+  }
+);
+```
+
+## 📋 Best Practices (UPDATED)
+
+### 1. Always Use Transactions for Multi-Table Operations
+```javascript
+// ✅ CORRECT
+let connection;
+try {
+  connection = await db.getConnection();
+  await connection.beginTransaction();
+  
+  await connection.execute('INSERT INTO users...');
+  await connection.execute('INSERT INTO siswa...');
+  
+  await connection.commit();
+} catch (error) {
+  if (connection) await connection.rollback();
+  throw error;
+} finally {
+  if (connection) connection.release();
+}
+```
+
+### 2. Check user_id for NULL Before Using
+```javascript
+// ✅ CORRECT
+if (siswa.user_id) {
+  // Has user account - can login
+  const [userData] = await db.execute('SELECT * FROM users WHERE id = ?', [siswa.user_id]);
+} else {
+  // No user account - data only
+  console.log('Student has no login account');
+}
+```
+
+### 3. Normalize Role in JWT Token
+```javascript
+// ✅ CORRECT: Always lowercase in token, uppercase in DB
+const tokenPayload = {
+  id: user.id,
+  role: user.role === 'perwakilan' ? 'siswa' : user.role.toLowerCase(),
+  username: user.username
+};
+```
+
+### 4. Smart Delete Strategy
+```javascript
+// ✅ CORRECT: Check history before delete
+const [attendance] = await db.execute(
+  'SELECT COUNT(*) as count FROM absensi_siswa WHERE siswa_id = ?',
+  [siswaId]
+);
+
+if (attendance[0].count > 0) {
+  // Has history - deactivate
+  await db.execute('UPDATE users SET status = "tidak_aktif"...');
+} else {
+  // No history - hard delete
+  await db.execute('DELETE FROM users...');
+}
+```
+
+## 🚨 Error Handling (UPDATED)
+
+### Standard Error Response Format
+```javascript
+// Success response
+res.json({
+  success: true,
+  data: {...},
+  message: 'Operation completed successfully'
+});
+
+// Error response
+res.status(errorCode).json({
+  success: false,
+  error: 'Error type',
+  message: 'User-friendly error message',
+  details: {...} // Optional
+});
+```
+
+### Common Error Codes
+- `400` - Bad Request (validation errors)
+- `401` - Unauthorized (invalid/missing token)
+- `403` - Forbidden (insufficient permissions)
+- `404` - Not Found (resource not found)
+- `409` - Conflict (duplicate data)
+- `500` - Internal Server Error
+
+## 📚 Related Documentation
+
+- **Database Schema**: `.cursor/rules/absenta-database-schema-2025.mdc`
+- **Implementation Summary**: `docs/implementation/OPSI2_COMPLETE_SUMMARY.md`
+- **Deployment Guide**: `docs/deployment/DEPLOYMENT_GUIDE_OPSI2.md`
+
+## 🎯 Key Takeaways
+
+1. **Always create user account in transaction** when creating student
+2. **Use LEFT JOIN** for user data (it's nullable)
+3. **Check user_id for NULL** before using
+4. **Smart delete** based on attendance history
+5. **Normalize role** in JWT token (lowercase)
+6. **Use transactions** for all multi-table operations
+7. **Validate relationships** before operations

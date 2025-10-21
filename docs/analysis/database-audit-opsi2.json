@@ -1,0 +1,250 @@
+{
+  "timestamp": "2025-10-21T04:00:37.789Z",
+  "tableStructures": {
+    "users": "CREATE TABLE `users` (\n  `id` int(11) NOT NULL AUTO_INCREMENT,\n  `username` varchar(50) NOT NULL,\n  `password` varchar(255) NOT NULL,\n  `role` enum('ADMIN','GURU','KETOS','perwakilan') NOT NULL,\n  `nama` varchar(100) DEFAULT NULL,\n  `email` varchar(100) DEFAULT NULL,\n  `nomor_telepon` varchar(20) DEFAULT NULL,\n  `status` enum('aktif','tidak_aktif','ditangguhkan') NOT NULL DEFAULT 'aktif',\n  `created_at` timestamp NULL DEFAULT current_timestamp(),\n  `updated_at` timestamp NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),\n  `class_id` int(11) DEFAULT NULL,\n  `guru_id` int(11) DEFAULT NULL,\n  PRIMARY KEY (`id`),\n  UNIQUE KEY `username_UNIQUE` (`username`),\n  UNIQUE KEY `idx_users_username` (`username`),\n  KEY `idx_users_role` (`role`),\n  KEY `idx_users_status` (`status`),\n  KEY `idx_users_role_status` (`role`,`status`),\n  KEY `fk_users_guru` (`guru_id`),\n  CONSTRAINT `fk_users_guru` FOREIGN KEY (`guru_id`) REFERENCES `guru` (`id`) ON DELETE SET NULL ON UPDATE CASCADE\n) ENGINE=InnoDB AUTO_INCREMENT=538 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci",
+    "siswa": "CREATE TABLE `siswa` (\n  `id` int(11) NOT NULL AUTO_INCREMENT,\n  `id_siswa` int(11) NOT NULL,\n  `user_id` int(11) NOT NULL,\n  `nis` varchar(30) NOT NULL,\n  `nama` varchar(100) NOT NULL,\n  `kelas_id` int(11) NOT NULL,\n  `jabatan` varchar(50) DEFAULT 'Sekretaris Kelas',\n  `jenis_kelamin` enum('L','P') DEFAULT NULL,\n  `email` varchar(100) DEFAULT NULL COMMENT 'Email siswa (opsional, bisa juga diambil dari tabel users)',\n  `alamat` text DEFAULT NULL,\n  `telepon_orangtua` varchar(20) DEFAULT NULL,\n  `telepon_siswa` varchar(20) DEFAULT NULL COMMENT 'Nomor telepon siswa',\n  `status` enum('aktif','tidak_aktif','lulus','pindah','alumni','keluar') NOT NULL DEFAULT 'aktif' COMMENT 'Status siswa: aktif, tidak_aktif, lulus, pindah, alumni, keluar',\n  `created_at` timestamp NULL DEFAULT current_timestamp(),\n  `updated_at` timestamp NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),\n  PRIMARY KEY (`id`),\n  UNIQUE KEY `id_siswa_UNIQUE` (`id_siswa`),\n  UNIQUE KEY `nis_UNIQUE` (`nis`),\n  UNIQUE KEY `idx_siswa_nis` (`nis`),\n  KEY `fk_siswa_users_idx` (`user_id`),\n  KEY `fk_siswa_kelas_idx` (`kelas_id`),\n  KEY `idx_siswa_kelas_id` (`kelas_id`),\n  KEY `idx_siswa_status` (`status`),\n  KEY `idx_siswa_nama` (`nama`),\n  KEY `idx_siswa_user_id_lookup` (`user_id`)\n) ENGINE=InnoDB AUTO_INCREMENT=101 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci",
+    "guru": "CREATE TABLE `guru` (\n  `id` int(11) NOT NULL AUTO_INCREMENT,\n  `id_guru` int(11) NOT NULL,\n  `user_id` int(11) NOT NULL,\n  `nip` varchar(30) NOT NULL,\n  `nama` varchar(100) NOT NULL,\n  `email` varchar(100) DEFAULT NULL,\n  `mata_pelajaran` varchar(100) DEFAULT NULL,\n  `mapel_id` int(11) DEFAULT NULL,\n  `no_telp` varchar(20) DEFAULT NULL,\n  `alamat` text DEFAULT NULL,\n  `jenis_kelamin` enum('L','P') DEFAULT NULL,\n  `status` enum('aktif','tidak_aktif','pensiun') NOT NULL DEFAULT 'aktif',\n  `created_at` timestamp NULL DEFAULT current_timestamp(),\n  `updated_at` timestamp NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),\n  PRIMARY KEY (`id`),\n  UNIQUE KEY `id_guru_UNIQUE` (`id_guru`),\n  UNIQUE KEY `nip_UNIQUE` (`nip`),\n  UNIQUE KEY `idx_guru_nip` (`nip`),\n  UNIQUE KEY `idx_guru_user_id` (`user_id`),\n  KEY `fk_guru_users_idx` (`user_id`),\n  KEY `fk_guru_mapel_idx` (`mapel_id`),\n  KEY `idx_guru_mapel_id` (`mapel_id`),\n  KEY `idx_guru_status` (`status`),\n  KEY `idx_guru_nama` (`nama`),\n  CONSTRAINT `fk_guru_mapel` FOREIGN KEY (`mapel_id`) REFERENCES `mapel` (`id_mapel`) ON DELETE SET NULL ON UPDATE CASCADE,\n  CONSTRAINT `fk_guru_users` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE ON UPDATE CASCADE\n) ENGINE=InnoDB AUTO_INCREMENT=29 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci"
+  },
+  "dataAnalysis": {
+    "duplication": {
+      "sampleSize": 10,
+      "samples": [
+        {
+          "id_siswa": 1,
+          "siswa_nama": "Omar Kusuma",
+          "user_id": 0,
+          "user_id_actual": null,
+          "user_nama": null,
+          "role": null
+        },
+        {
+          "id_siswa": 2,
+          "siswa_nama": "Aisyah Susanto",
+          "user_id": 0,
+          "user_id_actual": null,
+          "user_nama": null,
+          "role": null
+        },
+        {
+          "id_siswa": 3,
+          "siswa_nama": "Oki Wulandari",
+          "user_id": 3,
+          "user_id_actual": null,
+          "user_nama": null,
+          "role": null
+        },
+        {
+          "id_siswa": 4,
+          "siswa_nama": "Sari Saputra",
+          "user_id": 4,
+          "user_id_actual": null,
+          "user_nama": null,
+          "role": null
+        },
+        {
+          "id_siswa": 5,
+          "siswa_nama": "Bambang Sari",
+          "user_id": 5,
+          "user_id_actual": null,
+          "user_nama": null,
+          "role": null
+        },
+        {
+          "id_siswa": 6,
+          "siswa_nama": "Vera Hidayat",
+          "user_id": 6,
+          "user_id_actual": null,
+          "user_nama": null,
+          "role": null
+        },
+        {
+          "id_siswa": 7,
+          "siswa_nama": "Lina Susanto",
+          "user_id": 7,
+          "user_id_actual": null,
+          "user_nama": null,
+          "role": null
+        },
+        {
+          "id_siswa": 8,
+          "siswa_nama": "Hadi Rahayu",
+          "user_id": 8,
+          "user_id_actual": null,
+          "user_nama": null,
+          "role": null
+        },
+        {
+          "id_siswa": 9,
+          "siswa_nama": "Ayu Sari",
+          "user_id": 9,
+          "user_id_actual": null,
+          "user_nama": null,
+          "role": null
+        },
+        {
+          "id_siswa": 10,
+          "siswa_nama": "Nur Sari",
+          "user_id": 10,
+          "user_id_actual": null,
+          "user_nama": null,
+          "role": null
+        }
+      ]
+    },
+    "brokenRelationships": {
+      "count": 76,
+      "samples": [
+        {
+          "id_siswa": 1,
+          "nama": "Omar Kusuma",
+          "user_id": 0
+        },
+        {
+          "id_siswa": 2,
+          "nama": "Aisyah Susanto",
+          "user_id": 0
+        },
+        {
+          "id_siswa": 3,
+          "nama": "Oki Wulandari",
+          "user_id": 3
+        },
+        {
+          "id_siswa": 4,
+          "nama": "Sari Saputra",
+          "user_id": 4
+        },
+        {
+          "id_siswa": 5,
+          "nama": "Bambang Sari",
+          "user_id": 5
+        },
+        {
+          "id_siswa": 6,
+          "nama": "Vera Hidayat",
+          "user_id": 6
+        },
+        {
+          "id_siswa": 7,
+          "nama": "Lina Susanto",
+          "user_id": 7
+        },
+        {
+          "id_siswa": 8,
+          "nama": "Hadi Rahayu",
+          "user_id": 8
+        },
+        {
+          "id_siswa": 9,
+          "nama": "Ayu Sari",
+          "user_id": 9
+        },
+        {
+          "id_siswa": 10,
+          "nama": "Nur Sari",
+          "user_id": 10
+        }
+      ]
+    },
+    "userRoles": [
+      "",
+      "ADMIN",
+      "GURU",
+      "perwakilan"
+    ],
+    "roleEnumDefinition": "enum('ADMIN','GURU','KETOS','perwakilan')",
+    "siswaStatistics": {
+      "total_siswa": 78,
+      "dengan_akun": "78",
+      "tanpa_akun": "0"
+    },
+    "userStatistics": [
+      {
+        "role": "",
+        "count": 148
+      },
+      {
+        "role": "ADMIN",
+        "count": 2
+      },
+      {
+        "role": "GURU",
+        "count": 27
+      },
+      {
+        "role": "perwakilan",
+        "count": 2
+      }
+    ]
+  },
+  "dependencies": [
+    {
+      "TABLE_NAME": "absensi_guru",
+      "COLUMN_NAME": "siswa_pencatat_id",
+      "CONSTRAINT_NAME": "fk_absensi_siswa",
+      "REFERENCED_TABLE_NAME": "siswa",
+      "REFERENCED_COLUMN_NAME": "id_siswa"
+    },
+    {
+      "TABLE_NAME": "absensi_guru_jadwal",
+      "COLUMN_NAME": "siswa_pencatat_id",
+      "CONSTRAINT_NAME": "absensi_guru_jadwal_ibfk_3",
+      "REFERENCED_TABLE_NAME": "siswa",
+      "REFERENCED_COLUMN_NAME": "id_siswa"
+    },
+    {
+      "TABLE_NAME": "absensi_siswa",
+      "COLUMN_NAME": "siswa_id",
+      "CONSTRAINT_NAME": "fk_absensi_siswa_siswa",
+      "REFERENCED_TABLE_NAME": "siswa",
+      "REFERENCED_COLUMN_NAME": "id_siswa"
+    },
+    {
+      "TABLE_NAME": "guru",
+      "COLUMN_NAME": "user_id",
+      "CONSTRAINT_NAME": "fk_guru_users",
+      "REFERENCED_TABLE_NAME": "users",
+      "REFERENCED_COLUMN_NAME": "id"
+    },
+    {
+      "TABLE_NAME": "pengajuan_banding_absen",
+      "COLUMN_NAME": "siswa_id",
+      "CONSTRAINT_NAME": "fk_banding_absen_siswa",
+      "REFERENCED_TABLE_NAME": "siswa",
+      "REFERENCED_COLUMN_NAME": "id_siswa"
+    }
+  ],
+  "issues": [
+    {
+      "severity": "HIGH",
+      "table": "pengguna",
+      "issue": "Table does not exist",
+      "message": "Table 'absenta13.pengguna' doesn't exist"
+    },
+    {
+      "severity": "CRITICAL",
+      "table": "siswa",
+      "issue": "Broken foreign key relationships",
+      "count": 76,
+      "message": "siswa.user_id references non-existent users.id"
+    },
+    {
+      "severity": "HIGH",
+      "table": "users",
+      "issue": "Missing SISWA role in enum",
+      "message": "Role enum needs to be updated to include SISWA"
+    }
+  ],
+  "recommendations": [
+    {
+      "priority": "HIGH",
+      "action": "Fix broken relationships",
+      "description": "Set user_id to NULL for siswa with non-existent user references"
+    },
+    {
+      "priority": "HIGH",
+      "action": "Update role enum",
+      "description": "Add SISWA to users.role enum and migrate KETOS/perwakilan to SISWA"
+    }
+  ]
+}

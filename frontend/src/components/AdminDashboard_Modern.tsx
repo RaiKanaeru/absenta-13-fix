@@ -28,6 +28,7 @@ import { printReport } from "@/utils/printLayouts";
 import ExcelPreview from './ExcelPreview';
 // import ReportHeader from './ReportHeader';
 import PresensiSiswaView from './PresensiSiswaView';
+import Pagination from './Pagination';
 import RekapKetidakhadiranView from './RekapKetidakhadiranView';
 import RekapKetidakhadiranGuruView from './RekapKetidakhadiranGuruView';
 import ExcelImportView from './ExcelImportView';
@@ -269,13 +270,20 @@ const ManageTeacherAccountsView = ({ onBack, onLogout }: { onBack: () => void; o
   const [dialogOpen, setDialogOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [showImport, setShowImport] = useState(false);
+  
+  // ✅ Pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(20);
+  const [totalItems, setTotalItems] = useState(0);
+  const [totalPages, setTotalPages] = useState(0);
 
   const fetchTeachers = useCallback(async () => {
     try {
       console.log('🔄 Fetching teachers data...');
-      // Add cache busting parameter
-      const timestamp = Date.now();
-      const response = await apiCall(`/api/admin/guru?t=${timestamp}`, {}, onLogout);
+      
+      // ✅ Add pagination params
+      const url = `/api/admin/guru?page=${currentPage}&limit=${itemsPerPage}&search=${searchTerm}`;
+      const response = await apiCall(url, {}, onLogout);
       console.log('📊 Teachers data received:', response);
       
       // Handle different response formats
@@ -293,12 +301,21 @@ const ManageTeacherAccountsView = ({ onBack, onLogout }: { onBack: () => void; o
       console.log('📊 Processed teachers data:', teachersArray.length, 'teachers');
       console.log('📊 Sample teacher data:', teachersArray[0]);
       setTeachers(teachersArray);
+      
+      // ✅ Extract pagination metadata
+      if (response.pagination) {
+        setTotalItems(response.pagination.total);
+        setTotalPages(response.pagination.total_pages);
+      } else {
+        setTotalItems(teachersArray.length);
+        setTotalPages(1);
+      }
     } catch (error) {
       console.error('Error fetching teachers:', error);
       toast({ title: "Error memuat data guru", description: error.message, variant: "destructive" });
       setTeachers([]);
     }
-  }, [onLogout]);
+  }, [currentPage, itemsPerPage, searchTerm, onLogout]);
 
   const fetchSubjects = useCallback(async () => {
     try {
@@ -478,14 +495,12 @@ const ManageTeacherAccountsView = ({ onBack, onLogout }: { onBack: () => void; o
       });
     }
   };
-
-  const filteredTeachers = ensureArray<Teacher>(teachers).filter(teacher => {
-    const searchLower = searchTerm.toLowerCase();
-    return (
-      (teacher.nama && teacher.nama.toLowerCase().includes(searchLower)) ||
-      (teacher.nip && teacher.nip.toLowerCase().includes(searchLower))
-    );
-  });
+  
+  // ✅ Search handler - reset to page 1 on search
+  const handleSearch = (term: string) => {
+    setSearchTerm(term);
+    setCurrentPage(1);
+  };
 
   if (showImport) {
     return <ExcelImportView entityType="guru" entityName="Akun Guru" onBack={() => setShowImport(false)} />;
@@ -663,12 +678,12 @@ const ManageTeacherAccountsView = ({ onBack, onLogout }: { onBack: () => void; o
               <Input
                 placeholder="Cari berdasarkan nama, username, atau NIP..."
                 value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
+                onChange={(e) => handleSearch(e.target.value)}
                 className="pl-10"
               />
             </div>
             <Badge variant="secondary" className="px-3 py-1">
-              {filteredTeachers.length} guru ditemukan
+              {totalItems} guru ditemukan
             </Badge>
           </div>
         </CardContent>
@@ -683,7 +698,7 @@ const ManageTeacherAccountsView = ({ onBack, onLogout }: { onBack: () => void; o
           </CardTitle>
         </CardHeader>
         <CardContent>
-          {filteredTeachers.length === 0 ? (
+          {teachers.length === 0 ? (
             <div className="text-center py-12">
               <GraduationCap className="w-16 h-16 mx-auto text-gray-400 mb-4" />
               <h3 className="text-xl font-semibold text-gray-900 mb-2">Belum Ada Data</h3>
@@ -715,9 +730,9 @@ const ManageTeacherAccountsView = ({ onBack, onLogout }: { onBack: () => void; o
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filteredTeachers.map((teacher, index) => (
+                  {teachers.map((teacher, index) => (
                     <TableRow key={teacher.id}>
-                      <TableCell className="text-gray-500 text-sm">{index + 1}</TableCell>
+                      <TableCell className="text-gray-500 text-sm">{(currentPage - 1) * itemsPerPage + index + 1}</TableCell>
                       <TableCell className="font-mono text-sm">{teacher.nip || '-'}</TableCell>
                       <TableCell className="font-medium">{teacher.nama || '-'}</TableCell>
                       <TableCell className="font-mono text-sm">{teacher.username || '-'}</TableCell>
@@ -773,6 +788,21 @@ const ManageTeacherAccountsView = ({ onBack, onLogout }: { onBack: () => void; o
                   ))}
                 </TableBody>
               </Table>
+              
+              {/* ✅ Pagination Component */}
+              <Pagination
+                currentPage={currentPage}
+                totalPages={totalPages}
+                totalItems={totalItems}
+                itemsPerPage={itemsPerPage}
+                onPageChange={(page) => setCurrentPage(page)}
+                onItemsPerPageChange={(limit) => {
+                  setItemsPerPage(limit);
+                  setCurrentPage(1);
+                }}
+                showItemsPerPage={true}
+                className="mt-4"
+              />
             </div>
           )}
         </CardContent>
@@ -799,11 +829,20 @@ const ManageStudentDataView = ({ onBack, onLogout }: { onBack: () => void; onLog
   const [editingId, setEditingId] = useState<number | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [showImport, setShowImport] = useState(false);
+  
+  // ✅ Pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(20);
+  const [totalItems, setTotalItems] = useState(0);
+  const [totalPages, setTotalPages] = useState(0);
 
   const fetchStudentsData = useCallback(async () => {
     try {
       console.log('🔄 Fetching students data...');
-      const response = await apiCall('/api/admin/siswa', {}, onLogout);
+      
+      // ✅ Add pagination params
+      const url = `/api/admin/siswa?page=${currentPage}&limit=${itemsPerPage}&search=${searchTerm}`;
+      const response = await apiCall(url, {}, onLogout);
       console.log('📊 Raw response:', response);
       
       // Handle nested response structure: response.data.data
@@ -824,12 +863,21 @@ const ManageStudentDataView = ({ onBack, onLogout }: { onBack: () => void; onLog
       const studentsArray = Array.isArray(students) ? students : [];
       console.log('📊 Students data received:', studentsArray.length, 'students');
       setStudentsData(studentsArray);
+      
+      // ✅ Extract pagination metadata
+      if (response.pagination) {
+        setTotalItems(response.pagination.total);
+        setTotalPages(response.pagination.total_pages);
+      } else {
+        setTotalItems(studentsArray.length);
+        setTotalPages(1);
+      }
     } catch (error) {
       console.error('Error fetching students data:', error);
       toast({ title: "Error memuat data siswa", description: error.message, variant: "destructive" });
       setStudentsData([]);
     }
-  }, [onLogout]);
+  }, [currentPage, itemsPerPage, searchTerm, onLogout]);
 
   const fetchClasses = useCallback(async () => {
     try {
@@ -926,15 +974,12 @@ const ManageStudentDataView = ({ onBack, onLogout }: { onBack: () => void; onLog
       toast({ title: "Error menghapus data siswa", description: error.message, variant: "destructive" });
     }
   };
-
-  const filteredStudents = studentsData.filter(student => {
-    const searchLower = searchTerm.toLowerCase();
-    return (
-      (student.nama && student.nama.toLowerCase().includes(searchLower)) ||
-      (student.nis && student.nis.toLowerCase().includes(searchLower)) ||
-      (student.nama_kelas && student.nama_kelas.toLowerCase().includes(searchLower))
-    );
-  });
+  
+  // ✅ Search handler - reset to page 1 on search
+  const handleSearch = (term: string) => {
+    setSearchTerm(term);
+    setCurrentPage(1);
+  };
 
   if (showImport) {
     return <ExcelImportView entityType="siswa" entityName="Data Siswa" onBack={() => setShowImport(false)} />;
@@ -1101,12 +1146,12 @@ const ManageStudentDataView = ({ onBack, onLogout }: { onBack: () => void; onLog
               <Input
                 placeholder="Cari berdasarkan nama, NIS, atau kelas..."
                 value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
+                onChange={(e) => handleSearch(e.target.value)}
                 className="pl-10"
               />
             </div>
             <Badge variant="secondary" className="px-3 py-1">
-              {filteredStudents.length} siswa ditemukan
+              {totalItems} siswa ditemukan
             </Badge>
           </div>
         </CardContent>
@@ -1121,7 +1166,7 @@ const ManageStudentDataView = ({ onBack, onLogout }: { onBack: () => void; onLog
           </CardTitle>
         </CardHeader>
         <CardContent>
-          {filteredStudents.length === 0 ? (
+          {studentsData.length === 0 ? (
             <div className="text-center py-12">
               <Users className="w-16 h-16 mx-auto text-gray-400 mb-4" />
               <h3 className="text-xl font-semibold text-gray-900 mb-2">Belum Ada Data</h3>
@@ -1147,9 +1192,9 @@ const ManageStudentDataView = ({ onBack, onLogout }: { onBack: () => void; onLog
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filteredStudents.map((student, index) => (
+                  {studentsData.map((student, index) => (
                     <TableRow key={student.id}>
-                      <TableCell className="text-gray-500 text-sm">{index + 1}</TableCell>
+                      <TableCell className="text-gray-500 text-sm">{(currentPage - 1) * itemsPerPage + index + 1}</TableCell>
                       <TableCell className="font-mono text-sm">{student.nis}</TableCell>
                       <TableCell className="font-medium">{student.nama}</TableCell>
                       <TableCell>
@@ -1224,6 +1269,21 @@ const ManageStudentDataView = ({ onBack, onLogout }: { onBack: () => void; onLog
                   ))}
                 </TableBody>
               </Table>
+              
+              {/* ✅ Pagination Component */}
+              <Pagination
+                currentPage={currentPage}
+                totalPages={totalPages}
+                totalItems={totalItems}
+                itemsPerPage={itemsPerPage}
+                onPageChange={(page) => setCurrentPage(page)}
+                onItemsPerPageChange={(limit) => {
+                  setItemsPerPage(limit);
+                  setCurrentPage(1);
+                }}
+                showItemsPerPage={true}
+                className="mt-4"
+              />
             </div>
           )}
         </CardContent>
@@ -1250,13 +1310,20 @@ const ManageTeacherDataView = ({ onBack, onLogout }: { onBack: () => void; onLog
   const [editingId, setEditingId] = useState<number | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [showImport, setShowImport] = useState(false);
+  
+  // ✅ Pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(20);
+  const [totalItems, setTotalItems] = useState(0);
+  const [totalPages, setTotalPages] = useState(0);
 
   const fetchTeachersData = useCallback(async () => {
     try {
       console.log('🔄 Fetching teachers data...');
-      // Add cache busting parameter
-      const timestamp = Date.now();
-      const response = await apiCall(`/api/admin/guru?t=${timestamp}`, {}, onLogout);
+      
+      // ✅ Add pagination params
+      const url = `/api/admin/guru?page=${currentPage}&limit=${itemsPerPage}&search=${searchTerm}`;
+      const response = await apiCall(url, {}, onLogout);
       console.log('📊 Teachers data received:', response);
       
       // Handle different response formats
@@ -1291,12 +1358,21 @@ const ManageTeacherDataView = ({ onBack, onLogout }: { onBack: () => void; onLog
       
       setTeachersData(teachersArray);
       console.log('📊 Teachers data state updated');
+      
+      // ✅ Extract pagination metadata
+      if (response.pagination) {
+        setTotalItems(response.pagination.total);
+        setTotalPages(response.pagination.total_pages);
+      } else {
+        setTotalItems(teachersArray.length);
+        setTotalPages(1);
+      }
     } catch (error) {
       console.error('Error fetching teachers data:', error);
       toast({ title: "Error memuat data guru", description: error.message, variant: "destructive" });
       setTeachersData([]);
     }
-  }, [onLogout]);
+  }, [currentPage, itemsPerPage, searchTerm, onLogout]);
 
   useEffect(() => {
     fetchTeachersData();
@@ -1400,20 +1476,12 @@ const ManageTeacherDataView = ({ onBack, onLogout }: { onBack: () => void; onLog
       toast({ title: "Error menghapus data guru", description: error.message, variant: "destructive" });
     }
   };
-
-  const filteredTeachers = teachersData.filter(teacher => {
-    const searchLower = searchTerm.toLowerCase();
-    return (
-      (teacher.nama && teacher.nama.toLowerCase().includes(searchLower)) ||
-      (teacher.nip && teacher.nip.toLowerCase().includes(searchLower)) ||
-      (teacher.nama_mapel && teacher.nama_mapel.toLowerCase().includes(searchLower))
-    );
-  });
-
-  // Log filtered teachers for debugging
-  console.log('📊 Filtered teachers:', filteredTeachers.length, 'teachers');
-  console.log('📊 Teachers data length:', teachersData.length);
-  console.log('📊 Search term:', searchTerm);
+  
+  // ✅ Search handler - reset to page 1 on search
+  const handleSearch = (term: string) => {
+    setSearchTerm(term);
+    setCurrentPage(1);
+  };
 
   if (showImport) {
     return <ExcelImportView entityType="guru" entityName="Data Guru" onBack={() => setShowImport(false)} />;
@@ -1581,12 +1649,12 @@ const ManageTeacherDataView = ({ onBack, onLogout }: { onBack: () => void; onLog
               <Input
                 placeholder="Cari berdasarkan nama, NIP, atau mata pelajaran..."
                 value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
+                onChange={(e) => handleSearch(e.target.value)}
                 className="pl-10"
               />
             </div>
             <Badge variant="secondary" className="px-3 py-1">
-              {filteredTeachers.length} guru ditemukan
+              {totalItems} guru ditemukan
             </Badge>
           </div>
         </CardContent>
@@ -1601,7 +1669,7 @@ const ManageTeacherDataView = ({ onBack, onLogout }: { onBack: () => void; onLog
           </CardTitle>
         </CardHeader>
         <CardContent>
-          {filteredTeachers.length === 0 ? (
+          {teachersData.length === 0 ? (
             <div className="text-center py-12">
               <GraduationCap className="w-16 h-16 mx-auto text-gray-400 mb-4" />
               <h3 className="text-xl font-semibold text-gray-900 mb-2">Belum Ada Data</h3>
@@ -1626,9 +1694,9 @@ const ManageTeacherDataView = ({ onBack, onLogout }: { onBack: () => void; onLog
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filteredTeachers.map((teacher, index) => (
+                  {teachersData.map((teacher, index) => (
                     <TableRow key={`${teacher.id}-${teacher.no_telp}-${teacher.alamat}-${Date.now()}`}>
-                      <TableCell className="text-gray-500 text-sm">{index + 1}</TableCell>
+                      <TableCell className="text-gray-500 text-sm">{(currentPage - 1) * itemsPerPage + index + 1}</TableCell>
                       <TableCell className="font-mono text-sm">{teacher.nip}</TableCell>
                       <TableCell className="font-medium">{teacher.nama}</TableCell>
                       <TableCell className="text-sm">{teacher.email || '-'}</TableCell>
@@ -1696,6 +1764,21 @@ const ManageTeacherDataView = ({ onBack, onLogout }: { onBack: () => void; onLog
                   ))}
                 </TableBody>
               </Table>
+              
+              {/* ✅ Pagination Component */}
+              <Pagination
+                currentPage={currentPage}
+                totalPages={totalPages}
+                totalItems={totalItems}
+                itemsPerPage={itemsPerPage}
+                onPageChange={(page) => setCurrentPage(page)}
+                onItemsPerPageChange={(limit) => {
+                  setItemsPerPage(limit);
+                  setCurrentPage(1);
+                }}
+                showItemsPerPage={true}
+                className="mt-4"
+              />
             </div>
           )}
         </CardContent>
@@ -2412,11 +2495,20 @@ const ManageStudentsView = ({ onBack, onLogout }: { onBack: () => void; onLogout
   const [dialogOpen, setDialogOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [showImport, setShowImport] = useState(false);
+  
+  // ✅ Pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(20);
+  const [totalItems, setTotalItems] = useState(0);
+  const [totalPages, setTotalPages] = useState(0);
 
   const fetchStudents = useCallback(async () => {
     try {
       console.log('🔄 Fetching students data...');
-      const response = await apiCall('/api/admin/siswa', {}, onLogout);
+      
+      // ✅ Add pagination params
+      const url = `/api/admin/siswa?page=${currentPage}&limit=${itemsPerPage}&search=${searchTerm}`;
+      const response = await apiCall(url, {}, onLogout);
       console.log('📊 Raw response:', response);
       
       // Handle nested response structure: response.data.data
@@ -2438,12 +2530,21 @@ const ManageStudentsView = ({ onBack, onLogout }: { onBack: () => void; onLogout
       console.log('📊 Students data received:', studentsArray.length, 'students');
       console.log('📊 Sample data:', studentsArray.slice(0, 2));
       setStudents(studentsArray);
+      
+      // ✅ Extract pagination metadata
+      if (response.pagination) {
+        setTotalItems(response.pagination.total);
+        setTotalPages(response.pagination.total_pages);
+      } else {
+        setTotalItems(studentsArray.length);
+        setTotalPages(1);
+      }
     } catch (error) {
       console.error('Error fetching students:', error);
       toast({ title: "Error memuat data siswa", description: error.message, variant: "destructive" });
       setStudents([]);
     }
-  }, [onLogout]);
+  }, [currentPage, itemsPerPage, searchTerm, onLogout]);
 
   const fetchClasses = useCallback(async () => {
     try {
@@ -2601,16 +2702,12 @@ const ManageStudentsView = ({ onBack, onLogout }: { onBack: () => void; onLogout
       toast({ title: "Error menghapus akun siswa", description: error.message, variant: "destructive" });
     }
   };
-
-  const filteredStudents = students.filter(student => {
-    const searchLower = searchTerm.toLowerCase();
-    return (
-      (student.nama && student.nama.toLowerCase().includes(searchLower)) ||
-      (student.username && student.username.toLowerCase().includes(searchLower)) ||
-      (student.nis && student.nis.toLowerCase().includes(searchLower)) ||
-      (student.nama_kelas && student.nama_kelas.toLowerCase().includes(searchLower))
-    );
-  });
+  
+  // ✅ Search handler - reset to page 1 on search
+  const handleSearch = (term: string) => {
+    setSearchTerm(term);
+    setCurrentPage(1);
+  };
 
   if (showImport) {
     return <ExcelImportView entityType="siswa" entityName="Akun Siswa" onBack={() => setShowImport(false)} />;
@@ -2845,12 +2942,12 @@ const ManageStudentsView = ({ onBack, onLogout }: { onBack: () => void; onLogout
               <Input
                 placeholder="Cari berdasarkan nama, username, NIS, atau kelas..."
                 value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
+                onChange={(e) => handleSearch(e.target.value)}
                 className="pl-10"
               />
             </div>
             <Badge variant="secondary" className="px-3 py-1">
-              {filteredStudents.length} siswa ditemukan
+              {totalItems} siswa ditemukan
             </Badge>
           </div>
         </CardContent>
@@ -2865,7 +2962,7 @@ const ManageStudentsView = ({ onBack, onLogout }: { onBack: () => void; onLogout
           </CardTitle>
         </CardHeader>
         <CardContent>
-          {filteredStudents.length === 0 ? (
+          {students.length === 0 ? (
             <div className="text-center py-12">
               <Users className="w-16 h-16 mx-auto text-gray-400 mb-4" />
               <h3 className="text-xl font-semibold text-gray-900 mb-2">Belum Ada Data</h3>
@@ -2899,9 +2996,9 @@ const ManageStudentsView = ({ onBack, onLogout }: { onBack: () => void; onLogout
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filteredStudents.map((student, index) => (
+                  {students.map((student, index) => (
                     <TableRow key={student.id}>
-                      <TableCell className="text-gray-500 text-sm">{index + 1}</TableCell>
+                      <TableCell className="text-gray-500 text-sm">{(currentPage - 1) * itemsPerPage + index + 1}</TableCell>
                       <TableCell className="font-mono text-sm">{student.nis || '-'}</TableCell>
                       <TableCell className="font-medium">{student.nama || '-'}</TableCell>
                       <TableCell>
@@ -2963,6 +3060,21 @@ const ManageStudentsView = ({ onBack, onLogout }: { onBack: () => void; onLogout
                   ))}
                 </TableBody>
               </Table>
+              
+              {/* ✅ Pagination Component */}
+              <Pagination
+                currentPage={currentPage}
+                totalPages={totalPages}
+                totalItems={totalItems}
+                itemsPerPage={itemsPerPage}
+                onPageChange={(page) => setCurrentPage(page)}
+                onItemsPerPageChange={(limit) => {
+                  setItemsPerPage(limit);
+                  setCurrentPage(1);
+                }}
+                showItemsPerPage={true}
+                className="mt-4"
+              />
             </div>
           )}
         </CardContent>
@@ -3181,14 +3293,6 @@ const ManageSchedulesView = ({ onBack, onLogout }: { onBack: () => void; onLogou
   const handleGuruToggle = (guruId: number, checked: boolean) => {
     const guruIdStr = String(guruId);
     if (checked) {
-      if (formData.guru_ids.length >= 3) {
-        toast({
-          title: "Peringatan",
-          description: "Maksimal 3 guru per jadwal",
-          variant: "destructive"
-        });
-        return;
-      }
       setFormData({
         ...formData,
         guru_ids: [...formData.guru_ids, guruIdStr],
@@ -3391,15 +3495,6 @@ const ManageSchedulesView = ({ onBack, onLogout }: { onBack: () => void; onLogou
       toast({
         title: "Error",
         description: "Minimal 1 guru harus dipilih",
-        variant: "destructive"
-      });
-      setIsLoading(false);
-      return;
-    }
-    if (formData.guru_ids.length > 3) {
-      toast({
-        title: "Error", 
-        description: "Maksimal 3 guru per jadwal",
         variant: "destructive"
       });
       setIsLoading(false);
@@ -3858,7 +3953,7 @@ const ManageSchedulesView = ({ onBack, onLogout }: { onBack: () => void; onLogou
                   </PopoverTrigger>
                   <PopoverContent className="w-80">
                     <div className="space-y-2">
-                      <h4 className="font-medium text-sm">Pilih Guru (Maksimal 3)</h4>
+                      <h4 className="font-medium text-sm">Pilih Guru</h4>
                       <div className="space-y-2 max-h-60 overflow-y-auto">
                         {ensureArray<Teacher>(teachers).filter(teacher => hasValidId(teacher)).map((teacher) => (
                           <div key={teacher.id} className="flex items-center space-x-2">
@@ -3866,7 +3961,6 @@ const ManageSchedulesView = ({ onBack, onLogout }: { onBack: () => void; onLogou
                               id={`guru-${teacher.id}`}
                               checked={formData.guru_ids.includes(String(teacher.id))}
                               onCheckedChange={(checked) => handleGuruToggle(teacher.id, checked as boolean)}
-                              disabled={!formData.guru_ids.includes(String(teacher.id)) && formData.guru_ids.length >= 3}
                             />
                             <Label htmlFor={`guru-${teacher.id}`} className="text-sm">
                               {teacher.nama} (NIP: {teacher.nip})
@@ -7259,37 +7353,22 @@ const StudentPromotionView = ({ onBack, onLogout }: { onBack: () => void; onLogo
     console.log('👥 Fetching students for classId:', classId);
     setIsLoading(true);
     try {
-      const response = await apiCall('/api/admin/siswa', {}, onLogout);
+      // ✅ FIXED: Use kelas_id query parameter for server-side filtering
+      const response = await apiCall(`/api/admin/siswa?kelas_id=${classId}`, {}, onLogout);
       console.log('📊 Raw response:', response);
       
-      // Handle nested response structure: response.data.data
-      let students;
-      if (response.data && response.data.data) {
-        students = response.data.data;
-      } else if (response.data) {
-        students = response.data;
-      } else {
-        students = response;
-      }
+      // Backend returns: { success: true, data: [...], pagination: {...} }
+      const students = response.data || [];
       
-      console.log('📊 Raw students data:', students);
-      console.log('🔍 Filtering students for classId:', classId);
+      console.log('✅ Students from backend:', students);
+      console.log('📊 Total students in class:', students.length);
       
-      const filteredStudents = students.filter((student: StudentData) => {
-        // Convert both to string for comparison
-        const studentClassId = student.kelas_id?.toString();
-        const targetClassId = classId.toString();
-        const matches = studentClassId === targetClassId;
-        console.log(`Student ${student.nama} (ID: ${student.id_siswa}) - kelas_id: ${studentClassId}, target: ${targetClassId}, matches: ${matches}`);
-        return matches;
-      });
-      
-      console.log('✅ Filtered students:', filteredStudents);
-      setStudents(filteredStudents);
+      setStudents(students);
       setSelectedStudents(new Set()); // Reset selection
     } catch (error) {
       console.error('❌ Error fetching students:', error);
       toast({ title: "Error memuat data siswa", description: error.message, variant: "destructive" });
+      setStudents([]); // Clear students on error
     } finally {
       setIsLoading(false);
     }

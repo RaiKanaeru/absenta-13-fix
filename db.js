@@ -12,11 +12,12 @@ const dbConfig = {
     database: process.env.DB_NAME || 'absenta13',
     waitForConnections: true,
     connectionLimit: parseInt(process.env.DB_CONNECTION_LIMIT) || 10,
+    maxIdle: 5, // Maximum idle connections
     queueLimit: 0,
     enableKeepAlive: true,
-    keepAliveInitialDelay: 0,
+    keepAliveInitialDelay: 10000, // Changed from 0 to 10s
     connectTimeout: 10000,
-    idleTimeout: 300000,
+    idleTimeout: 600000, // Changed from 300000 (5min) to 600000 (10min)
     charset: 'utf8mb4',
     port: 3306
 };
@@ -33,7 +34,45 @@ console.log('🗄️ Database config:', {
 });
 
 // Create connection pool
-const pool = mysql.createPool(dbConfig);
+let pool = mysql.createPool(dbConfig);
+
+// Reconnection state
+let isPoolClosed = false;
+let reconnectAttempts = 0;
+const MAX_RECONNECT_ATTEMPTS = 5;
+
+async function recreatePool() {
+    if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
+        console.error('❌ Max reconnection attempts reached. Please check MySQL server.');
+        return false;
+    }
+    
+    try {
+        reconnectAttempts++;
+        console.log(`🔄 Attempting to recreate pool (attempt ${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})...`);
+        
+        // Close existing pool if any
+        if (pool && !isPoolClosed) {
+            await pool.end();
+        }
+        
+        // Create new pool
+        const newPool = mysql.createPool(dbConfig);
+        
+        // Test connection
+        await newPool.execute('SELECT 1 as test');
+        
+        console.log('✅ Pool recreated successfully');
+        isPoolClosed = false;
+        reconnectAttempts = 0;
+        return newPool;
+    } catch (error) {
+        console.error(`❌ Failed to recreate pool:`, error.message);
+        // Wait before retry
+        await new Promise(resolve => setTimeout(resolve, 5000));
+        return null;
+    }
+}
 
 // Database helper functions
 export const db = {
@@ -155,11 +194,17 @@ export const db = {
 
     // Close pool
     async close() {
+        if (isPoolClosed) {
+            console.log('ℹ️ Pool already closed');
+            return;
+        }
+        
         try {
+            isPoolClosed = true;
             await pool.end();
             console.log('✅ Database pool closed');
         } catch (error) {
-            console.error('❌ Error closing database pool:', error);
+            console.error('❌ Error closing database pool:', error.message);
         }
     }
 };
@@ -169,10 +214,15 @@ pool.on('connection', (connection) => {
     console.log('🔗 New database connection established');
 });
 
-pool.on('error', (err) => {
+pool.on('error', async (err) => {
     console.error('❌ Database pool error:', err);
-    if (err.code === 'PROTOCOL_CONNECTION_LOST') {
-        console.log('🔄 Connection lost, pool will handle reconnection');
+    if (err.code === 'PROTOCOL_CONNECTION_LOST' || err.code === 'ECONNREFUSED') {
+        console.log('🔄 Connection lost, attempting reconnection...');
+        isPoolClosed = true;
+        const newPool = await recreatePool();
+        if (newPool) {
+            pool = newPool;
+        }
     }
 });
 

@@ -1562,12 +1562,6 @@ app.post('/api/admin/jadwal', authenticateToken, requireRole(['admin']), async (
                 details: 'Pilih setidaknya satu guru untuk jadwal ini'
             });
         }
-        if (normalizedGuruIds.length > 3) {
-            return res.status(400).json({ 
-                error: 'Maksimal 3 guru per jadwal',
-                details: 'Pilih maksimal 3 guru untuk jadwal ini'
-            });
-        }
 
         // Check for schedule conflicts - same class, day, and time slot
         const [conflicts] = await db.execute(
@@ -1680,12 +1674,6 @@ app.put('/api/admin/jadwal/:id', authenticateToken, requireRole(['admin']), asyn
             return res.status(400).json({ 
                 error: 'Minimal 1 guru harus dipilih',
                 details: 'Pilih setidaknya satu guru untuk jadwal ini'
-            });
-        }
-        if (normalizedGuruIds.length > 3) {
-            return res.status(400).json({ 
-                error: 'Maksimal 3 guru per jadwal',
-                details: 'Pilih maksimal 3 guru untuk jadwal ini'
             });
         }
 

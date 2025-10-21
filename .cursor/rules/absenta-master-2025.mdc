@@ -1,0 +1,491 @@
+---
+alwaysApply: true
+description: Master reference untuk Absenta System 2025 - Complete Overview
+---
+
+# Absenta System 2025 - Master Reference
+
+## 🎯 STATUS SISTEM (Updated: 21 Oktober 2025)
+
+**Version**: 2.0 (Post Full Normalization)  
+**Database**: MySQL 10.4+ (absenta13)  
+**Backend**: server_modern.js (7200+ lines)  
+**Frontend**: React + TypeScript + Vite  
+**Status**: ✅ **PRODUCTION READY**
+
+### ✅ Completed Features
+- **Database Normalization** (Opsi 2 Full) - users, guru, siswa separated
+- **Multi-Teacher System** - Multiple teachers per schedule
+- **Banding Absen** - Attendance appeals (individual & class)
+- **Export System** - 6 export endpoints dengan daily attendance logic
+- **Smart Pagination** - Backend pagination untuk performance
+
+### ❌ Removed Features
+- **Pengajuan Izin Siswa** - DELETED (tidak digunakan lagi)
+
+---
+
+## 📊 DATABASE ARCHITECTURE
+
+### **Core Tables** (19 active + 2 views)
+
+#### **User Management** (Normalized - Opsi 2)
+```sql
+-- users: Akun pengguna (ADMIN, GURU, SISWA)
+CREATE TABLE users (
+  id INT PRIMARY KEY AUTO_INCREMENT,
+  username VARCHAR(50) UNIQUE NOT NULL,
+  password VARCHAR(255) NOT NULL,
+  role ENUM('ADMIN','GURU','SISWA') NOT NULL,
+  email VARCHAR(100),
+  nomor_telepon VARCHAR(20),
+  status ENUM('aktif','tidak_aktif','ditangguhkan') DEFAULT 'aktif',
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+
+-- guru: Data guru (user_id REQUIRED)
+CREATE TABLE guru (
+  id INT PRIMARY KEY AUTO_INCREMENT,
+  id_guru INT UNIQUE NOT NULL,
+  user_id INT NOT NULL,
+  nip VARCHAR(30) NOT NULL,
+  nama VARCHAR(100) NOT NULL,
+  mapel_id INT,
+  status ENUM('aktif','tidak_aktif','pensiun') DEFAULT 'aktif',
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+-- siswa: Data siswa (user_id NULLABLE ⚠️)
+CREATE TABLE siswa (
+  id INT PRIMARY KEY AUTO_INCREMENT,
+  id_siswa INT UNIQUE NOT NULL,
+  user_id INT NULL,  -- ✅ NULLABLE: siswa bisa ada tanpa akun
+  nis VARCHAR(30) UNIQUE NOT NULL,
+  nama VARCHAR(100) NOT NULL,
+  kelas_id INT NOT NULL,
+  jabatan VARCHAR(50) DEFAULT 'Sekretaris Kelas',
+  status ENUM('aktif','tidak_aktif','lulus','pindah') DEFAULT 'aktif',
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL,
+  FOREIGN KEY (kelas_id) REFERENCES kelas(id_kelas)
+);
+
+-- ✅ siswa_perwakilan: VIEW backward compatibility
+CREATE VIEW siswa_perwakilan AS SELECT * FROM siswa;
+```
+
+#### **Multi-Teacher System** (NEW 2025)
+```sql
+-- jadwal: Primary teacher via guru_id
+CREATE TABLE jadwal (
+  id_jadwal INT PRIMARY KEY AUTO_INCREMENT,
+  kelas_id INT NOT NULL,
+  mapel_id INT NOT NULL,
+  guru_id INT NOT NULL,  -- Primary teacher
+  hari VARCHAR(10),
+  jam_ke INT,
+  jam_mulai TIME,
+  jam_selesai TIME,
+  status ENUM('aktif','tidak_aktif') DEFAULT 'aktif'
+);
+
+-- jadwal_guru: Multi-teacher assignments
+CREATE TABLE jadwal_guru (
+  id INT PRIMARY KEY AUTO_INCREMENT,
+  jadwal_id INT NOT NULL,
+  guru_id INT NOT NULL,
+  is_primary TINYINT(1) DEFAULT 0,
+  status ENUM('aktif','tidak_aktif') DEFAULT 'aktif',
+  UNIQUE KEY (jadwal_id, guru_id),
+  FOREIGN KEY (jadwal_id) REFERENCES jadwal(id_jadwal) ON DELETE CASCADE,
+  FOREIGN KEY (guru_id) REFERENCES guru(id_guru) ON DELETE CASCADE
+);
+
+-- absensi_guru_jadwal: Per-schedule attendance
+CREATE TABLE absensi_guru_jadwal (
+  id INT PRIMARY KEY AUTO_INCREMENT,
+  jadwal_id INT NOT NULL,
+  guru_pencatat_id INT,
+  tanggal DATE NOT NULL,
+  jam_ke INT,
+  status ENUM('Hadir','Tidak Hadir','Sakit','Izin'),
+  UNIQUE KEY (jadwal_id, tanggal)
+);
+
+-- absensi_guru_mapping: Per-teacher mapping
+CREATE TABLE absensi_guru_mapping (
+  id INT PRIMARY KEY AUTO_INCREMENT,
+  absensi_guru_jadwal_id INT NOT NULL,
+  guru_id INT NOT NULL,
+  status ENUM('Hadir','Tidak Hadir','Sakit','Izin'),
+  UNIQUE KEY (absensi_guru_jadwal_id, guru_id)
+);
+```
+
+#### **Banding Absen System**
+```sql
+-- pengajuan_banding_absen: Appeals
+CREATE TABLE pengajuan_banding_absen (
+  id_banding INT PRIMARY KEY AUTO_INCREMENT,
+  siswa_id INT NOT NULL,
+  jadwal_id INT NOT NULL,
+  tanggal_absen DATE NOT NULL,
+  status_asli ENUM('Hadir','Izin','Sakit','Alpa','Dispen','kelas'),
+  status_diajukan ENUM('Hadir','Izin','Sakit','Alpa','Dispen','kelas'),
+  alasan_banding TEXT NOT NULL,
+  bukti_pendukung VARCHAR(255),
+  status_banding ENUM('pending','disetujui','ditolak') DEFAULT 'pending',
+  jenis_banding ENUM('individual','kelas') DEFAULT 'individual',
+  tanggal_pengajuan TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- banding_absen_detail: Class appeal details
+CREATE TABLE banding_absen_detail (
+  id_detail INT PRIMARY KEY AUTO_INCREMENT,
+  banding_id INT NOT NULL,
+  nama_siswa VARCHAR(100) NOT NULL,
+  status_asli ENUM('Hadir','Izin','Sakit','Alpa','Dispen'),
+  status_diajukan ENUM('Hadir','Izin','Sakit','Alpa','Dispen'),
+  FOREIGN KEY (banding_id) REFERENCES pengajuan_banding_absen(id_banding) ON DELETE CASCADE
+);
+```
+
+---
+
+## 🔑 CRITICAL PATTERNS
+
+### **1. Multi-Guru Query** ⭐ ALWAYS USE
+```sql
+-- Get teacher's schedules (primary + additional)
+SELECT j.* 
+FROM jadwal j
+LEFT JOIN jadwal_guru jg ON j.id_jadwal = jg.jadwal_id 
+  AND jg.guru_id = ? AND jg.status = 'aktif'
+WHERE (j.guru_id = ? OR jg.guru_id IS NOT NULL) 
+  AND j.status = 'aktif'
+```
+
+### **2. Siswa with Nullable User** ⚠️ CRITICAL
+```sql
+-- ALWAYS use LEFT JOIN for user_id
+SELECT s.*, u.username, u.email, u.status as user_status
+FROM siswa s
+LEFT JOIN users u ON s.user_id = u.id
+WHERE s.id_siswa = ?
+```
+
+### **3. Transaction Pattern** ✅ REQUIRED
+```javascript
+let connection;
+try {
+  connection = await db.getConnection();
+  await connection.beginTransaction();
+  
+  // Multiple operations
+  await connection.execute('INSERT INTO users ...', []);
+  await connection.execute('INSERT INTO siswa ...', []);
+  
+  await connection.commit();
+} catch (error) {
+  if (connection) await connection.rollback();
+  throw error;
+} finally {
+  if (connection) connection.release();
+}
+```
+
+### **4. Smart Delete Pattern** (Preserve History)
+```javascript
+// Check if student has attendance records
+const [attendance] = await connection.execute(
+  'SELECT COUNT(*) as count FROM absensi_siswa WHERE siswa_id = ?',
+  [siswaId]
+);
+
+if (attendance[0].count > 0) {
+  // Soft delete - deactivate
+  await connection.execute('UPDATE users SET status = "tidak_aktif" WHERE id = ?', [userId]);
+  await connection.execute('UPDATE siswa SET status = "tidak_aktif" WHERE id_siswa = ?', [siswaId]);
+} else {
+  // Hard delete - no history
+  await connection.execute('DELETE FROM siswa WHERE id_siswa = ?', [siswaId]);
+  await connection.execute('DELETE FROM users WHERE id = ?', [userId]);
+}
+```
+
+### **5. Daily Attendance Logic** ⭐ EXPORT SYSTEM
+```sql
+-- Priority-based daily status aggregation
+WITH daily_status AS (
+    SELECT 
+        s.id_siswa, s.nama, ase.tanggal,
+        CASE 
+            -- Alpha → Tidak Hadir (highest priority)
+            WHEN SUM(CASE WHEN ase.status = 'Alpa' THEN 1 ELSE 0 END) > 0 
+                THEN 'Alpa'
+            -- Dispen → Hadir (belajar bentuk lain)
+            WHEN SUM(CASE WHEN ase.status = 'Dispen' THEN 1 ELSE 0 END) = COUNT(*) 
+                THEN 'Dispen'
+            -- Izin/Sakit → Hadir dengan status
+            WHEN SUM(CASE WHEN ase.status IN ('Izin','Sakit') THEN 1 ELSE 0 END) = COUNT(*) 
+                THEN 'Izin'
+            -- Hadir
+            WHEN SUM(CASE WHEN ase.status = 'Hadir' THEN 1 ELSE 0 END) > 0 
+                THEN 'Hadir'
+            ELSE 'Alpa'
+        END as status_hari
+    FROM siswa s
+    LEFT JOIN absensi_siswa ase ON s.id_siswa = ase.siswa_id 
+    GROUP BY s.id_siswa, s.nama, ase.tanggal
+)
+SELECT 
+    nama,
+    SUM(CASE WHEN status_hari = 'Hadir' THEN 1 ELSE 0 END) as hadir,
+    SUM(CASE WHEN status_hari = 'Dispen' THEN 1 ELSE 0 END) as dispen,
+    COUNT(DISTINCT tanggal) as total_hari
+FROM daily_status
+WHERE tanggal IS NOT NULL
+GROUP BY nama
+```
+
+---
+
+## 🚨 COMMON MISTAKES - JANGAN LAKUKAN INI!
+
+### ❌ WRONG: Direct siswa_perwakilan reference
+```sql
+-- JANGAN:
+SELECT * FROM siswa_perwakilan WHERE id_siswa = ?;
+
+-- BENAR:
+SELECT * FROM siswa WHERE id_siswa = ?;
+```
+
+### ❌ WRONG: Assume user_id NOT NULL
+```javascript
+// JANGAN:
+const [siswa] = await db.execute('SELECT * FROM siswa WHERE user_id = ?', [userId]);
+
+// BENAR:
+const [siswa] = await db.execute(
+  'SELECT s.*, u.* FROM siswa s LEFT JOIN users u ON s.user_id = u.id WHERE s.id_siswa = ?',
+  [siswaId]
+);
+```
+
+### ❌ WRONG: Multi-table operation without transaction
+```javascript
+// JANGAN:
+await db.execute('INSERT INTO users ...', []);
+await db.execute('INSERT INTO siswa ...', []); // BERBAHAYA jika gagal!
+
+// BENAR:
+const connection = await db.getConnection();
+await connection.beginTransaction();
+try {
+  await connection.execute('INSERT INTO users ...', []);
+  await connection.execute('INSERT INTO siswa ...', []);
+  await connection.commit();
+} catch (error) {
+  await connection.rollback();
+  throw error;
+} finally {
+  connection.release();
+}
+```
+
+### ❌ WRONG: Forget multi-guru in schedule query
+```sql
+-- JANGAN (only primary teacher):
+SELECT * FROM jadwal WHERE guru_id = ?;
+
+-- BENAR (primary + additional teachers):
+SELECT j.* FROM jadwal j
+LEFT JOIN jadwal_guru jg ON j.id_jadwal = jg.jadwal_id AND jg.guru_id = ?
+WHERE j.guru_id = ? OR jg.guru_id IS NOT NULL;
+```
+
+---
+
+## 📱 API ENDPOINTS STRUCTURE
+
+### **Authentication**
+- `POST /api/login` - Support role 'SISWA'
+- `POST /api/logout` - Clear session
+
+### **Admin** (Role: admin)
+- `GET /api/admin/users` - All users with pagination
+- `POST /api/admin/siswa` - Create student + user (transaction)
+- `PUT /api/admin/students/:id` - Update student + user (transaction)
+- `DELETE /api/admin/students/:id` - Smart delete (preserve history)
+- `GET /api/admin/guru` - All teachers
+- `POST /api/admin/guru` - Create teacher + user (transaction)
+- `GET /api/admin/jadwal` - All schedules
+- `POST /api/admin/jadwal` - Create schedule + multi-guru
+
+### **Guru** (Role: guru)
+- `GET /api/guru/jadwal` - Schedules (primary + additional)
+- `GET /api/guru/kelas` - Assigned classes
+- `POST /api/guru/absensi` - Record attendance (multi-guru)
+- `GET /api/guru/banding` - Banding list (multi-guru)
+- `PUT /api/guru/banding/:id` - Respond to banding
+
+### **Siswa** (Role: siswa)
+- `GET /api/siswa/profile` - Student profile
+- `GET /api/siswa/jadwal` - Class schedule
+- `POST /api/siswa/kehadiran-guru` - Submit teacher attendance
+- `POST /api/siswa/banding` - Submit individual/class banding
+- `GET /api/siswa/banding` - Banding history
+
+### **Export** (Role: admin)
+- `GET /api/export/teacher-summary` - Teacher attendance summary
+- `GET /api/export/student-summary` - Student attendance summary
+- `GET /api/export/presensi-siswa` - Student detailed attendance
+- `GET /api/export/rekap-ketidakhadiran` - Student absence recap
+- `GET /api/export/rekap-ketidakhadiran-guru` - Teacher absence recap
+- `GET /api/export/banding-absen` - Banding history
+
+---
+
+## 🔐 SECURITY PATTERNS
+
+### **Password Management**
+```javascript
+// Hash password
+const hashedPassword = await bcrypt.hash(password, 10);
+
+// Verify password
+const isValid = await bcrypt.compare(password, user.password);
+```
+
+### **JWT Token**
+```javascript
+// Generate token
+const token = jwt.sign({ 
+  id: user.id, 
+  role: user.role.toLowerCase(), 
+  username: user.username 
+}, process.env.JWT_SECRET, { expiresIn: '24h' });
+
+// Verify token
+const decoded = jwt.verify(token, process.env.JWT_SECRET);
+```
+
+### **SQL Injection Prevention**
+```javascript
+// ✅ ALWAYS use parameterized queries
+const [rows] = await db.execute('SELECT * FROM users WHERE id = ?', [userId]);
+
+// ❌ NEVER concatenate strings
+// const query = `SELECT * FROM users WHERE id = ${userId}`; // DANGEROUS!
+```
+
+---
+
+## 🎯 DEVELOPMENT BEST PRACTICES
+
+### **1. ALWAYS Read These Rules First**
+- absenta-master-2025.mdc (this file)
+- absenta-database-schema-2025.mdc
+- absenta-api-patterns-2025.mdc
+- absenta-critical-patterns-2025.mdc
+
+### **2. Before Making Changes**
+- ✅ Check database schema
+- ✅ Verify FK relationships
+- ✅ Test with sample data
+- ✅ Use transactions for multi-table ops
+- ✅ Handle nullable fields (user_id)
+- ✅ Support multi-guru queries
+
+### **3. Testing Checklist**
+- [ ] Unit tests pass
+- [ ] Integration tests pass
+- [ ] No SQL injection vulnerabilities
+- [ ] Transactions work correctly
+- [ ] Multi-guru logic correct
+- [ ] Nullable fields handled
+- [ ] Error handling comprehensive
+
+### **4. Code Quality**
+- [ ] ESLint passes
+- [ ] TypeScript types correct
+- [ ] No console.log in production
+- [ ] Error messages informative
+- [ ] Comments untuk complex logic
+
+---
+
+## 📚 RELATED RULES
+
+**CRITICAL** (Always check these):
+- [absenta-database-schema-2025.mdc](mdc:absenta-database-schema-2025.mdc) - Database schema
+- [absenta-api-patterns-2025.mdc](mdc:absenta-api-patterns-2025.mdc) - API patterns
+- [absenta-critical-patterns-2025.mdc](mdc:absenta-critical-patterns-2025.mdc) - Query patterns
+
+**BUSINESS LOGIC**:
+- [absenta-multi-teacher.mdc](mdc:absenta-multi-teacher.mdc) - Multi-teacher system
+- [absenta-dispute-system.mdc](mdc:absenta-dispute-system.mdc) - Banding absen
+- [absenta-attendance-flow.mdc](mdc:absenta-attendance-flow.mdc) - Attendance flow
+- [absenta-export-system-2025.mdc](mdc:absenta-export-system-2025.mdc) - Export system
+
+**DEVELOPMENT**:
+- [absenta-security-patterns.mdc](mdc:absenta-security-patterns.mdc) - Security
+- [absenta-error-handling.mdc](mdc:absenta-error-handling.mdc) - Error handling
+- [absenta-performance-patterns.mdc](mdc:absenta-performance-patterns.mdc) - Performance
+- [absenta-testing-patterns.mdc](mdc:absenta-testing-patterns.mdc) - Testing
+
+**REFERENCE**:
+- [absenta-quick-reference-2025.mdc](mdc:absenta-quick-reference-2025.mdc) - Quick reference
+- [absenta-data-seeding-2025.mdc](mdc:absenta-data-seeding-2025.mdc) - Data seeding
+- [absenta-development-workflow.mdc](mdc:absenta-development-workflow.mdc) - Workflow
+
+---
+
+## ⚡ PERFORMANCE TIPS
+
+### **Critical Indexes** (Already created)
+```sql
+-- User Management
+CREATE INDEX idx_users_role_status ON users (role, status);
+CREATE INDEX idx_siswa_user_id ON siswa (user_id);
+CREATE INDEX idx_siswa_kelas_status ON siswa (kelas_id, status);
+
+-- Multi-Teacher
+CREATE INDEX idx_jadwal_guru_jadwal ON jadwal_guru (jadwal_id);
+CREATE INDEX idx_jadwal_guru_guru ON jadwal_guru (guru_id);
+CREATE INDEX idx_agj_jadwal ON absensi_guru_jadwal (jadwal_id);
+CREATE INDEX idx_agj_tanggal ON absensi_guru_jadwal (tanggal);
+
+-- Banding
+CREATE INDEX idx_pba_siswa ON pengajuan_banding_absen (siswa_id);
+CREATE INDEX idx_pba_status ON pengajuan_banding_absen (status_banding);
+```
+
+### **Query Optimization**
+- ✅ Use LIMIT for pagination
+- ✅ Index foreign keys
+- ✅ Avoid SELECT *
+- ✅ Use JOINs efficiently
+- ✅ Cache frequently accessed data
+
+---
+
+## 🎉 KEY TAKEAWAYS
+
+1. **ALWAYS use `siswa` table** (not `siswa_perwakilan` - it's just a VIEW)
+2. **Role must be 'SISWA'** (uppercase in DB, lowercase in JWT token)
+3. **user_id is NULLABLE** in siswa (check for NULL before using)
+4. **Use transactions** for all multi-table operations
+5. **Smart delete** (deactivate if has history, else hard delete)
+6. **Multi-guru queries** always use LEFT JOIN jadwal_guru
+7. **NO pengajuan izin siswa** (feature removed)
+8. **Daily attendance** uses priority-based aggregation
+9. **Export endpoints** must fetch letterhead from system_config
+10. **Security first** - parameterized queries, bcrypt, JWT
+
+---
+
+**Last Updated**: 21 Oktober 2025  
+**Schema Version**: 2.0  
+**Status**: ✅ Production Ready

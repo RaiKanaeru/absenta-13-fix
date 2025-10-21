@@ -1,0 +1,531 @@
+---
+description: Export system patterns, daily attendance logic, and report generation for Absenta (2025)
+globs: backend/export/**,backend/routes/export.js
+---
+
+# Absenta Export System - Complete Guide (2025)
+
+## 🎯 Overview
+
+Export system untuk generate Excel reports dengan Kop Laporan (letterhead) integration dan daily attendance logic.
+
+**Last Updated**: 21 Oktober 2025  
+**Status**: ✅ Production Ready
+
+---
+
+## 📊 6 Jenis Laporan Export
+
+| # | Endpoint | Schema | Query Logic | Letterhead Key |
+|---|----------|--------|-------------|----------------|
+| 1 | `/api/export/teacher-summary` | teacher-summary.js | Daily aggregation | letterhead_teacher-summary |
+| 2 | `/api/export/student-summary` | student-summary.js | Daily aggregation | letterhead_student-summary |
+| 3 | `/api/export/presensi-siswa` | presensi-siswa.js | Per mapel detail | letterhead_presensi-siswa |
+| 4 | `/api/export/rekap-ketidakhadiran` | rekap-ketidakhadiran.js | Daily + period | letterhead_rekap-ketidakhadiran |
+| 5 | `/api/export/rekap-ketidakhadiran-guru` | rekap-ketidakhadiran-guru.js | Daily + period | letterhead_rekap-ketidakhadiran-guru |
+| 6 | `/api/export/banding-absen` | banding-absen.js | Standard history | letterhead_banding-absen |
+
+---
+
+## 🔄 Daily Attendance Logic (CRITICAL)
+
+### Business Rules
+
+**Priority Logic untuk Status Harian**:
+```
+Dalam 1 hari, jika ada:
+├─ ALPHA (tanpa keterangan) → Status Hari: TIDAK HADIR ❌
+├─ IZIN/SAKIT (dengan keterangan) → Status Hari: HADIR (Izin/Sakit) ✅
+└─ DISPEN (surat dispensasi) → Status Hari: HADIR (Dispen) ✅
+    └─ Alasan: Dispen = belajar bentuk lain
+```
+
+### Implementation Pattern
+
+**SQL Query dengan CTE**:
+```sql
+WITH daily_status AS (
+    SELECT 
+        s.id_siswa,
+        s.nama,
+        ase.tanggal,
+        CASE 
+            -- Priority 1: Alpha → Tidak Hadir
+            WHEN SUM(CASE WHEN ase.status = 'Alpa' THEN 1 ELSE 0 END) > 0 
+                THEN 'Alpa'
+            
+            -- Priority 2: Dispen → Hadir (belajar bentuk lain)
+            WHEN SUM(CASE WHEN ase.status = 'Dispen' THEN 1 ELSE 0 END) = COUNT(*) 
+                THEN 'Dispen'
+            
+            -- Priority 3: Izin/Sakit → Hadir dengan status
+            WHEN SUM(CASE WHEN ase.status IN ('Izin','Sakit') THEN 1 ELSE 0 END) = COUNT(*) 
+                THEN 'Izin'
+            
+            -- Default: Hadir
+            WHEN SUM(CASE WHEN ase.status = 'Hadir' THEN 1 ELSE 0 END) > 0 
+                THEN 'Hadir'
+            
+            ELSE 'Alpa'
+        END as status_hari
+    FROM siswa s
+    LEFT JOIN absensi_siswa ase ON s.id_siswa = ase.siswa_id 
+        AND ase.tanggal BETWEEN ? AND ?
+    GROUP BY s.id_siswa, s.nama, ase.tanggal
+)
+SELECT 
+    ds.nama,
+    SUM(CASE WHEN ds.status_hari = 'Hadir' THEN 1 ELSE 0 END) as hadir,
+    SUM(CASE WHEN ds.status_hari = 'Izin' THEN 1 ELSE 0 END) as izin,
+    SUM(CASE WHEN ds.status_hari = 'Sakit' THEN 1 ELSE 0 END) as sakit,
+    SUM(CASE WHEN ds.status_hari = 'Alpa' THEN 1 ELSE 0 END) as alpa,
+    SUM(CASE WHEN ds.status_hari = 'Dispen' THEN 1 ELSE 0 END) as dispen,
+    COUNT(DISTINCT ds.tanggal) as total_hari
+FROM daily_status ds
+WHERE ds.tanggal IS NOT NULL
+GROUP BY ds.nama
+```
+
+### Presentase Calculation
+
+**Formula**:
+```javascript
+// Siswa: Dispen dihitung sebagai hadir
+const totalHadir = parseInt(row.hadir || 0) + parseInt(row.dispen || 0);
+const totalHari = parseInt(row.total_hari || 0);
+const presentase = totalHari > 0 ? (totalHadir / totalHari) : 0;
+
+// Guru: Hanya hadir yang dihitung
+const totalHadir = parseInt(row.hadir || 0);
+const totalHari = parseInt(row.total_hari || 0);
+const presentase = totalHari > 0 ? (totalHadir / totalHari) : 0;
+```
+
+---
+
+## 🏗️ Export Endpoint Pattern
+
+### Standard Structure
+
+```javascript
+router.get('/api/export/{report-type}', async (req, res) => {
+    try {
+        // 1. Validate Parameters
+        const { startDate, endDate, filter } = req.query;
+        
+        if (!startDate || !endDate) {
+            return res.status(400).json({
+                success: false,
+                error: 'Missing required parameters',
+                message: 'startDate and endDate are required'
+            });
+        }
+        
+        // 2. Query Database (with daily logic if needed)
+        const [data] = await db.execute(query, [startDate, endDate, filter || null, filter || null]);
+        
+        // 3. Transform Data
+        const rows = data.map((row, index) => ({
+            no: index + 1,
+            ...row,
+            // Apply calculations here
+            presentase: calculatePresentase(row)
+        }));
+        
+        // 4. Fetch Letterhead Config
+        let letterheadConfig = null;
+        try {
+            const [letterheadData] = await db.execute(
+                'SELECT config_value FROM system_config WHERE config_key = ? LIMIT 1',
+                ['letterhead_{report-type}']
+            );
+            
+            if (letterheadData.length > 0) {
+                letterheadConfig = JSON.parse(letterheadData[0].config_value);
+            }
+        } catch (error) {
+            console.log('⚠️ No custom letterhead config found, using default');
+        }
+        
+        // 5. Default Letterhead Fallback
+        if (!letterheadConfig) {
+            letterheadConfig = {
+                enabled: true,
+                logoLeftUrl: "/uploads/letterheads/logo-jawa-barat.png",
+                logoRightUrl: "/uploads/letterheads/logo-smk.png",
+                lines: [
+                    "PEMERINTAH PROVINSI DKI JAKARTA",
+                    "DINAS PENDIDIKAN",
+                    "SMK NEGERI 13 JAKARTA",
+                    "Jl. Raya Bekasi Km. 18, Cakung, Jakarta Timur 13910",
+                    "Telp: (021) 4600005 | Email: smkn13jakarta@jakarta.go.id"
+                ],
+                alignment: "center"
+            };
+        }
+        
+        // 6. Build Excel Workbook
+        const workbook = await buildExcel({
+            title: schema.title,
+            subtitle: schema.subtitle,
+            reportPeriod: `${new Date(startDate).toLocaleDateString('id-ID')} - ${new Date(endDate).toLocaleDateString('id-ID')}`,
+            letterhead: letterheadConfig,
+            columns: schema.columns,
+            rows: rows
+        });
+        
+        // 7. Set Response Headers
+        const filename = `{report-type}-${startDate}-${endDate}.xlsx`;
+        res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+        
+        // 8. Write and Send
+        await workbook.xlsx.write(res);
+        res.end();
+        
+        console.log(`✅ Export successful: ${filename}`);
+        
+    } catch (error) {
+        console.error('❌ Error exporting:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Export failed',
+            message: error.message
+        });
+    }
+});
+```
+
+---
+
+## 📐 Schema Structure
+
+### Pattern
+
+```javascript
+// backend/export/schemas/{report-type}.js
+export default {
+    title: 'REPORT TITLE',
+    subtitle: 'Report Subtitle Description',
+    columns: [
+        { 
+            key: 'column_name',      // Database field name
+            label: 'Column Label',   // Excel header
+            width: 15,               // Column width in chars
+            align: 'center',         // left|center|right
+            format: 'number'         // number|percentage|date (optional)
+        },
+        // ... more columns
+    ]
+};
+```
+
+### Format Types
+
+- `number`: Integer display
+- `percentage`: 0.00% format
+- `date`: DD/MM/YYYY format
+- (none): Text format
+
+---
+
+## 🎨 Logo Embedding (excelBuilder.js)
+
+### Implementation
+
+```javascript
+// Support base64 images
+if (letterhead.logoLeftUrl) {
+    try {
+        let imageBuffer;
+        if (letterhead.logoLeftUrl.startsWith('data:image/')) {
+            // Extract base64 data
+            const base64Data = letterhead.logoLeftUrl.split(',')[1];
+            imageBuffer = base64Data;
+        }
+        
+        if (imageBuffer) {
+            const imageId = workbook.addImage({
+                base64: imageBuffer,
+                extension: 'png',
+            });
+            
+            worksheet.addImage(imageId, {
+                tl: { col: 0, row: currentRow - 1 },
+                ext: { width: 60, height: 60 }
+            });
+        }
+    } catch (error) {
+        console.warn('Failed to add left logo:', error.message);
+    }
+}
+```
+
+### Logo Requirements
+
+- **Format**: Base64 encoded PNG (`data:image/png;base64,...`)
+- **Size**: 60x60 pixels recommended
+- **Position**: 
+  - Left logo: Column 0 (first column)
+  - Right logo: Last column
+- **Row Height**: 60 pixels reserved for logos
+
+---
+
+## 🗄️ Letterhead Configuration
+
+### Database Storage
+
+**Table**: `system_config`
+
+**Config Keys**:
+```
+letterhead_teacher-summary
+letterhead_student-summary
+letterhead_presensi-siswa
+letterhead_rekap-ketidakhadiran
+letterhead_rekap-ketidakhadiran-guru
+letterhead_banding-absen
+```
+
+### Config Structure
+
+```json
+{
+    "enabled": true,
+    "logoLeftUrl": "data:image/png;base64,iVBORw0KG...",
+    "logoRightUrl": "data:image/png;base64,iVBORw0KG...",
+    "lines": [
+        "PEMERINTAH PROVINSI DKI JAKARTA",
+        "DINAS PENDIDIKAN",
+        "SMK NEGERI 13 JAKARTA",
+        "Jl. Raya Bekasi Km. 18, Cakung, Jakarta Timur 13910",
+        "Telp: (021) 4600005 | Email: smkn13jakarta@jakarta.go.id"
+    ],
+    "alignment": "center"
+}
+```
+
+---
+
+## 📝 Query Patterns per Report Type
+
+### 1. Teacher Summary (Daily Logic)
+```sql
+WITH daily_status AS (
+    SELECT 
+        g.id_guru, g.nama, g.nip, ag.tanggal,
+        CASE 
+            WHEN SUM(CASE WHEN ag.status IN ('Tidak Hadir','Alpa') THEN 1 ELSE 0 END) > 0 
+                THEN 'Alpa'
+            WHEN SUM(CASE WHEN ag.status IN ('Izin','Sakit') THEN 1 ELSE 0 END) = COUNT(*) 
+                THEN 'Izin'
+            WHEN SUM(CASE WHEN ag.status = 'Hadir' THEN 1 ELSE 0 END) > 0 
+                THEN 'Hadir'
+            ELSE 'Alpa'
+        END as status_hari
+    FROM guru g
+    LEFT JOIN absensi_guru ag ON g.id_guru = ag.guru_id 
+        AND ag.tanggal BETWEEN ? AND ?
+    WHERE g.status = 'aktif'
+    GROUP BY g.id_guru, g.nama, g.nip, ag.tanggal
+)
+SELECT 
+    ds.nama, ds.nip,
+    SUM(CASE WHEN ds.status_hari = 'Hadir' THEN 1 ELSE 0 END) as hadir,
+    SUM(CASE WHEN ds.status_hari = 'Izin' THEN 1 ELSE 0 END) as izin,
+    SUM(CASE WHEN ds.status_hari IN ('Sakit','Izin') THEN 1 ELSE 0 END) as sakit,
+    SUM(CASE WHEN ds.status_hari = 'Alpa' THEN 1 ELSE 0 END) as alpa,
+    COUNT(DISTINCT ds.tanggal) as total_hari
+FROM daily_status ds
+WHERE ds.tanggal IS NOT NULL
+GROUP BY ds.nama, ds.nip
+ORDER BY ds.nama
+```
+
+### 2. Student Summary (Daily Logic + Dispen)
+```sql
+WITH daily_status AS (
+    SELECT 
+        s.id_siswa, s.nama, s.nis, k.nama_kelas as kelas, ase.tanggal,
+        CASE 
+            WHEN SUM(CASE WHEN ase.status = 'Alpa' THEN 1 ELSE 0 END) > 0 
+                THEN 'Alpa'
+            WHEN SUM(CASE WHEN ase.status = 'Dispen' THEN 1 ELSE 0 END) = COUNT(*) 
+                THEN 'Dispen'
+            WHEN SUM(CASE WHEN ase.status IN ('Izin','Sakit') THEN 1 ELSE 0 END) = COUNT(*) 
+                THEN 'Izin'
+            WHEN SUM(CASE WHEN ase.status = 'Hadir' THEN 1 ELSE 0 END) > 0 
+                THEN 'Hadir'
+            ELSE 'Alpa'
+        END as status_hari
+    FROM siswa s
+    JOIN kelas k ON s.kelas_id = k.id_kelas
+    LEFT JOIN absensi_siswa ase ON s.id_siswa = ase.siswa_id 
+        AND ase.tanggal BETWEEN ? AND ?
+    WHERE s.status = 'aktif'
+    GROUP BY s.id_siswa, s.nama, s.nis, k.nama_kelas, ase.tanggal
+)
+SELECT 
+    ds.nama, ds.nis, ds.kelas,
+    SUM(CASE WHEN ds.status_hari = 'Hadir' THEN 1 ELSE 0 END) as hadir,
+    SUM(CASE WHEN ds.status_hari = 'Izin' THEN 1 ELSE 0 END) as izin,
+    SUM(CASE WHEN ds.status_hari = 'Sakit' THEN 1 ELSE 0 END) as sakit,
+    SUM(CASE WHEN ds.status_hari = 'Alpa' THEN 1 ELSE 0 END) as alpa,
+    SUM(CASE WHEN ds.status_hari = 'Dispen' THEN 1 ELSE 0 END) as dispen,
+    COUNT(DISTINCT ds.tanggal) as total_hari
+FROM daily_status ds
+WHERE ds.tanggal IS NOT NULL
+GROUP BY ds.nama, ds.nis, ds.kelas
+ORDER BY ds.kelas, ds.nama
+```
+
+### 3. Presensi Siswa (Per Mapel Detail)
+```sql
+SELECT 
+    s.nis, s.nama,
+    k.nama_kelas as kelas,
+    ase.tanggal,
+    j.jam_ke,
+    m.nama_mapel as mata_pelajaran,
+    ase.status,
+    ase.keterangan
+FROM absensi_siswa ase
+JOIN siswa s ON ase.siswa_id = s.id_siswa
+JOIN kelas k ON s.kelas_id = k.id_kelas
+JOIN jadwal j ON ase.jadwal_id = j.id_jadwal
+JOIN mapel m ON j.mapel_id = m.id_mapel
+WHERE ase.tanggal BETWEEN ? AND ?
+  AND (k.id_kelas = ? OR ? IS NULL)
+ORDER BY ase.tanggal, k.nama_kelas, s.nama, j.jam_ke
+```
+
+### 4. Rekap Ketidakhadiran (Daily + Period)
+```sql
+WITH daily_status AS (
+    SELECT 
+        s.id_siswa, s.nama, s.nis, k.nama_kelas as kelas,
+        DATE_FORMAT(ase.tanggal, '%Y-%m') as periode,
+        ase.tanggal,
+        CASE 
+            WHEN SUM(CASE WHEN ase.status = 'Alpa' THEN 1 ELSE 0 END) > 0 
+                THEN 'Alpa'
+            WHEN SUM(CASE WHEN ase.status = 'Dispen' THEN 1 ELSE 0 END) = COUNT(*) 
+                THEN 'Dispen'
+            WHEN SUM(CASE WHEN ase.status = 'Izin' THEN 1 ELSE 0 END) > 0
+                THEN 'Izin'
+            WHEN SUM(CASE WHEN ase.status = 'Sakit' THEN 1 ELSE 0 END) > 0
+                THEN 'Sakit'
+            ELSE 'Hadir'
+        END as status_hari
+    FROM siswa s
+    JOIN kelas k ON s.kelas_id = k.id_kelas
+    LEFT JOIN absensi_siswa ase ON s.id_siswa = ase.siswa_id 
+        AND ase.tanggal BETWEEN ? AND ?
+    WHERE s.status = 'aktif'
+      AND (k.id_kelas = ? OR ? IS NULL)
+    GROUP BY s.id_siswa, s.nama, s.nis, k.nama_kelas, ase.tanggal, periode
+)
+SELECT 
+    ds.nama, ds.nis, ds.kelas,
+    DATE_FORMAT(STR_TO_DATE(CONCAT(ds.periode, '-01'), '%Y-%m-%d'), '%M %Y') as periode,
+    SUM(CASE WHEN ds.status_hari = 'Izin' THEN 1 ELSE 0 END) as izin,
+    SUM(CASE WHEN ds.status_hari = 'Sakit' THEN 1 ELSE 0 END) as sakit,
+    SUM(CASE WHEN ds.status_hari = 'Alpa' THEN 1 ELSE 0 END) as alpa,
+    SUM(CASE WHEN ds.status_hari = 'Dispen' THEN 1 ELSE 0 END) as dispen,
+    SUM(CASE WHEN ds.status_hari IN ('Izin','Sakit','Alpa') THEN 1 ELSE 0 END) as total_tidak_hadir
+FROM daily_status ds
+WHERE ds.tanggal IS NOT NULL
+GROUP BY ds.nama, ds.nis, ds.kelas, ds.periode
+ORDER BY ds.kelas, ds.nama, ds.periode
+```
+
+---
+
+## ✅ Best Practices
+
+### 1. Always Use Daily Logic for Summary Reports
+- Teacher summary
+- Student summary  
+- Rekap ketidakhadiran
+
+### 2. Parameter Validation
+```javascript
+if (!startDate || !endDate) {
+    return res.status(400).json({ error: 'Missing parameters' });
+}
+```
+
+### 3. Letterhead Fallback
+Always provide default letterhead jika config tidak ada di database.
+
+### 4. Error Handling
+```javascript
+try {
+    // Export logic
+} catch (error) {
+    console.error('❌ Export error:', error);
+    res.status(500).json({ 
+        success: false, 
+        error: 'Export failed',
+        message: error.message 
+    });
+}
+```
+
+### 5. File Naming Convention
+```javascript
+const filename = `{report-type}-${startDate}-${endDate}.xlsx`;
+```
+
+### 6. Console Logging
+```javascript
+console.log(`📊 Exporting {report-type}: ${startDate} to ${endDate}`);
+console.log(`✅ Retrieved ${data.length} records`);
+console.log(`✅ Export successful: ${filename}`);
+```
+
+---
+
+## 🚨 Common Pitfalls
+
+### ❌ DON'T: Calculate presentase per mapel
+```javascript
+// BAD - mengabaikan daily logic
+const presentase = hadir / total_sessions;
+```
+
+### ✅ DO: Calculate presentase per hari
+```javascript
+// GOOD - dengan daily aggregation
+const totalHadir = parseInt(row.hadir || 0) + parseInt(row.dispen || 0);
+const presentase = totalHadir / totalHari;
+```
+
+### ❌ DON'T: Hardcode letterhead
+```javascript
+// BAD
+const letterhead = { enabled: true, ... };
+```
+
+### ✅ DO: Fetch from database with fallback
+```javascript
+// GOOD
+const [data] = await db.execute('SELECT config_value FROM system_config...');
+let letterhead = data.length > 0 ? JSON.parse(data[0].config_value) : defaultLetterhead;
+```
+
+---
+
+## 📚 Related Files
+
+- **Builder**: `backend/export/excelBuilder.js`
+- **Routes**: `backend/routes/export.js`
+- **Schemas**: `backend/export/schemas/*.js`
+- **Testing**: `tests/api/test-all-export-endpoints.js`
+
+---
+
+**Last Updated**: 21 Oktober 2025  
+**Version**: 2.0  
+**Status**: ✅ Production Ready

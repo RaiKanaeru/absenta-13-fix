@@ -1,0 +1,508 @@
+---
+description: Data seeding and dummy data generation patterns for Absenta system testing (2025)
+globs: database/seeds/**,database/migrations/**
+---
+
+# Absenta Data Seeding Guide (2025)
+
+## 📋 Overview
+
+Script untuk generate **ribuan data dummy** yang realistis untuk testing export endpoints dan sistem Absenta.
+
+**Last Updated**: 21 Oktober 2025  
+**Status**: ✅ Production Ready
+
+---
+
+## 🎯 Data Generation Summary
+
+| Tabel | Jumlah | Keterangan |
+|-------|--------|------------|
+| **Kelas** | 9 | PPLG, TKJ, RPL (tingkat 10-12) |
+| **Mata Pelajaran** | 12 | MTK, IPA, PBO, WEB, dll |
+| **Guru** | 20 | Dengan akun login |
+| **Siswa** | **270** | 30 siswa × 9 kelas |
+| **Jadwal** | **72** | 8 jadwal × 9 kelas |
+| **Absensi Siswa** | **~40,000+** | 270 siswa × 20 hari × 8 sesi |
+| **Absensi Guru** | **~400+** | 20 guru × 20 hari |
+| **Banding Absen** | **~13** | 5% dari total absensi |
+| **System Config** | 6 | Letterhead configs |
+
+**Total Records**: **~41,000+** 🚀
+
+---
+
+## 🚀 Usage
+
+### Quick Run
+```bash
+node database/seeds/generate-dummy-data.js
+```
+
+### Custom Configuration
+Edit `CONFIG` object in script:
+```javascript
+const CONFIG = {
+    KELAS_COUNT: 9,
+    SISWA_PER_KELAS: 30,      // Adjust untuk lebih banyak siswa
+    GURU_COUNT: 20,            // Adjust untuk lebih banyak guru
+    MAPEL_COUNT: 12,
+    JADWAL_PER_KELAS: 8,
+    DAYS_TO_GENERATE: 30,      // Adjust untuk lebih banyak hari
+    BANDING_PERCENTAGE: 0.05   // 5% absensi akan ada banding
+};
+```
+
+---
+
+## 🏗️ Database Structure Patterns
+
+### No Jurusan Table
+```javascript
+// ❌ DON'T: Assume jurusan table exists
+await db.execute('INSERT INTO jurusan...');
+
+// ✅ DO: Use kelas directly
+const KELAS_DATA = [
+    { nama: 'PPLG 10', tingkat: '10', ruang: 'R101', kode: 'PPLG-10-1' },
+    { nama: 'PPLG 11', tingkat: '11', ruang: 'R102', kode: 'PPLG-11-1' },
+    // ...
+];
+```
+
+### Guru Structure
+```javascript
+// ✅ CORRECT: Guru table structure
+await db.execute(
+    `INSERT INTO guru 
+    (id_guru, user_id, nip, nama, email, mata_pelajaran, mapel_id, status, jenis_kelamin) 
+    VALUES (?, ?, ?, ?, ?, ?, ?, "aktif", ?)`,
+    [id_guru, user_id, nip, nama, email, mapel_nama, mapel_id, gender]
+);
+
+// ❌ WRONG: Using nama_pengguna (doesn't exist)
+await db.execute(
+    'INSERT INTO guru (id_guru, user_id, nama_pengguna, ...) VALUES (...)'
+);
+```
+
+### Siswa Structure
+```javascript
+// ✅ CORRECT: Siswa with nullable user_id
+await db.execute(
+    `INSERT INTO siswa 
+    (id_siswa, user_id, nis, nama, kelas_id, jabatan, jenis_kelamin, email, status) 
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, "aktif")`,
+    [id_siswa, user_id, nis, nama, kelas_id, jabatan, gender, email]
+);
+```
+
+---
+
+## 🎲 Data Generation Patterns
+
+### Realistic Names
+```javascript
+const NAMA_DEPAN = [
+    'Ahmad', 'Budi', 'Citra', 'Dewi', 'Eko', 'Fajar', 'Gita', 'Huda',
+    'Indra', 'Joko', 'Kartika', 'Lina', 'Maya', 'Nurul', 'Omar', 'Putri'
+];
+
+const NAMA_BELAKANG = [
+    'Pratama', 'Kurniawan', 'Saputra', 'Wijaya', 'Santoso', 'Hidayat',
+    'Firmansyah', 'Permana', 'Setiawan', 'Ramadan', 'Hakim', 'Nugroho'
+];
+
+function generateNama() {
+    return `${randomElement(NAMA_DEPAN)} ${randomElement(NAMA_BELAKANG)}`;
+}
+```
+
+### NIS/NIP Format
+```javascript
+// NIS: 2024XXXX (8 digits)
+function generateNIS(year, index) {
+    return `${year}${String(index).padStart(4, '0')}`;
+}
+// Example: 20240001, 20240002, ...
+
+// NIP: Standard Indonesian format
+function generateNIP() {
+    return `19${randomInt(70, 99)}${randomInt(10, 12)}${randomInt(10, 28)}${randomInt(100000, 999999)}`;
+}
+// Example: 197512281234567
+```
+
+### Email Format
+```javascript
+function generateEmail(nama) {
+    return nama.toLowerCase().replace(/\s+/g, '.') + '@smkn13jakarta.sch.id';
+}
+// Example: ahmad.pratama@smkn13jakarta.sch.id
+```
+
+### Attendance Distribution
+```javascript
+function randomStatus(weights = { 
+    Hadir: 0.8,    // 80%
+    Izin: 0.1,     // 10%
+    Sakit: 0.05,   // 5%
+    Alpa: 0.03,    // 3%
+    Dispen: 0.02   // 2%
+}) {
+    const rand = Math.random();
+    let cumulative = 0;
+    
+    for (const [status, weight] of Object.entries(weights)) {
+        cumulative += weight;
+        if (rand <= cumulative) return status;
+    }
+    
+    return 'Hadir';
+}
+```
+
+---
+
+## 📅 Date Range Generation
+
+### Skip Weekends
+```javascript
+function getDateRange(days) {
+    const dates = [];
+    const today = new Date();
+    
+    for (let i = days - 1; i >= 0; i--) {
+        const date = new Date(today);
+        date.setDate(date.getDate() - i);
+        
+        // Skip Sabtu (6) dan Minggu (0)
+        if (date.getDay() !== 0 && date.getDay() !== 6) {
+            dates.push(date.toISOString().split('T')[0]);
+        }
+    }
+    
+    return dates;
+}
+```
+
+---
+
+## 🔄 Seeding Functions Pattern
+
+### 1. Kelas Seeding
+```javascript
+async function seedKelas() {
+    console.log('\n🏫 Seeding Kelas...');
+    
+    const kelasList = [];
+    
+    for (const kelas of KELAS_DATA) {
+        try {
+            const [result] = await db.execute(
+                'INSERT INTO kelas (nama_kelas, ruang, kode_ruang) VALUES (?, ?, ?)',
+                [kelas.nama, kelas.ruang, kelas.kode]
+            );
+            
+            kelasList.push({
+                id_kelas: result.insertId,
+                nama_kelas: kelas.nama,
+                tingkat: kelas.tingkat
+            });
+        } catch (error) {
+            // Handle duplicate - fetch existing
+            if (error.code === 'ER_DUP_ENTRY') {
+                const [existing] = await db.execute(
+                    'SELECT id_kelas, nama_kelas FROM kelas WHERE nama_kelas = ?',
+                    [kelas.nama]
+                );
+                if (existing.length > 0) {
+                    kelasList.push({
+                        id_kelas: existing[0].id_kelas,
+                        nama_kelas: existing[0].nama_kelas,
+                        tingkat: kelas.tingkat
+                    });
+                }
+            } else {
+                throw error;
+            }
+        }
+    }
+    
+    console.log(`✅ Created/Found ${kelasList.length} kelas`);
+    return kelasList;
+}
+```
+
+### 2. Guru Seeding (with Transaction)
+```javascript
+async function seedGuru(mapelList) {
+    console.log('\n👨‍🏫 Seeding Guru...');
+    
+    const guruList = [];
+    const password = await bcrypt.hash('guru123', 10);
+    
+    for (let i = 1; i <= CONFIG.GURU_COUNT; i++) {
+        const nama = generateNama();
+        const username = `guru_${i}`;
+        const nip = generateNIP();
+        const email = generateEmail(nama);
+        const mapel = randomElement(mapelList);
+        
+        // Create user account
+        const [userResult] = await db.execute(
+            'INSERT INTO users (username, password, role, email, status) VALUES (?, ?, "GURU", ?, "aktif")',
+            [username, password, email]
+        );
+        
+        // Create guru record
+        await db.execute(
+            'INSERT INTO guru (id_guru, user_id, nip, nama, email, mata_pelajaran, mapel_id, status, jenis_kelamin) VALUES (?, ?, ?, ?, ?, ?, ?, "aktif", ?)',
+            [i, userResult.insertId, nip, nama, email, mapel.nama_mapel, mapel.id_mapel, randomElement(['L', 'P'])]
+        );
+        
+        guruList.push({
+            id_guru: i,
+            user_id: userResult.insertId,
+            nama: nama,
+            mapel_id: mapel.id_mapel
+        });
+    }
+    
+    console.log(`✅ Created ${guruList.length} guru`);
+    return guruList;
+}
+```
+
+### 3. Absensi Seeding (Batch Processing)
+```javascript
+async function seedAbsensiSiswa(siswaList, jadwalList) {
+    console.log('\n📝 Seeding Absensi Siswa...');
+    
+    const dates = getDateRange(CONFIG.DAYS_TO_GENERATE);
+    let count = 0;
+    
+    console.log(`   Generating absensi for ${dates.length} days...`);
+    
+    for (const date of dates) {
+        const dayOfWeek = new Date(date).toLocaleDateString('id-ID', { weekday: 'long' });
+        const jadwalHariIni = jadwalList.filter(j => j.hari === dayOfWeek);
+        
+        for (const jadwal of jadwalHariIni) {
+            const siswaKelas = siswaList.filter(s => s.kelas_id === jadwal.kelas_id);
+            
+            for (const siswa of siswaKelas) {
+                const status = randomStatus();
+                const keterangan = status === 'Izin' ? 'Izin keperluan keluarga' :
+                                 status === 'Sakit' ? 'Sakit demam' :
+                                 status === 'Dispen' ? 'Mengikuti lomba' : null;
+                
+                await db.execute(
+                    'INSERT INTO absensi_siswa (siswa_id, jadwal_id, tanggal, status, keterangan) VALUES (?, ?, ?, ?, ?)',
+                    [siswa.id_siswa, jadwal.id_jadwal, date, status, keterangan]
+                );
+                
+                count++;
+            }
+        }
+        
+        // Progress indicator
+        if (count % 1000 === 0) {
+            console.log(`   Progress: ${count} records...`);
+        }
+    }
+    
+    console.log(`✅ Created ${count} absensi siswa records`);
+    return count;
+}
+```
+
+---
+
+## 🛡️ Error Handling
+
+### Duplicate Entry Handling
+```javascript
+try {
+    await db.execute('INSERT INTO ...');
+} catch (error) {
+    if (error.code === 'ER_DUP_ENTRY') {
+        // Skip or fetch existing
+        console.log('⚠️ Duplicate entry, skipping...');
+    } else {
+        throw error;
+    }
+}
+```
+
+### Connection Management
+```javascript
+async function main() {
+    try {
+        await seedKelas();
+        await seedGuru();
+        // ... more seeding
+    } catch (error) {
+        console.error('❌ Error generating data:', error);
+        throw error;
+    } finally {
+        console.log('\n👋 Done - Database connections managed by pool');
+        process.exit(0);
+    }
+}
+```
+
+---
+
+## 📊 System Config Seeding
+
+### Letterhead Configuration
+```javascript
+async function seedSystemConfig() {
+    console.log('\n⚙️ Seeding System Config (Letterhead)...');
+    
+    const defaultLetterhead = {
+        enabled: true,
+        logoLeftUrl: "data:image/png;base64,...",  // Base64 encoded
+        logoRightUrl: "data:image/png;base64,...",
+        lines: [
+            "PEMERINTAH PROVINSI DKI JAKARTA",
+            "DINAS PENDIDIKAN",
+            "SMK NEGERI 13 JAKARTA",
+            "Jl. Raya Bekasi Km. 18, Cakung, Jakarta Timur 13910",
+            "Telp: (021) 4600005 | Email: smkn13jakarta@jakarta.go.id"
+        ],
+        alignment: "center"
+    };
+    
+    const reportTypes = [
+        'teacher-summary',
+        'student-summary',
+        'presensi-siswa',
+        'rekap-ketidakhadiran',
+        'rekap-ketidakhadiran-guru',
+        'banding-absen'
+    ];
+    
+    for (const reportType of reportTypes) {
+        await db.execute(
+            `INSERT INTO system_config (config_key, config_value, description) 
+             VALUES (?, ?, ?) 
+             ON DUPLICATE KEY UPDATE config_value = config_value`,
+            [
+                `letterhead_${reportType}`,
+                JSON.stringify(defaultLetterhead),
+                `Letterhead configuration for ${reportType} report`
+            ]
+        );
+    }
+    
+    console.log(`✅ Created ${reportTypes.length} letterhead configs`);
+}
+```
+
+---
+
+## ✅ Verification Queries
+
+### Check Data Count
+```sql
+-- Verify counts
+SELECT 'Kelas' as tabel, COUNT(*) as jumlah FROM kelas
+UNION ALL
+SELECT 'Guru', COUNT(*) FROM guru
+UNION ALL
+SELECT 'Siswa', COUNT(*) FROM siswa
+UNION ALL
+SELECT 'Jadwal', COUNT(*) FROM jadwal
+UNION ALL
+SELECT 'Absensi Siswa', COUNT(*) FROM absensi_siswa
+UNION ALL
+SELECT 'Absensi Guru', COUNT(*) FROM absensi_guru
+UNION ALL
+SELECT 'Banding Absen', COUNT(*) FROM pengajuan_banding_absen;
+```
+
+### Check Login Credentials
+```sql
+-- Test guru login
+SELECT username, role FROM users WHERE role = 'GURU' LIMIT 5;
+
+-- Test siswa login
+SELECT username, role FROM users WHERE role = 'SISWA' LIMIT 5;
+```
+
+### Check Attendance Distribution
+```sql
+-- Attendance status distribution
+SELECT 
+    status,
+    COUNT(*) as jumlah,
+    ROUND(COUNT(*) * 100.0 / (SELECT COUNT(*) FROM absensi_siswa), 2) as persentase
+FROM absensi_siswa
+GROUP BY status
+ORDER BY jumlah DESC;
+```
+
+---
+
+## 🎯 Best Practices
+
+### 1. Idempotent Seeding
+```javascript
+// Handle duplicates gracefully
+ON DUPLICATE KEY UPDATE config_value = config_value
+```
+
+### 2. Progress Indicators
+```javascript
+if (count % 1000 === 0) {
+    console.log(`   Progress: ${count} records...`);
+}
+```
+
+### 3. Realistic Data
+- Use Indonesian names
+- Follow NIS/NIP formats
+- Generate realistic email addresses
+- Weighted random status distribution
+
+### 4. Transaction Safety
+- Not always needed for seeding
+- Use for critical multi-table operations
+- Pool manages connections automatically
+
+---
+
+## 🚨 Common Issues
+
+### Issue: Table doesn't exist
+**Check**: Run migrations first
+```bash
+node database/migrations/run-migrations.js
+```
+
+### Issue: Duplicate entry
+**Solution**: Script handles duplicates - data already exists from previous run
+
+### Issue: Out of memory
+**Solution**: Reduce `DAYS_TO_GENERATE` or `SISWA_PER_KELAS`
+
+---
+
+## 📚 Login Credentials
+
+After seeding:
+
+```
+Admin: admin / admin123
+Guru:  guru_1 / guru123 (atau guru_2, guru_3, dst)
+Siswa: siswa_20240001 / siswa123 (atau siswa lainnya)
+```
+
+---
+
+**Last Updated**: 21 Oktober 2025  
+**Script**: `database/seeds/generate-dummy-data.js`  
+**Total Records**: ~41,000+  
+**Status**: ✅ Production Ready

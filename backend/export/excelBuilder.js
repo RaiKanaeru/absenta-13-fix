@@ -46,21 +46,66 @@ async function buildExcel(options) {
         
         // Add logo row if logos are provided
         if (letterhead.logoLeftUrl || letterhead.logoRightUrl) {
-            const logoRow = worksheet.getRow(currentRow);
+            // Reserve space for logos
+            worksheet.getRow(currentRow).height = 60;
             
             // Logo kiri
             if (letterhead.logoLeftUrl) {
-                logoRow.getCell(1).value = '[LOGO KIRI]';
-                logoRow.getCell(1).font = { italic: true, size: 10 };
-                logoRow.getCell(1).alignment = { horizontal: 'left' };
+                try {
+                    // Support base64 images
+                    let imageBuffer;
+                    if (letterhead.logoLeftUrl.startsWith('data:image/')) {
+                        // Extract base64 data
+                        const base64Data = letterhead.logoLeftUrl.split(',')[1];
+                        imageBuffer = base64Data;
+                    } else {
+                        // For file paths, just use placeholder for now
+                        // In production, you would load from file system
+                        console.log('Logo kiri path:', letterhead.logoLeftUrl);
+                    }
+                    
+                    if (imageBuffer) {
+                        const imageId = workbook.addImage({
+                            base64: imageBuffer,
+                            extension: 'png',
+                        });
+                        
+                        worksheet.addImage(imageId, {
+                            tl: { col: 0, row: currentRow - 1 },
+                            ext: { width: 60, height: 60 }
+                        });
+                    }
+                } catch (error) {
+                    console.warn('Failed to add left logo:', error.message);
+                }
             }
             
             // Logo kanan
             if (letterhead.logoRightUrl) {
-                const rightCell = Math.max(columns.length, 3);
-                logoRow.getCell(rightCell).value = '[LOGO KANAN]';
-                logoRow.getCell(rightCell).font = { italic: true, size: 10 };
-                logoRow.getCell(rightCell).alignment = { horizontal: 'right' };
+                try {
+                    let imageBuffer;
+                    if (letterhead.logoRightUrl.startsWith('data:image/')) {
+                        const base64Data = letterhead.logoRightUrl.split(',')[1];
+                        imageBuffer = base64Data;
+                    } else {
+                        console.log('Logo kanan path:', letterhead.logoRightUrl);
+                    }
+                    
+                    if (imageBuffer) {
+                        const imageId = workbook.addImage({
+                            base64: imageBuffer,
+                            extension: 'png',
+                        });
+                        
+                        const rightCol = Math.max(columns.length - 1, 2);
+                        worksheet.addImage(imageId, {
+                            tl: { col: rightCol, row: currentRow - 1 },
+                            ext: { width: 60, height: 60 }
+                        });
+                    }
+                } catch (error) {
+                    console.warn('Failed to add right logo:', error.message);
+                }
             }
             
             currentRow++;

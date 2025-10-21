@@ -1,0 +1,586 @@
+---
+globs: *.js,*.tsx,*.ts,server*.js
+description: Critical query patterns and common mistakes to avoid in Absenta system (2025)
+---
+
+# Absenta Critical Patterns 2025
+
+## 🎯 MUST-READ untuk Semua Developer
+
+File ini berisi pattern-pattern CRITICAL yang HARUS diikuti dan kesalahan umum yang HARUS dihindari.
+
+---
+
+## ⚠️ CRITICAL MISTAKE #1: Lupa Multi-Guru Logic
+
+### ❌ WRONG: Hanya query primary teacher
+```javascript
+// JANGAN LAKUKAN INI!
+const [jadwal] = await db.execute(
+  'SELECT * FROM jadwal WHERE guru_id = ?',
+  [guruId]
+);
+```
+
+### ✅ CORRECT: Include additional teachers
+```javascript
+// SELALU GUNAKAN PATTERN INI
+const [jadwal] = await db.execute(
+  `SELECT DISTINCT j.* 
+   FROM jadwal j
+   LEFT JOIN jadwal_guru jg ON j.id_jadwal = jg.jadwal_id 
+     AND jg.guru_id = ? AND jg.status = 'aktif'
+   WHERE (j.guru_id = ? OR jg.guru_id IS NOT NULL) 
+     AND j.status = 'aktif'`,
+  [guruId, guruId]
+);
+```
+
+### ✅ BEST: With full schedule details
+```javascript
+const [jadwal] = await db.execute(
+  `SELECT DISTINCT j.*, 
+          k.nama_kelas, 
+          m.nama_mapel,
+          g_primary.nama as guru_utama,
+          GROUP_CONCAT(DISTINCT g_all.nama ORDER BY g_all.nama SEPARATOR ', ') as semua_guru
+   FROM jadwal j
+   JOIN kelas k ON j.kelas_id = k.id_kelas
+   JOIN mapel m ON j.mapel_id = m.id_mapel
+   LEFT JOIN guru g_primary ON j.guru_id = g_primary.id_guru
+   LEFT JOIN jadwal_guru jg ON j.id_jadwal = jg.jadwal_id AND jg.status = 'aktif'
+   LEFT JOIN guru g_all ON jg.guru_id = g_all.id_guru
+   WHERE (j.guru_id = ? OR jg.guru_id = ?) 
+     AND j.status = 'aktif'
+   GROUP BY j.id_jadwal`,
+  [guruId, guruId]
+);
+```
+
+---
+
+## ⚠️ CRITICAL MISTAKE #2: Assume user_id NOT NULL
+
+### ❌ WRONG: Direct user_id check
+```javascript
+// JANGAN LAKUKAN INI!
+const [siswa] = await db.execute(
+  'SELECT * FROM siswa WHERE user_id = ?',
+  [userId]
+);
+```
+
+### ✅ CORRECT: LEFT JOIN dengan null handling
+```javascript
+// SELALU GUNAKAN PATTERN INI
+const [siswa] = await db.execute(
+  `SELECT 
+     s.*,
+     u.username,
+     u.email,
+     u.status as user_status,
+     k.nama_kelas
+   FROM siswa s
+   LEFT JOIN users u ON s.user_id = u.id
+   LEFT JOIN kelas k ON s.kelas_id = k.id_kelas
+   WHERE s.id_siswa = ?`,
+  [siswaId]
+);
+
+// Check if user exists
+if (siswa[0].user_id === null) {
+  console.log('Siswa tidak punya akun login');
+}
+```
+
+### ✅ BEST: With null coalescing
+```javascript
+const siswaData = siswa[0];
+const username = siswaData.username || `siswa_${siswaData.nis}`;
+const email = siswaData.email || null;
+const hasAccount = siswaData.user_id !== null;
+```
+
+---
+
+## ⚠️ CRITICAL MISTAKE #3: No Transaction for Multi-Table Ops
+
+### ❌ WRONG: Sequential queries without transaction
+```javascript
+// JANGAN LAKUKAN INI! (BERBAHAYA)
+await db.execute('INSERT INTO users ...', [username, password, 'SISWA']);
+const userId = result.insertId;
+await db.execute('INSERT INTO siswa ...', [nis, nama, userId]); 
+// ☠️ Jika gagal, user sudah masuk tapi siswa tidak!
+```
+
+### ✅ CORRECT: Use transaction
+```javascript
+// SELALU GUNAKAN TRANSACTION
+let connection;
+try {
+  connection = await db.getConnection();
+  await connection.beginTransaction();
+  
+  // 1. Create user
+  const [userResult] = await connection.execute(
+    'INSERT INTO users (username, password, role, status) VALUES (?, ?, "SISWA", "aktif")',
+    [username, hashedPassword]
+  );
+  
+  const userId = userResult.insertId;
+  
+  // 2. Create siswa
+  await connection.execute(
+    'INSERT INTO siswa (user_id, nis, nama, kelas_id, status) VALUES (?, ?, ?, ?, "aktif")',
+    [userId, nis, nama, kelasId]
+  );
+  
+  await connection.commit();
+  
+} catch (error) {
+  if (connection) await connection.rollback();
+  throw error;
+} finally {
+  if (connection) connection.release();
+}
+```
+
+---
+
+## ⚠️ CRITICAL MISTAKE #4: Hard Delete dengan History
+
+### ❌ WRONG: Direct DELETE
+```javascript
+// JANGAN LAKUKAN INI! (KEHILANGAN HISTORY)
+await db.execute('DELETE FROM siswa WHERE id_siswa = ?', [siswaId]);
+```
+
+### ✅ CORRECT: Smart Delete (Check History First)
+```javascript
+// SELALU CEK HISTORY DULU
+let connection;
+try {
+  connection = await db.getConnection();
+  await connection.beginTransaction();
+  
+  // Check if has attendance history
+  const [attendance] = await connection.execute(
+    'SELECT COUNT(*) as count FROM absensi_siswa WHERE siswa_id = ?',
+    [siswaId]
+  );
+  
+  // Check if has banding history
+  const [banding] = await connection.execute(
+    'SELECT COUNT(*) as count FROM pengajuan_banding_absen WHERE siswa_id = ?',
+    [siswaId]
+  );
+  
+  const hasHistory = attendance[0].count > 0 || banding[0].count > 0;
+  
+  if (hasHistory) {
+    // Soft delete (preserve history)
+    await connection.execute(
+      'UPDATE siswa SET status = "tidak_aktif" WHERE id_siswa = ?',
+      [siswaId]
+    );
+    
+    if (userId) {
+      await connection.execute(
+        'UPDATE users SET status = "tidak_aktif" WHERE id = ?',
+        [userId]
+      );
+    }
+    
+    console.log('Soft delete - History preserved');
+    
+  } else {
+    // Hard delete (no history)
+    await connection.execute('DELETE FROM siswa WHERE id_siswa = ?', [siswaId]);
+    
+    if (userId) {
+      await connection.execute('DELETE FROM users WHERE id = ?', [userId]);
+    }
+    
+    console.log('Hard delete - No history');
+  }
+  
+  await connection.commit();
+  
+} catch (error) {
+  if (connection) await connection.rollback();
+  throw error;
+} finally {
+  if (connection) connection.release();
+}
+```
+
+---
+
+## ⚠️ CRITICAL MISTAKE #5: Lupa Validate FK Relationships
+
+### ❌ WRONG: Direct INSERT tanpa check
+```javascript
+// JANGAN LAKUKAN INI!
+await db.execute(
+  'INSERT INTO jadwal (kelas_id, mapel_id, guru_id, ...) VALUES (?, ?, ?, ...)',
+  [kelasId, mapelId, guruId]
+);
+// ☠️ Jika kelas_id tidak ada, error FK constraint!
+```
+
+### ✅ CORRECT: Validate FK sebelum INSERT
+```javascript
+// SELALU VALIDATE FK DULU
+let connection;
+try {
+  connection = await db.getConnection();
+  await connection.beginTransaction();
+  
+  // Validate kelas exists
+  const [kelas] = await connection.execute(
+    'SELECT id_kelas FROM kelas WHERE id_kelas = ? AND status = "aktif"',
+    [kelasId]
+  );
+  
+  if (kelas.length === 0) {
+    throw new Error('Kelas tidak ditemukan atau tidak aktif');
+  }
+  
+  // Validate mapel exists
+  const [mapel] = await connection.execute(
+    'SELECT id_mapel FROM mapel WHERE id_mapel = ? AND status = "aktif"',
+    [mapelId]
+  );
+  
+  if (mapel.length === 0) {
+    throw new Error('Mata pelajaran tidak ditemukan atau tidak aktif');
+  }
+  
+  // Validate guru exists
+  const [guru] = await connection.execute(
+    'SELECT id_guru FROM guru WHERE id_guru = ? AND status = "aktif"',
+    [guruId]
+  );
+  
+  if (guru.length === 0) {
+    throw new Error('Guru tidak ditemukan atau tidak aktif');
+  }
+  
+  // Now safe to INSERT
+  await connection.execute(
+    'INSERT INTO jadwal (kelas_id, mapel_id, guru_id, ...) VALUES (?, ?, ?, ...)',
+    [kelasId, mapelId, guruId]
+  );
+  
+  await connection.commit();
+  
+} catch (error) {
+  if (connection) await connection.rollback();
+  throw error;
+} finally {
+  if (connection) connection.release();
+}
+```
+
+---
+
+## ⚠️ CRITICAL MISTAKE #6: SQL Injection
+
+### ❌ WRONG: String concatenation
+```javascript
+// JANGAN LAKUKAN INI! (SQL INJECTION VULNERABILITY)
+const username = req.body.username;
+const query = `SELECT * FROM users WHERE username = '${username}'`;
+await db.execute(query);
+// ☠️ Attacker bisa inject: ' OR '1'='1
+```
+
+### ✅ CORRECT: Parameterized queries
+```javascript
+// SELALU GUNAKAN PARAMETERIZED QUERIES
+const username = req.body.username;
+const [users] = await db.execute(
+  'SELECT * FROM users WHERE username = ?',
+  [username]
+);
+```
+
+### ✅ BEST: With input validation
+```javascript
+// VALIDATE + PARAMETERIZED
+const username = req.body.username;
+
+// Validate format
+if (!/^[a-zA-Z0-9_]{3,50}$/.test(username)) {
+  throw new Error('Invalid username format');
+}
+
+// Use parameterized query
+const [users] = await db.execute(
+  'SELECT * FROM users WHERE username = ? AND status = "aktif"',
+  [username]
+);
+```
+
+---
+
+## ⚠️ CRITICAL MISTAKE #7: Menggunakan siswa_perwakilan sebagai Base Table
+
+### ❌ WRONG: INSERT/UPDATE ke siswa_perwakilan
+```sql
+-- JANGAN LAKUKAN INI! (siswa_perwakilan adalah VIEW)
+INSERT INTO siswa_perwakilan (nis, nama, ...) VALUES (?, ?, ...);
+UPDATE siswa_perwakilan SET nama = ? WHERE id_siswa = ?;
+```
+
+### ✅ CORRECT: Gunakan siswa table
+```sql
+-- SELALU GUNAKAN siswa (BASE TABLE)
+INSERT INTO siswa (nis, nama, ...) VALUES (?, ?, ...);
+UPDATE siswa SET nama = ? WHERE id_siswa = ?;
+```
+
+### ℹ️ INFO: siswa_perwakilan is just a VIEW
+```sql
+-- siswa_perwakilan adalah VIEW untuk backward compatibility
+CREATE VIEW siswa_perwakilan AS SELECT * FROM siswa;
+
+-- Hanya untuk SELECT, bukan INSERT/UPDATE/DELETE
+SELECT * FROM siswa_perwakilan WHERE kelas_id = ?; -- OK
+```
+
+---
+
+## ⚠️ CRITICAL MISTAKE #8: Lupa Daily Attendance Logic di Export
+
+### ❌ WRONG: Export per-jam attendance
+```javascript
+// JANGAN LAKUKAN INI untuk summary reports
+const [rows] = await db.execute(
+  `SELECT s.nama, ase.status, ase.tanggal
+   FROM siswa s
+   JOIN absensi_siswa ase ON s.id_siswa = ase.siswa_id
+   WHERE ase.tanggal BETWEEN ? AND ?`,
+  [startDate, endDate]
+);
+// ☠️ Akan ada multiple records per siswa per hari!
+```
+
+### ✅ CORRECT: Use daily aggregation with priority logic
+```javascript
+const [rows] = await db.execute(
+  `WITH daily_status AS (
+      SELECT 
+          s.id_siswa,
+          s.nama,
+          ase.tanggal,
+          CASE 
+              -- Alpha → Tidak Hadir (highest priority)
+              WHEN SUM(CASE WHEN ase.status = 'Alpa' THEN 1 ELSE 0 END) > 0 
+                  THEN 'Alpa'
+              -- Dispen → Hadir (pembelajaran bentuk lain)
+              WHEN SUM(CASE WHEN ase.status = 'Dispen' THEN 1 ELSE 0 END) = COUNT(*) 
+                  THEN 'Dispen'
+              -- Izin/Sakit → Hadir dengan status
+              WHEN SUM(CASE WHEN ase.status IN ('Izin','Sakit') THEN 1 ELSE 0 END) = COUNT(*) 
+                  THEN 'Izin'
+              -- Hadir
+              WHEN SUM(CASE WHEN ase.status = 'Hadir' THEN 1 ELSE 0 END) > 0 
+                  THEN 'Hadir'
+              ELSE 'Alpa'
+          END as status_hari
+      FROM siswa s
+      LEFT JOIN absensi_siswa ase ON s.id_siswa = ase.siswa_id 
+          AND ase.tanggal BETWEEN ? AND ?
+      GROUP BY s.id_siswa, s.nama, ase.tanggal
+  )
+  SELECT 
+      nama,
+      SUM(CASE WHEN status_hari = 'Hadir' THEN 1 ELSE 0 END) as hadir,
+      SUM(CASE WHEN status_hari = 'Izin' THEN 1 ELSE 0 END) as izin,
+      SUM(CASE WHEN status_hari = 'Sakit' THEN 1 ELSE 0 END) as sakit,
+      SUM(CASE WHEN status_hari = 'Alpa' THEN 1 ELSE 0 END) as alpa,
+      SUM(CASE WHEN status_hari = 'Dispen' THEN 1 ELSE 0 END) as dispen,
+      COUNT(DISTINCT tanggal) as total_hari
+  FROM daily_status
+  WHERE tanggal IS NOT NULL
+  GROUP BY nama`,
+  [startDate, endDate]
+);
+```
+
+---
+
+## ⚠️ CRITICAL MISTAKE #9: Password Handling
+
+### ❌ WRONG: Plain text password
+```javascript
+// JANGAN LAKUKAN INI! (SECURITY RISK)
+const password = req.body.password;
+await db.execute(
+  'INSERT INTO users (username, password) VALUES (?, ?)',
+  [username, password]
+);
+```
+
+### ✅ CORRECT: Bcrypt hashing
+```javascript
+// SELALU HASH PASSWORD dengan bcrypt
+const password = req.body.password;
+const hashedPassword = await bcrypt.hash(password, 10);
+
+await db.execute(
+  'INSERT INTO users (username, password) VALUES (?, ?)',
+  [username, hashedPassword]
+);
+```
+
+### ✅ BEST: With password validation
+```javascript
+const password = req.body.password;
+
+// Validate password strength
+if (password.length < 8) {
+  throw new Error('Password minimal 8 karakter');
+}
+
+if (!/[A-Z]/.test(password)) {
+  throw new Error('Password harus mengandung huruf besar');
+}
+
+if (!/[0-9]/.test(password)) {
+  throw new Error('Password harus mengandung angka');
+}
+
+// Hash password
+const hashedPassword = await bcrypt.hash(password, 10);
+
+// Store hashed password
+await db.execute(
+  'INSERT INTO users (username, password) VALUES (?, ?)',
+  [username, hashedPassword]
+);
+```
+
+---
+
+## ⚠️ CRITICAL MISTAKE #10: Duplicate Banding Prevention
+
+### ❌ WRONG: Tidak cek existing banding
+```javascript
+// JANGAN LAKUKAN INI!
+await db.execute(
+  'INSERT INTO pengajuan_banding_absen (siswa_id, jadwal_id, tanggal_absen, ...) VALUES (?, ?, ?, ...)',
+  [siswaId, jadwalId, tanggalAbsen]
+);
+// ☠️ Bisa double submit untuk tanggal/jadwal yang sama!
+```
+
+### ✅ CORRECT: Check existing banding first
+```javascript
+// SELALU CEK DUPLICATE DULU
+let connection;
+try {
+  connection = await db.getConnection();
+  await connection.beginTransaction();
+  
+  // Check if banding already exists for this date/schedule
+  const [existing] = await connection.execute(
+    `SELECT id_banding 
+     FROM pengajuan_banding_absen 
+     WHERE siswa_id = ? 
+       AND jadwal_id = ? 
+       AND tanggal_absen = ?
+       AND status_banding IN ('pending', 'disetujui')`,
+    [siswaId, jadwalId, tanggalAbsen]
+  );
+  
+  if (existing.length > 0) {
+    throw new Error('Banding untuk tanggal dan jadwal ini sudah ada');
+  }
+  
+  // Safe to insert
+  await connection.execute(
+    `INSERT INTO pengajuan_banding_absen 
+     (siswa_id, jadwal_id, tanggal_absen, status_asli, status_diajukan, alasan_banding, jenis_banding) 
+     VALUES (?, ?, ?, ?, ?, ?, 'individual')`,
+    [siswaId, jadwalId, tanggalAbsen, statusAsli, statusDiajukan, alasanBanding]
+  );
+  
+  await connection.commit();
+  
+} catch (error) {
+  if (connection) await connection.rollback();
+  throw error;
+} finally {
+  if (connection) connection.release();
+}
+```
+
+---
+
+## 🎯 QUICK CHECKLIST
+
+Sebelum commit code, pastikan:
+
+### Database Operations
+- [ ] Gunakan parameterized queries (tidak ada string concatenation)
+- [ ] Transaction untuk multi-table operations
+- [ ] Validate FK relationships sebelum INSERT
+- [ ] LEFT JOIN untuk nullable fields (user_id di siswa)
+- [ ] Smart delete (check history sebelum hard delete)
+
+### Multi-Guru Logic
+- [ ] Query jadwal menggunakan LEFT JOIN jadwal_guru
+- [ ] Include both primary dan additional teachers
+- [ ] Check conflict sebelum assign guru tambahan
+
+### Student Management
+- [ ] ALWAYS use `siswa` table (bukan `siswa_perwakilan`)
+- [ ] Handle nullable `user_id`
+- [ ] Auto-create user account saat create siswa
+- [ ] Update both users dan siswa dalam transaction
+
+### Security
+- [ ] Password di-hash dengan bcrypt
+- [ ] JWT token dengan expiration
+- [ ] Input validation untuk semua user input
+- [ ] Role-based access control di endpoint
+
+### Export & Reports
+- [ ] Use daily aggregation logic (bukan per-jam)
+- [ ] Priority-based status calculation
+- [ ] Fetch letterhead dari system_config
+- [ ] Handle empty data gracefully
+
+### Error Handling
+- [ ] Try-catch untuk semua async operations
+- [ ] Rollback transaction on error
+- [ ] Release connection di finally block
+- [ ] User-friendly error messages
+- [ ] Log errors untuk debugging
+
+---
+
+## 📚 Related Rules
+
+- [absenta-master-2025.mdc](mdc:absenta-master-2025.mdc) - Master reference
+- [absenta-database-schema-2025.mdc](mdc:absenta-database-schema-2025.mdc) - Database schema
+- [absenta-api-patterns-2025.mdc](mdc:absenta-api-patterns-2025.mdc) - API patterns
+- [absenta-security-patterns.mdc](mdc:absenta-security-patterns.mdc) - Security patterns
+
+---
+
+**INGAT**: Patterns di file ini adalah CRITICAL. Jika dilanggar, akan menyebabkan:
+- 🔥 Data corruption
+- 🔥 Security vulnerabilities
+- 🔥 Production bugs
+- 🔥 Data loss
+
+**SELALU ikuti patterns ini tanpa exception!**
+
+---
+
+**Last Updated**: 21 Oktober 2025  
+**Importance**: 🔥🔥🔥 CRITICAL 🔥🔥🔥

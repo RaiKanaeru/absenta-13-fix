@@ -1,0 +1,441 @@
+---
+alwaysApply: true
+description: Updated database schema for Absenta system after Opsi 2 Full Normalization (Oktober 2025)
+---
+
+# Absenta Database Schema - UPDATED 2025 (Post Opsi 2)
+
+## 🎯 CRITICAL UPDATES (Oktober 2025)
+
+**STATUS**: ✅ Opsi 2 Full Normalization COMPLETED  
+**MIGRATION DATE**: 21 Oktober 2025  
+**SCHEMA VERSION**: 2.0 (Normalized)
+
+## ⚠️ BREAKING CHANGES
+
+### **1. `users` Table** - UPDATED ENUM
+```sql
+-- OLD ENUM (DEPRECATED)
+role ENUM('ADMIN','GURU','KETOS','perwakilan')
+
+-- NEW ENUM (CURRENT)
+role ENUM('ADMIN','GURU','SISWA')
+
+-- Migration completed: All 'KETOS' and 'perwakilan' → 'SISWA'
+```
+
+### **2. `siswa` Table** - BASE TABLE (not VIEW)
+```sql
+CREATE TABLE `siswa` (
+  `id` INT(11) NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  `id_siswa` INT(11) NOT NULL UNIQUE,
+  `user_id` INT(11) DEFAULT NULL, -- ✅ NULLABLE (akun opsional)
+  `nis` VARCHAR(30) NOT NULL UNIQUE,
+  `nama` VARCHAR(100) NOT NULL,
+  `kelas_id` INT(11) NOT NULL,
+  `jabatan` VARCHAR(50) DEFAULT 'Sekretaris Kelas',
+  `jenis_kelamin` ENUM('L','P') DEFAULT NULL,
+  `email` VARCHAR(100) DEFAULT NULL,
+  `alamat` TEXT DEFAULT NULL,
+  `telepon_orangtua` VARCHAR(20) DEFAULT NULL,
+  `telepon_siswa` VARCHAR(20) DEFAULT NULL,
+  `status` ENUM('aktif','tidak_aktif','lulus','pindah','alumni','keluar') DEFAULT 'aktif',
+  `created_at` TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP(),
+  `updated_at` TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP() ON UPDATE CURRENT_TIMESTAMP(),
+  
+  -- Foreign Keys
+  CONSTRAINT `fk_siswa_user` FOREIGN KEY (`user_id`) REFERENCES `users`(`id`) ON DELETE SET NULL,
+  CONSTRAINT `fk_siswa_kelas` FOREIGN KEY (`kelas_id`) REFERENCES `kelas`(`id_kelas`) ON DELETE RESTRICT,
+  
+  -- Indexes
+  KEY `idx_siswa_user_id` (`user_id`),
+  KEY `idx_siswa_nis` (`nis`),
+  KEY `idx_siswa_kelas_status` (`kelas_id`, `status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+```
+
+### **3. `siswa_perwakilan`** - NOW VIEW (backward compatibility)
+```sql
+-- For backward compatibility only
+CREATE VIEW `siswa_perwakilan` AS 
+SELECT * FROM `siswa`;
+```
+
+## 📊 Core Tables (Updated 2025)
+
+### 1. **users** - User Accounts (PRIMARY)
+```sql
+CREATE TABLE `users` (
+  `id` INT(11) NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  `username` VARCHAR(50) NOT NULL UNIQUE,
+  `password` VARCHAR(255) NOT NULL,
+  `role` ENUM('ADMIN','GURU','SISWA') NOT NULL,
+  `email` VARCHAR(100) DEFAULT NULL,
+  `nomor_telepon` VARCHAR(20) DEFAULT NULL,
+  `status` ENUM('aktif','tidak_aktif','ditangguhkan') DEFAULT 'aktif',
+  `created_at` TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP(),
+  `updated_at` TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP() ON UPDATE CURRENT_TIMESTAMP(),
+  
+  -- Indexes
+  KEY `idx_users_username` (`username`),
+  KEY `idx_users_role` (`role`),
+  KEY `idx_users_role_status` (`role`, `status`)
+);
+```
+
+**Key Points**:
+- ✅ Role 'SISWA' (uppercase) is standard
+- ✅ All students must have role = 'SISWA'
+- ✅ Username format: `siswa_[NIS]` (e.g., `siswa_2024001`)
+- ✅ Default password: `[NIS]@2024` (e.g., `2024001@2024`)
+
+### 2. **guru** - Teacher Data
+```sql
+CREATE TABLE `guru` (
+  `id` INT(11) NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  `id_guru` INT(11) NOT NULL UNIQUE,
+  `user_id` INT(11) NOT NULL,
+  `nama_pengguna` VARCHAR(50) NOT NULL,
+  `nip` VARCHAR(30) NOT NULL,
+  `nama` VARCHAR(100) NOT NULL,
+  `email` VARCHAR(100) DEFAULT NULL,
+  `mapel_id` INT(11) DEFAULT NULL,
+  `no_telp` VARCHAR(20) DEFAULT NULL,
+  `alamat` TEXT DEFAULT NULL,
+  `jenis_kelamin` ENUM('L','P') DEFAULT NULL,
+  `status` ENUM('aktif','tidak_aktif','pensiun') DEFAULT 'aktif',
+  `created_at` TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP(),
+  `updated_at` TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP() ON UPDATE CURRENT_TIMESTAMP(),
+  
+  -- Foreign Keys
+  CONSTRAINT `fk_guru_user` FOREIGN KEY (`user_id`) REFERENCES `users`(`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_guru_mapel` FOREIGN KEY (`mapel_id`) REFERENCES `mapel`(`id_mapel`) ON DELETE SET NULL
+);
+```
+
+### 3. **siswa** - Student Data (BASE TABLE)
+See section 2 above for complete schema.
+
+**Important**:
+- ✅ `user_id` is NULLABLE (students can exist without login account)
+- ✅ All FK references use `siswa.id_siswa` (not `siswa_perwakilan.id_siswa`)
+- ✅ Use `siswa` table in all queries (not `siswa_perwakilan`)
+
+### 4. **Multi-Teacher Tables** (NEW - 2025)
+
+#### jadwal_guru - Multi-Teacher Assignments
+```sql
+CREATE TABLE `jadwal_guru` (
+  `id` INT(11) NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  `jadwal_id` INT(11) NOT NULL,
+  `guru_id` INT(11) NOT NULL,
+  `is_primary` TINYINT(1) DEFAULT 0,
+  `created_at` TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP(),
+  
+  UNIQUE KEY `uniq_jadwal_guru` (`jadwal_id`, `guru_id`),
+  KEY `idx_jadwal_guru_jadwal` (`jadwal_id`),
+  KEY `idx_jadwal_guru_guru` (`guru_id`),
+  
+  CONSTRAINT `fk_jg_jadwal` FOREIGN KEY (`jadwal_id`) REFERENCES `jadwal`(`id_jadwal`) ON DELETE CASCADE,
+  CONSTRAINT `fk_jg_guru` FOREIGN KEY (`guru_id`) REFERENCES `guru`(`id_guru`) ON DELETE CASCADE
+);
+```
+
+#### absensi_guru_jadwal - Teacher Attendance per Schedule
+```sql
+CREATE TABLE `absensi_guru_jadwal` (
+  `id` INT(11) NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  `jadwal_id` INT(11) NOT NULL,
+  `guru_id` INT(11) NOT NULL,
+  `tanggal` DATE NOT NULL,
+  `waktu_mulai` TIME DEFAULT NULL,
+  `waktu_selesai` TIME DEFAULT NULL,
+  `status` ENUM('hadir','izin','sakit','alfa') DEFAULT 'hadir',
+  `keterangan` TEXT DEFAULT NULL,
+  `created_at` TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP(),
+  
+  UNIQUE KEY `uniq_guru_jadwal_tanggal` (`guru_id`, `jadwal_id`, `tanggal`),
+  KEY `idx_agj_jadwal` (`jadwal_id`),
+  KEY `idx_agj_guru` (`guru_id`),
+  KEY `idx_agj_tanggal` (`tanggal`),
+  
+  CONSTRAINT `fk_agj_jadwal` FOREIGN KEY (`jadwal_id`) REFERENCES `jadwal`(`id_jadwal`) ON DELETE CASCADE,
+  CONSTRAINT `fk_agj_guru` FOREIGN KEY (`guru_id`) REFERENCES `guru`(`id_guru`) ON DELETE CASCADE
+);
+```
+
+#### absensi_guru_mapping - Legacy Mapping Table
+```sql
+CREATE TABLE `absensi_guru_mapping` (
+  `id` INT(11) NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  `absensi_guru_id` INT(11) NOT NULL,
+  `guru_id` INT(11) NOT NULL,
+  `created_at` TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP(),
+  
+  UNIQUE KEY `uniq_absensi_guru` (`absensi_guru_id`, `guru_id`),
+  
+  CONSTRAINT `fk_agm_absensi` FOREIGN KEY (`absensi_guru_id`) REFERENCES `absensi_guru`(`id_absensi`) ON DELETE CASCADE,
+  CONSTRAINT `fk_agm_guru` FOREIGN KEY (`guru_id`) REFERENCES `guru`(`id_guru`) ON DELETE CASCADE
+);
+```
+
+## 🔗 Relationships (Updated 2025)
+
+```
+users (Akun)
+├── guru (1:1 via user_id) [REQUIRED]
+└── siswa (1:1 via user_id) [OPTIONAL]
+
+siswa (Data)
+├── kelas (N:1 via kelas_id) [REQUIRED]
+├── users (1:1 via user_id) [OPTIONAL]
+└── absensi_siswa (1:N via id_siswa)
+
+jadwal (Schedule)
+├── guru (N:1 via guru_id) [Primary Teacher]
+├── jadwal_guru (1:N) [Multi-Teacher Assignments]
+├── kelas (N:1 via kelas_id)
+├── mapel (N:1 via mapel_id)
+└── absensi_siswa (1:N via id_jadwal)
+
+jadwal_guru (Multi-Teacher)
+├── jadwal (N:1 via jadwal_id)
+├── guru (N:1 via guru_id)
+└── absensi_guru_jadwal (1:N)
+```
+
+## 🚨 QUERY PATTERNS (UPDATED 2025)
+
+### ❌ DEPRECATED PATTERNS (DO NOT USE)
+```sql
+-- DON'T USE: siswa_perwakilan as main table
+SELECT * FROM siswa_perwakilan WHERE id_siswa = ?;
+
+-- DON'T USE: Old role values
+SELECT * FROM users WHERE role IN ('KETOS', 'perwakilan');
+
+-- DON'T USE: Assuming user_id is NOT NULL
+SELECT * FROM siswa WHERE user_id = ?;
+```
+
+### ✅ CORRECT PATTERNS (USE THESE)
+```sql
+-- 1. Get student with user account (if exists)
+SELECT 
+  s.*,
+  u.username,
+  u.email,
+  u.status as user_status
+FROM siswa s
+LEFT JOIN users u ON s.user_id = u.id
+WHERE s.id_siswa = ?;
+
+-- 2. Get all students with role check
+SELECT 
+  s.*,
+  u.username,
+  u.role
+FROM siswa s
+LEFT JOIN users u ON s.user_id = u.id AND u.role = 'SISWA'
+WHERE s.status = 'aktif';
+
+-- 3. Student login authentication
+SELECT 
+  u.*,
+  s.id_siswa,
+  s.nis,
+  s.nama,
+  s.kelas_id
+FROM users u
+JOIN siswa s ON u.id = s.user_id
+WHERE u.username = ? 
+  AND u.role = 'SISWA'
+  AND u.status = 'aktif';
+
+-- 4. Get schedule with all teachers (multi-teacher)
+SELECT 
+  j.id_jadwal,
+  j.hari,
+  j.jam_mulai,
+  j.jam_selesai,
+  m.nama_mapel,
+  k.nama_kelas,
+  g_primary.nama as guru_utama,
+  GROUP_CONCAT(g_all.nama SEPARATOR ', ') as semua_guru
+FROM jadwal j
+JOIN mapel m ON j.mapel_id = m.id_mapel
+JOIN kelas k ON j.kelas_id = k.id_kelas
+LEFT JOIN guru g_primary ON j.guru_id = g_primary.id_guru
+LEFT JOIN jadwal_guru jg ON j.id_jadwal = jg.jadwal_id
+LEFT JOIN guru g_all ON jg.guru_id = g_all.id_guru
+WHERE j.id_jadwal = ?
+GROUP BY j.id_jadwal;
+```
+
+## 📋 Backend Code Patterns (Updated 2025)
+
+### POST /api/admin/siswa - Create Student
+```javascript
+// ✅ CORRECT: Auto-create user account in transaction
+await db.withTransaction(async (connection) => {
+  // 1. Create user account
+  const [userResult] = await connection.execute(
+    'INSERT INTO users (username, password, role, email, status) VALUES (?, ?, "SISWA", ?, "aktif")',
+    [`siswa_${nis}`, hashedPassword, email]
+  );
+  
+  const userId = userResult.insertId;
+  
+  // 2. Create siswa record
+  await connection.execute(
+    'INSERT INTO siswa (user_id, nis, nama, kelas_id, status) VALUES (?, ?, ?, ?, "aktif")',
+    [userId, nis, nama, kelas_id]
+  );
+});
+```
+
+### PUT /api/admin/students/:id - Update Student
+```javascript
+// ✅ CORRECT: Update both tables atomically
+await db.withTransaction(async (connection) => {
+  // Update user account
+  await connection.execute(
+    'UPDATE users SET username = ?, email = ? WHERE id = ? AND role = "SISWA"',
+    [username, email, userId]
+  );
+  
+  // Update siswa data
+  await connection.execute(
+    'UPDATE siswa SET nis = ?, nama = ?, kelas_id = ? WHERE user_id = ?',
+    [nis, nama, kelas_id, userId]
+  );
+});
+```
+
+### DELETE /api/admin/students/:id - Delete Student
+```javascript
+// ✅ CORRECT: Smart delete (deactivate if has history)
+await db.withTransaction(async (connection) => {
+  // Check for attendance records
+  const [attendance] = await connection.execute(
+    'SELECT COUNT(*) as count FROM absensi_siswa WHERE siswa_id IN (SELECT id_siswa FROM siswa WHERE user_id = ?)',
+    [userId]
+  );
+  
+  if (attendance[0].count > 0) {
+    // Deactivate (preserve history)
+    await connection.execute('UPDATE users SET status = "tidak_aktif" WHERE id = ?', [userId]);
+    await connection.execute('UPDATE siswa SET status = "tidak_aktif" WHERE user_id = ?', [userId]);
+  } else {
+    // Hard delete (no history)
+    await connection.execute('DELETE FROM siswa WHERE user_id = ?', [userId]);
+    await connection.execute('DELETE FROM users WHERE id = ?', [userId]);
+  }
+});
+```
+
+### POST /api/login - Student Login
+```javascript
+// ✅ CORRECT: Support 'SISWA' role with backward compatibility
+if (user.role === 'siswa' || user.role === 'SISWA' || user.role === 'perwakilan') {
+  const [siswaData] = await db.execute(
+    'SELECT s.*, k.nama_kelas FROM siswa s JOIN kelas k ON s.kelas_id = k.id_kelas WHERE s.user_id = ?',
+    [user.id]
+  );
+  
+  // Normalize role to lowercase 'siswa' in JWT token
+  const tokenPayload = {
+    id: user.id,
+    role: 'siswa', // Always lowercase in token
+    siswa_id: siswaData[0].id_siswa,
+    nis: siswaData[0].nis
+  };
+}
+```
+
+## 🔍 Data Validation (Required)
+
+### Check Data Integrity
+```sql
+-- 1. No broken relationships (should be 0)
+SELECT COUNT(*) as broken_count
+FROM siswa s
+WHERE s.user_id IS NOT NULL 
+  AND NOT EXISTS (SELECT 1 FROM users u WHERE u.id = s.user_id);
+
+-- 2. Consistent roles (should be 0)
+SELECT COUNT(*) as invalid_roles
+FROM siswa s
+JOIN users u ON s.user_id = u.id
+WHERE u.role <> 'SISWA';
+
+-- 3. No duplicate usernames (should be 0)
+SELECT username, COUNT(*) as count
+FROM users
+GROUP BY username
+HAVING count > 1;
+
+-- 4. Multi-teacher integrity
+SELECT COUNT(*) as orphaned_jadwal_guru
+FROM jadwal_guru jg
+WHERE NOT EXISTS (SELECT 1 FROM jadwal j WHERE j.id_jadwal = jg.jadwal_id)
+   OR NOT EXISTS (SELECT 1 FROM guru g WHERE g.id_guru = jg.guru_id);
+```
+
+## 📚 Related Documentation
+
+- **Implementation Summary**: `docs/implementation/OPSI2_COMPLETE_SUMMARY.md`
+- **Deployment Guide**: `docs/deployment/DEPLOYMENT_GUIDE_OPSI2.md`
+- **Quick Reference**: `docs/quick-reference/OPSI2_QUICK_GUIDE.md`
+- **Migration Scripts**: `database/migrations/2025-10-21-users-siswa-normalization.sql`
+
+## ⚡ Performance Indexes
+
+```sql
+-- Critical indexes (already created)
+CREATE INDEX idx_users_role_status ON users (role, status);
+CREATE INDEX idx_siswa_user_id ON siswa (user_id);
+CREATE INDEX idx_siswa_kelas_status ON siswa (kelas_id, status);
+CREATE INDEX idx_siswa_nis ON siswa (nis);
+
+-- Multi-teacher indexes
+CREATE INDEX idx_jadwal_guru_jadwal ON jadwal_guru (jadwal_id);
+CREATE INDEX idx_jadwal_guru_guru ON jadwal_guru (guru_id);
+CREATE INDEX idx_agj_jadwal ON absensi_guru_jadwal (jadwal_id);
+CREATE INDEX idx_agj_guru ON absensi_guru_jadwal (guru_id);
+CREATE INDEX idx_agj_tanggal ON absensi_guru_jadwal (tanggal);
+```
+
+## 🎯 Key Takeaways
+
+1. **ALWAYS use `siswa` table** (not `siswa_perwakilan`)
+2. **Role must be 'SISWA'** (uppercase in DB, lowercase in token)
+3. **user_id is NULLABLE** (check for NULL before using)
+4. **Use transactions** for multi-table operations
+5. **Smart delete** (deactivate if has history, else hard delete)
+6. **Username format**: `siswa_[NIS]`
+7. **Password format**: `[NIS]@2024`
+8. **Multi-teacher**: Use `jadwal_guru` for additional teachers
+9. **Teacher attendance**: Use `absensi_guru_jadwal` for per-schedule tracking
+
+## 📊 Table Count Summary
+
+**Active Tables**: 19 (16 core + 3 new multi-teacher)
+
+**Core Tables**:
+- users, guru, siswa (user management)
+- kelas, mapel, jurusan (academic structure)
+- jadwal, absensi_guru, absensi_siswa (scheduling & attendance)
+- pengajuan_izin_siswa, pengajuan_banding_absen (student requests)
+- kehadiran_guru_jadwal, absensi_guru_histori (teacher tracking)
+- tahun_ajaran, mata_pelajaran_eksternal (configuration)
+- report_audit (auditing)
+
+**New Multi-Teacher Tables**:
+- jadwal_guru (teacher assignments)
+- absensi_guru_jadwal (per-schedule attendance)
+- absensi_guru_mapping (legacy mapping)
+
+**Views**:
+- siswa_perwakilan (backward compatibility)
+- v_jadwal_guru_lengkap (reporting)

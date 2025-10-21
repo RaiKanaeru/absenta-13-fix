@@ -3101,9 +3101,402 @@ const HistoryView = ({ user }: { user: TeacherDashboardProps['userData'] }) => {
   );
 };
 
+// Edit Absen View (30 Hari) - Standalone
+const EditAbsenView = ({ user }: { user: TeacherDashboardProps['userData'] }) => {
+  const [schedules, setSchedules] = useState<Schedule[]>([]);
+  const [selectedSchedule, setSelectedSchedule] = useState<Schedule | null>(null);
+  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
+  const [students, setStudents] = useState<Student[]>([]);
+  const [attendance, setAttendance] = useState<{ [key: number]: AttendanceStatus }>({});
+  const [notes, setNotes] = useState<{ [key: number]: string }>({});
+  const [loading, setLoading] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+
+  // Calculate min and max dates (30 days back from today)
+  const today = new Date();
+  const maxDate = today.toISOString().split('T')[0];
+  const minDate = new Date(today.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+
+  // Load schedules
+  useEffect(() => {
+    const loadSchedules = async () => {
+      try {
+        const response = await apiCall(`/api/guru/jadwal`, { method: 'GET' });
+        
+        // Handle API response structure
+        if (response.success && Array.isArray(response.data)) {
+          setSchedules(response.data);
+        } else if (Array.isArray(response)) {
+          setSchedules(response);
+        } else {
+          console.error('Invalid schedule response format:', response);
+          setSchedules([]);
+        }
+      } catch (error) {
+        console.error('Error loading schedules:', error);
+        toast({ 
+          title: "Error", 
+          description: "Gagal memuat jadwal", 
+          variant: "destructive" 
+        });
+      }
+    };
+
+    loadSchedules();
+  }, [user]);
+
+  // Load students when schedule and date selected
+  useEffect(() => {
+    if (!selectedSchedule) return;
+
+    const loadStudents = async () => {
+      try {
+        setLoading(true);
+        const response = await apiCall(
+          `/api/guru/schedule/${selectedSchedule.id}/students?tanggal=${selectedDate}`,
+          { method: 'GET' }
+        );
+        
+        setStudents(response);
+        
+        // Pre-fill attendance from existing data
+        const attendanceMap: { [key: number]: AttendanceStatus } = {};
+        const notesMap: { [key: number]: string } = {};
+        
+        response.forEach((student: Student) => {
+          if (student.attendance_status) {
+            attendanceMap[student.id] = student.attendance_status;
+            notesMap[student.id] = student.attendance_note || '';
+          }
+        });
+        
+        setAttendance(attendanceMap);
+        setNotes(notesMap);
+      } catch (error) {
+        console.error('Error loading students:', error);
+        toast({ 
+          title: "Error", 
+          description: "Gagal memuat data siswa", 
+          variant: "destructive" 
+        });
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadStudents();
+  }, [selectedSchedule, selectedDate]);
+
+  const handleDateChange = (date: string) => {
+    const selectedDateObj = new Date(date);
+    const thirtyDaysAgo = new Date(today);
+    thirtyDaysAgo.setDate(today.getDate() - 30);
+    thirtyDaysAgo.setHours(0, 0, 0, 0);
+    
+    if (selectedDateObj < thirtyDaysAgo) {
+      toast({ 
+        title: "Tanggal Tidak Valid", 
+        description: "Anda hanya dapat mengedit absensi maksimal 30 hari ke belakang", 
+        variant: "destructive" 
+      });
+      return;
+    }
+    
+    if (selectedDateObj > today) {
+      toast({ 
+        title: "Tanggal Tidak Valid", 
+        description: "Anda tidak dapat mengedit absensi untuk tanggal yang akan datang", 
+        variant: "destructive" 
+      });
+      return;
+    }
+
+    setSelectedDate(date);
+  };
+
+  const handleSubmit = async () => {
+    if (!selectedSchedule) {
+      toast({ 
+        title: "Error", 
+        description: "Pilih jadwal terlebih dahulu", 
+        variant: "destructive" 
+      });
+      return;
+    }
+
+    try {
+      setSubmitting(true);
+
+      const attendanceData = Object.entries(attendance).map(([studentId, status]) => ({
+        siswa_id: parseInt(studentId),
+        status,
+        keterangan: notes[parseInt(studentId)] || ''
+      }));
+
+      await apiCall('/api/guru/absensi', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          jadwal_id: selectedSchedule.id,
+          tanggal: selectedDate,
+          attendance: attendanceData,
+          guru_id: user.guru_id || user.id
+        })
+      });
+
+      toast({ 
+        title: "Berhasil", 
+        description: "Absensi berhasil disimpan" 
+      });
+
+      // Reload students to get updated data
+      const response = await apiCall(
+        `/api/guru/schedule/${selectedSchedule.id}/students?tanggal=${selectedDate}`,
+        { method: 'GET' }
+      );
+      setStudents(response);
+
+    } catch (error) {
+      console.error('Error submitting attendance:', error);
+      toast({ 
+        title: "Error", 
+        description: (error as Error).message, 
+        variant: "destructive" 
+      });
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Edit className="w-5 h-5" />
+            Edit Absen (30 Hari)
+          </CardTitle>
+          <p className="text-sm text-gray-600">
+            Edit absensi siswa untuk tanggal maksimal 30 hari ke belakang
+          </p>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {/* Schedule Selector */}
+          <div>
+            <Label htmlFor="schedule-select" className="text-sm font-medium mb-2 block">
+              Pilih Jadwal
+            </Label>
+            <Select
+              value={selectedSchedule?.id.toString() || ''}
+              onValueChange={(value) => {
+                const schedule = schedules.find(s => s.id.toString() === value);
+                setSelectedSchedule(schedule || null);
+              }}
+            >
+              <SelectTrigger id="schedule-select" className="w-full">
+                <SelectValue placeholder="Pilih jadwal untuk edit absen..." />
+              </SelectTrigger>
+              <SelectContent>
+                {schedules.map((schedule) => (
+                  <SelectItem key={schedule.id} value={schedule.id.toString()}>
+                    {schedule.nama_mapel} - {schedule.nama_kelas} ({schedule.hari}, {schedule.jam_mulai} - {schedule.jam_selesai})
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Date Picker */}
+          <div>
+            <Label htmlFor="date-picker" className="text-sm font-medium mb-2 block">
+              Pilih Tanggal
+            </Label>
+            <div className="flex items-center gap-4">
+              <input
+                id="date-picker"
+                type="date"
+                value={selectedDate}
+                min={minDate}
+                max={maxDate}
+                onChange={(e) => handleDateChange(e.target.value)}
+                className="px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent flex-1"
+              />
+              <div className="text-sm text-gray-600">
+                (Maksimal 30 hari yang lalu)
+              </div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Students List */}
+      {selectedSchedule && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Daftar Siswa - {selectedSchedule.nama_kelas}</CardTitle>
+            <p className="text-sm text-gray-600">
+              Tanggal: {new Date(selectedDate).toLocaleDateString('id-ID', { 
+                weekday: 'long', 
+                year: 'numeric', 
+                month: 'long', 
+                day: 'numeric' 
+              })}
+            </p>
+          </CardHeader>
+          <CardContent>
+            {loading ? (
+              <div className="space-y-4">
+                {[1, 2, 3, 4, 5].map((i) => (
+                  <div key={i} className="animate-pulse bg-gray-200 h-16 rounded"></div>
+                ))}
+              </div>
+            ) : students.length === 0 ? (
+              <div className="text-center py-12">
+                <Users className="w-12 h-12 mx-auto text-gray-400 mb-4" />
+                <h3 className="text-lg font-medium text-gray-900 mb-2">Tidak ada siswa dalam kelas ini</h3>
+              </div>
+            ) : (
+              <>
+                <div className="space-y-4">
+                  {students.map((student, index) => (
+                    <div key={student.id} className="border rounded-lg p-4">
+                      <div className="flex items-center justify-between mb-3">
+                        <div>
+                          <p className="font-medium">{student.nama}</p>
+                          {student.nis && (
+                            <p className="text-sm text-gray-600">NIS: {student.nis}</p>
+                          )}
+                          {student.waktu_absen && (
+                            <p className="text-xs text-gray-500">
+                              Absen terakhir: {formatTime24(student.waktu_absen)}
+                            </p>
+                          )}
+                        </div>
+                        <Badge variant="outline">#{index + 1}</Badge>
+                      </div>
+                      
+                      <div className="space-y-3">
+                        {student.waktu_absen && (
+                          <div className="mb-2">
+                            <Badge variant="secondary" className="text-xs">
+                              ✓ Sudah diabsen sebelumnya
+                            </Badge>
+                          </div>
+                        )}
+                        <RadioGroup
+                          value={attendance[student.id]}
+                          onValueChange={(value) => {
+                            setAttendance(prev => ({
+                              ...prev,
+                              [student.id]: value as AttendanceStatus
+                            }));
+                          }}
+                        >
+                          <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
+                            <div className="flex items-center space-x-2">
+                              <RadioGroupItem value="Hadir" id={`hadir-${student.id}`} />
+                              <Label htmlFor={`hadir-${student.id}`} className="text-sm cursor-pointer">
+                                Hadir
+                              </Label>
+                            </div>
+                            <div className="flex items-center space-x-2">
+                              <RadioGroupItem value="Izin" id={`izin-${student.id}`} />
+                              <Label htmlFor={`izin-${student.id}`} className="text-sm cursor-pointer">
+                                Izin
+                              </Label>
+                            </div>
+                            <div className="flex items-center space-x-2">
+                              <RadioGroupItem value="Sakit" id={`sakit-${student.id}`} />
+                              <Label htmlFor={`sakit-${student.id}`} className="text-sm cursor-pointer">
+                                Sakit
+                              </Label>
+                            </div>
+                            <div className="flex items-center space-x-2">
+                              <RadioGroupItem value="Alpa" id={`alpa-${student.id}`} />
+                              <Label htmlFor={`alpa-${student.id}`} className="text-sm cursor-pointer">
+                                Alpa
+                              </Label>
+                            </div>
+                            <div className="flex items-center space-x-2">
+                              <RadioGroupItem value="Dispen" id={`dispen-${student.id}`} />
+                              <Label htmlFor={`dispen-${student.id}`} className="text-sm cursor-pointer">
+                                Dispen
+                              </Label>
+                            </div>
+                          </div>
+                        </RadioGroup>
+                        
+                        {attendance[student.id] && attendance[student.id] !== 'Hadir' && (
+                          <div className="mt-2">
+                            <Label htmlFor={`note-${student.id}`} className="text-sm text-gray-700">
+                              Keterangan (opsional)
+                            </Label>
+                            <Textarea
+                              id={`note-${student.id}`}
+                              value={notes[student.id] || ''}
+                              onChange={(e) => {
+                                setNotes(prev => ({
+                                  ...prev,
+                                  [student.id]: e.target.value
+                                }));
+                              }}
+                              placeholder={`Keterangan untuk ${attendance[student.id]}...`}
+                              className="mt-1"
+                              rows={2}
+                            />
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Submit Button */}
+                <div className="mt-6 flex justify-end gap-3">
+                  <Button
+                    onClick={() => {
+                      setSelectedSchedule(null);
+                      setAttendance({});
+                      setNotes({});
+                    }}
+                    variant="outline"
+                  >
+                    <XCircle className="w-4 h-4 mr-2" />
+                    Reset
+                  </Button>
+                  <Button
+                    onClick={handleSubmit}
+                    disabled={submitting || Object.keys(attendance).length === 0}
+                    className="bg-blue-600 hover:bg-blue-700"
+                  >
+                    {submitting ? (
+                      <>
+                        <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                        Menyimpan...
+                      </>
+                    ) : (
+                      <>
+                        <Save className="w-4 h-4 mr-2" />
+                        Simpan Absensi
+                      </>
+                    )}
+                  </Button>
+                </div>
+              </>
+            )}
+          </CardContent>
+        </Card>
+      )}
+    </div>
+  );
+};
+
 // Main TeacherDashboard Component
 export const TeacherDashboard = ({ userData, onLogout }: TeacherDashboardProps) => {
-  const [activeView, setActiveView] = useState<'schedule' | 'history' | 'banding-absen' | 'reports'>('schedule');
+  const [activeView, setActiveView] = useState<'schedule' | 'edit-absen' | 'history' | 'banding-absen' | 'reports'>('schedule');
   const [activeReportView, setActiveReportView] = useState<string | null>(null);
   const [activeSchedule, setActiveSchedule] = useState<Schedule | null>(null);
   const [schedules, setSchedules] = useState<Schedule[]>([]);
@@ -3264,6 +3657,14 @@ export const TeacherDashboard = ({ userData, onLogout }: TeacherDashboardProps) 
             <Clock className="h-4 w-4" />
             {(sidebarOpen || window.innerWidth >= 1024) && <span className="ml-2">Jadwal Hari Ini</span>}
           </Button>
+          <Button
+            variant={activeView === 'edit-absen' ? "default" : "ghost"}
+            className={`w-full justify-start ${sidebarOpen || window.innerWidth >= 1024 ? '' : 'px-2'}`}
+            onClick={() => {setActiveView('edit-absen'); setSidebarOpen(false);}}
+          >
+            <Edit className="h-4 w-4" />
+            {(sidebarOpen || window.innerWidth >= 1024) && <span className="ml-2">Edit Absen (30 Hari)</span>}
+          </Button>
           {/* Pengajuan Izin feature removed per business requirements */}
           <Button
             variant={activeView === 'banding-absen' ? "default" : "ghost"}
@@ -3385,6 +3786,8 @@ export const TeacherDashboard = ({ userData, onLogout }: TeacherDashboardProps) 
               onSelectSchedule={setActiveSchedule} 
               isLoading={isLoading}
             />
+          ) : activeView === 'edit-absen' ? (
+            <EditAbsenView user={user} />
           ) : activeView === 'banding-absen' ? (
             <BandingAbsenView user={user} />
           ) : activeView === 'reports' ? (

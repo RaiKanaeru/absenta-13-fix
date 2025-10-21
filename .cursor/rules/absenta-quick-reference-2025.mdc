@@ -1,0 +1,300 @@
+---
+description: Quick reference guide for Absenta system (2025 - Post Normalization)
+---
+
+# Absenta Quick Reference 2025
+
+## 🎯 System Overview
+
+**Status**: ✅ Production Ready (Post Opsi 2 Full Normalization)  
+**Database**: 19 active tables + 2 views  
+**Backend**: server_modern.js (7200+ lines)  
+**Features**: Multi-Teacher ✅ | Banding Absen ✅ | Normalized DB ✅
+
+---
+
+## 📊 Core Tables
+
+### **User Management** (Normalized)
+- `users` - Akun (ADMIN, GURU, SISWA)
+- `guru` - Data guru (user_id REQUIRED)
+- `siswa` - Data siswa (user_id NULLABLE ⚠️)
+- `siswa_perwakilan` - VIEW backward compatibility
+
+### **Academic**
+- `kelas` - Classes (with ruang, kode_ruang)
+- `mapel` - Subjects
+- `jurusan` - Departments
+- `tahun_ajaran` - Academic years
+
+### **Multi-Teacher** (NEW 2025)
+- `jadwal` - Schedules (guru_id = primary)
+- `jadwal_guru` - Multi-teacher assignments
+- `absensi_guru_jadwal` - Per-schedule attendance
+- `absensi_guru_mapping` - Per-teacher mapping
+
+### **Attendance**
+- `absensi_siswa` - Student attendance
+- `absensi_guru` - Teacher attendance (legacy)
+
+### **Banding Absen**
+- `pengajuan_banding_absen` - Appeals
+- `banding_absen_detail` - Class appeal details
+
+### **❌ REMOVED**
+- ~~pengajuan_izin_siswa~~ - DELETED (tidak digunakan)
+
+---
+
+## 🔑 Critical Patterns
+
+### **1. Multi-Guru Query**
+```sql
+-- Get teacher's schedules (primary + additional)
+SELECT j.* 
+FROM jadwal j
+LEFT JOIN jadwal_guru jg ON j.id_jadwal = jg.jadwal_id 
+  AND jg.guru_id = ? AND jg.status = 'aktif'
+WHERE (j.guru_id = ? OR jg.guru_id IS NOT NULL) 
+  AND j.status = 'aktif'
+```
+
+### **2. Siswa with Nullable User**
+```sql
+-- ALWAYS use LEFT JOIN for user_id
+SELECT s.*, u.username, u.email
+FROM siswa s
+LEFT JOIN users u ON s.user_id = u.id
+WHERE s.id_siswa = ?
+```
+
+### **3. Transaction Pattern**
+```javascript
+let connection;
+try {
+  connection = await db.getConnection();
+  await connection.beginTransaction();
+  
+  // Operations
+  
+  await connection.commit();
+} catch (error) {
+  await connection.rollback();
+  throw error;
+} finally {
+  connection.release();
+}
+```
+
+### **4. Daily Attendance Logic** ⭐ NEW
+```sql
+-- Aggregate per hari dengan priority logic
+WITH daily_status AS (
+    SELECT 
+        s.id_siswa, s.nama, ase.tanggal,
+        CASE 
+            -- Alpha → Tidak Hadir
+            WHEN SUM(CASE WHEN ase.status = 'Alpa' THEN 1 ELSE 0 END) > 0 
+                THEN 'Alpa'
+            -- Dispen → Hadir (belajar bentuk lain)
+            WHEN SUM(CASE WHEN ase.status = 'Dispen' THEN 1 ELSE 0 END) = COUNT(*) 
+                THEN 'Dispen'
+            -- Izin/Sakit → Hadir dengan status
+            WHEN SUM(CASE WHEN ase.status IN ('Izin','Sakit') THEN 1 ELSE 0 END) = COUNT(*) 
+                THEN 'Izin'
+            -- Hadir
+            WHEN SUM(CASE WHEN ase.status = 'Hadir' THEN 1 ELSE 0 END) > 0 
+                THEN 'Hadir'
+            ELSE 'Alpa'
+        END as status_hari
+    FROM siswa s
+    LEFT JOIN absensi_siswa ase ON s.id_siswa = ase.siswa_id 
+        AND ase.tanggal BETWEEN ? AND ?
+    GROUP BY s.id_siswa, s.nama, ase.tanggal
+)
+SELECT 
+    nama,
+    SUM(CASE WHEN status_hari = 'Hadir' THEN 1 ELSE 0 END) as hadir,
+    SUM(CASE WHEN status_hari = 'Dispen' THEN 1 ELSE 0 END) as dispen,
+    COUNT(DISTINCT tanggal) as total_hari
+FROM daily_status
+WHERE tanggal IS NOT NULL
+GROUP BY nama
+```
+
+### **5. Export Endpoint Pattern**
+```javascript
+// All 6 export endpoints follow this pattern
+router.get('/api/export/{type}', async (req, res) => {
+    const { startDate, endDate } = req.query;
+    
+    // 1. Validate params
+    // 2. Query dengan daily logic (if needed)
+    // 3. Fetch letterhead from system_config
+    // 4. Build Excel dengan buildExcel()
+    // 5. Send file response
+});
+
+// Letterhead keys:
+// letterhead_teacher-summary
+// letterhead_student-summary
+// letterhead_presensi-siswa
+// letterhead_rekap-ketidakhadiran
+// letterhead_rekap-ketidakhadiran-guru
+// letterhead_banding-absen
+```
+
+---
+
+## 🚨 Common Mistakes to Avoid
+
+### **❌ DON'T**
+```javascript
+// 1. Don't use siswa_perwakilan as main table
+SELECT * FROM siswa_perwakilan; // Use siswa instead
+
+// 2. Don't assume user_id is NOT NULL
+const username = siswa.username; // Wrong! user_id can be NULL
+
+// 3. Don't forget multi-guru in queries
+WHERE j.guru_id = ?; // Missing additional teachers!
+
+// 4. Don't use old roles
+WHERE role IN ('KETOS', 'perwakilan'); // Use 'SISWA'
+
+// 5. Don't reference pengajuan_izin_siswa
+// This table/feature has been removed!
+```
+
+### **✅ DO**
+```javascript
+// 1. Use siswa table
+SELECT * FROM siswa WHERE id_siswa = ?;
+
+// 2. LEFT JOIN for nullable user_id
+SELECT s.*, u.username FROM siswa s LEFT JOIN users u ON s.user_id = u.id;
+
+// 3. Include multi-guru
+LEFT JOIN jadwal_guru jg ON j.id_jadwal = jg.jadwal_id AND jg.guru_id = ?
+WHERE (j.guru_id = ? OR jg.guru_id IS NOT NULL);
+
+// 4. Use 'SISWA' role
+WHERE u.role = 'SISWA';
+
+// 5. Use banding_absen instead
+// For attendance appeals, use pengajuan_banding_absen
+```
+
+---
+
+## 🔐 Authentication
+
+### **Roles** (Uppercase in DB, lowercase in token)
+- `ADMIN` - Full access
+- `GURU` - Teacher access
+- `SISWA` - Student access
+
+### **Username Formats**
+- Admin: `admin`, `admin1`, etc.
+- Guru: `guru1`, `guru2`, etc.
+- Siswa: `siswa_[NIS]` (e.g., `siswa_2024001`)
+
+### **Default Passwords**
+- Siswa: `[NIS]@2024` (e.g., `2024001@2024`)
+
+---
+
+## 📋 API Endpoints Quick List
+
+### **Admin** (/api/admin/*)
+- Users, Guru, Siswa (CRUD with transactions)
+- Kelas, Jadwal (multi-guru), Mapel
+- Ruang Kelas, Reports
+
+### **Guru** (/api/guru/*)
+- Schedule (multi-guru)
+- Attendance (multi-guru)
+- Banding (multi-guru)
+
+### **Siswa** (/api/siswa/*)
+- Profile, Jadwal
+- Kehadiran Guru (multi-guru)
+- Banding (individual, class - 1 student only)
+
+---
+
+## 🎯 Smart Delete Pattern
+
+```javascript
+// Check for attendance records
+const [attendance] = await db.execute(
+  'SELECT COUNT(*) as count FROM absensi_siswa WHERE siswa_id = ?',
+  [siswaId]
+);
+
+if (attendance[0].count > 0) {
+  // Deactivate (preserve history)
+  await db.execute('UPDATE siswa SET status = "tidak_aktif" WHERE id_siswa = ?', [siswaId]);
+  await db.execute('UPDATE users SET status = "tidak_aktif" WHERE id = ?', [userId]);
+} else {
+  // Hard delete (no history)
+  await db.execute('DELETE FROM siswa WHERE id_siswa = ?', [siswaId]);
+  await db.execute('DELETE FROM users WHERE id = ?', [userId]);
+}
+```
+
+---
+
+## 📈 Performance Tips
+
+1. **Always use indexes** for WHERE, JOIN, ORDER BY columns
+2. **Use COALESCE** for default values in SELECT
+3. **LEFT JOIN** for optional relationships
+4. **Limit result sets** with LIMIT clause
+5. **Connection pooling** is configured (don't create new connections)
+
+---
+
+## ⚡ Quick Fixes
+
+### **Issue**: "user_id cannot be null"
+**Fix**: Make siswa.user_id NULLABLE or create user account first
+
+### **Issue**: "Role 'KETOS' not in enum"
+**Fix**: Use 'SISWA' instead (old roles migrated)
+
+### **Issue**: "siswa_perwakilan table not found"
+**Fix**: Use `siswa` table (siswa_perwakilan is just a VIEW)
+
+### **Issue**: "Multi-guru attendance not saved"
+**Fix**: Use `absensi_guru_mapping` table, not just `absensi_guru_jadwal`
+
+### **Issue**: "Banding submitted but not visible to guru"
+**Fix**: Ensure query includes multi-guru check (LEFT JOIN jadwal_guru)
+
+---
+
+## 📚 Documentation Files
+
+- **System Architecture**: `.cursor/rules/absenta-system-architecture-2025.mdc`
+- **Database Schema**: `.cursor/rules/absenta-database-schema-final.mdc`
+- **API Patterns**: `.cursor/rules/absenta-api-patterns-2025.mdc`
+- **Multi-Teacher**: `.cursor/rules/absenta-multi-teacher.mdc`
+- **Complete Summary**: `FINAL_COMPLETE_AUDIT_REPORT.md`
+
+---
+
+## 🎯 Development Workflow
+
+1. **Create feature branch**: `git checkout -b feature/name`
+2. **Follow patterns** in Cursor Rules
+3. **Use transactions** for multi-table operations
+4. **Test endpoints** before committing
+5. **Update docs** if needed
+6. **Create PR** with clear description
+
+---
+
+**Last Updated**: 21 Oktober 2025  
+**Version**: 2.0 (Post Full Normalization)  
+**Status**: ✅ Production Ready

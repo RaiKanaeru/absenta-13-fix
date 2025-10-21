@@ -129,11 +129,11 @@ const BackupManagementView: React.FC = () => {
 
     // Load backups on component mount
     useEffect(() => {
-        // DISABLED: Fitur backup belum siap
-        // loadBackups();
-        // loadArchiveStats();
-        // loadBackupSettings();
-        // loadCustomSchedules();
+        // ✅ ENABLED: Fitur backup sudah ready
+        loadBackups();
+        // loadArchiveStats(); // TODO: Implement archive stats endpoint
+        // loadBackupSettings(); // TODO: Implement backup settings endpoint
+        // loadCustomSchedules(); // TODO: Implement custom schedules endpoint
     }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
     // Auto-refresh custom schedules every minute to update countdown
@@ -149,25 +149,32 @@ const BackupManagementView: React.FC = () => {
     const loadBackups = async () => {
         try {
             setLoading(true);
-            const response = await fetchWithAuth('/api/admin/backups');
+            const response = await fetchWithAuth('/api/admin/backup/list');
             if (response.ok) {
                 const data = await response.json();
-                setBackups(data.backups || []);
+                if (data.success) {
+                    setBackups(data.data || []);
+                } else {
+                    throw new Error(data.message || 'Failed to load backups');
+                }
             } else if (response.status === 404) {
-                // Endpoint tidak tersedia, set empty array
                 setBackups([]);
-                console.log('Backup endpoint not available, using empty list');
+                toast({
+                    title: "Info",
+                    description: "Belum ada backup tersedia",
+                    variant: "default"
+                });
             } else {
-                throw new Error('Failed to load backups');
+                const error = await response.json();
+                throw new Error(error.message || 'Failed to load backups');
             }
         } catch (error) {
             console.error('Error loading backups:', error);
-            // Set empty array sebagai fallback
             setBackups([]);
             toast({
-                title: "Info",
-                description: "Fitur backup belum tersedia",
-                variant: "default"
+                title: "Error",
+                description: error instanceof Error ? error.message : "Gagal memuat daftar backup",
+                variant: "destructive"
             });
         } finally {
             setLoading(false);
@@ -363,94 +370,43 @@ const BackupManagementView: React.FC = () => {
     };
 
     const createBackup = async () => {
-        // Validasi berdasarkan tipe backup
-        if (backupType === 'semester' && !selectedSemester) {
-            toast({
-                title: "Error",
-                description: "Pilih semester terlebih dahulu",
-                variant: "destructive"
-            });
-            return;
-        }
-
-        if (backupType === 'date' && !selectedDate) {
-            toast({
-                title: "Error",
-                description: "Pilih tanggal mulai backup terlebih dahulu",
-                variant: "destructive"
-            });
-            return;
-        }
-
         try {
             setBackupProgress({
                 isRunning: true,
                 progress: 0,
-                currentStep: 'Menginisialisasi backup...',
-                estimatedTime: '5-10 menit'
+                currentStep: 'Membuat backup database...',
+                estimatedTime: '2-5 detik'
             });
 
-            // Tentukan endpoint dan payload berdasarkan tipe backup
-            const endpoint = backupType === 'semester' 
-                ? '/api/admin/create-semester-backup'
-                : '/api/admin/create-date-backup';
+            const response = await fetchWithAuth('/api/admin/backup/create', {
+                method: 'POST'
+            });
 
-            const payload = backupType === 'semester' 
-                ? {
-                    semester: selectedSemester,
-                    year: selectedYear
+            if (response.ok) {
+                const data = await response.json();
+                if (data.success) {
+                    setBackupProgress({
+                        isRunning: false,
+                        progress: 100,
+                        currentStep: 'Backup selesai',
+                        estimatedTime: ''
+                    });
+                    
+                    toast({
+                        title: "Berhasil",
+                        description: `Backup berhasil dibuat: ${data.data.filename}`,
+                    });
+                    
+                    // Reload backup list
+                    loadBackups();
+                    setShowCreateDialog(false);
+                } else {
+                    throw new Error(data.message || 'Failed to create backup');
                 }
-                : {
-                    startDate: selectedDate,
-                    endDate: selectedEndDate || selectedDate
-                };
-
-            const response = await fetchWithAuth(endpoint, {
-                method: 'POST',
-                body: JSON.stringify(payload)
-            });
-
-            if (!response.ok) {
-                throw new Error('Failed to create backup');
+            } else {
+                const error = await response.json();
+                throw new Error(error.message || 'Failed to create backup');
             }
-
-            // Simulate progress updates
-            const progressInterval = setInterval(() => {
-                setBackupProgress(prev => {
-                    if (prev.progress >= 90) {
-                        clearInterval(progressInterval);
-                        return {
-                            ...prev,
-                            progress: 100,
-                            currentStep: 'Backup selesai!',
-                            estimatedTime: '0 menit'
-                        };
-                    }
-                    return {
-                        ...prev,
-                        progress: prev.progress + 10,
-                        currentStep: getProgressStep(prev.progress + 10)
-                    };
-                });
-            }, 2000);
-
-            const result = await response.json();
-            
-            setTimeout(() => {
-                setBackupProgress({
-                    isRunning: false,
-                    progress: 0,
-                    currentStep: '',
-                    estimatedTime: ''
-                });
-                setShowCreateDialog(false);
-                loadBackups();
-                toast({
-                    title: "Berhasil",
-                    description: `Backup berhasil dibuat: ${result.data?.backupId || 'Backup'}`,
-                });
-            }, 10000);
-
         } catch (error) {
             console.error('Error creating backup:', error);
             setBackupProgress({
@@ -461,7 +417,7 @@ const BackupManagementView: React.FC = () => {
             });
             toast({
                 title: "Error",
-                description: "Gagal membuat backup",
+                description: error instanceof Error ? error.message : "Gagal membuat backup",
                 variant: "destructive"
             });
         }
@@ -478,14 +434,14 @@ const BackupManagementView: React.FC = () => {
 
     const downloadBackup = async (backupId: string) => {
         try {
-            const response = await fetchWithAuth(`/api/admin/download-backup/${backupId}`, {
-            });
+            const response = await fetchWithAuth(`/api/admin/backup/download/${backupId}`);
+            
             if (response.ok) {
                 const blob = await response.blob();
                 const url = window.URL.createObjectURL(blob);
                 const a = document.createElement('a');
                 a.href = url;
-                a.download = `${backupId}.zip`;
+                a.download = `${backupId}.sql`;
                 document.body.appendChild(a);
                 a.click();
                 window.URL.revokeObjectURL(url);
@@ -496,13 +452,14 @@ const BackupManagementView: React.FC = () => {
                     description: "Backup berhasil diunduh",
                 });
             } else {
-                throw new Error('Failed to download backup');
+                const error = await response.json();
+                throw new Error(error.message || 'Failed to download backup');
             }
         } catch (error) {
             console.error('Error downloading backup:', error);
             toast({
                 title: "Error",
-                description: "Gagal mengunduh backup",
+                description: error instanceof Error ? error.message : "Gagal mengunduh backup",
                 variant: "destructive"
             });
         }
@@ -514,52 +471,67 @@ const BackupManagementView: React.FC = () => {
         }
 
         try {
-            const response = await fetchWithAuth(`/api/admin/delete-backup/${backupId}`, {
+            const response = await fetchWithAuth(`/api/admin/backup/${backupId}`, {
                 method: 'DELETE',
             });
 
             if (response.ok) {
-                loadBackups();
-                toast({
-                    title: "Berhasil",
-                    description: "Backup berhasil dihapus",
-                });
+                const data = await response.json();
+                if (data.success) {
+                    loadBackups();
+                    toast({
+                        title: "Berhasil",
+                        description: "Backup berhasil dihapus",
+                    });
+                } else {
+                    throw new Error(data.message || 'Failed to delete backup');
+                }
             } else {
-                throw new Error('Failed to delete backup');
+                const error = await response.json();
+                throw new Error(error.message || 'Failed to delete backup');
             }
         } catch (error) {
             console.error('Error deleting backup:', error);
             toast({
                 title: "Error",
-                description: "Gagal menghapus backup",
+                description: error instanceof Error ? error.message : "Gagal menghapus backup",
                 variant: "destructive"
             });
         }
     };
 
-    const restoreBackup = async (backupId: string) => {
-        if (!confirm('Apakah Anda yakin ingin memulihkan backup ini? Ini akan menimpa data saat ini.')) {
+    const restoreBackup = async (filename: string) => {
+        if (!confirm('⚠️ PERINGATAN: Apakah Anda yakin ingin memulihkan backup ini? Ini akan menimpa data saat ini dan tidak dapat dibatalkan!')) {
             return;
         }
 
         try {
-            const response = await fetchWithAuth(`/api/admin/restore-backup/${backupId}`, {
+            const response = await fetchWithAuth('/api/admin/backup/restore', {
                 method: 'POST',
+                body: JSON.stringify({ filename })
             });
 
             if (response.ok) {
-                toast({
-                    title: "Berhasil",
-                    description: "Backup berhasil dipulihkan",
-                });
+                const data = await response.json();
+                if (data.success) {
+                    toast({
+                        title: "Berhasil",
+                        description: "Database berhasil dipulihkan. Silakan refresh halaman.",
+                    });
+                    // Reload after 2 seconds
+                    setTimeout(() => window.location.reload(), 2000);
+                } else {
+                    throw new Error(data.message || 'Failed to restore backup');
+                }
             } else {
-                throw new Error('Failed to restore backup');
+                const error = await response.json();
+                throw new Error(error.message || 'Failed to restore backup');
             }
         } catch (error) {
             console.error('Error restoring backup:', error);
             toast({
                 title: "Error",
-                description: "Gagal memulihkan backup",
+                description: error instanceof Error ? error.message : "Gagal memulihkan backup",
                 variant: "destructive"
             });
         }
@@ -630,26 +602,34 @@ const BackupManagementView: React.FC = () => {
 
     const saveBackupSettings = async () => {
         try {
+            setLoading(true);
+            console.log('💾 Saving backup settings:', backupSettings);
+            
             const response = await fetchWithAuth('/api/admin/backup-settings', {
                 method: 'POST',
                 body: JSON.stringify(backupSettings)
             });
 
-            if (response.ok) {
+            const data = await response.json();
+            
+            if (response.ok && data.success) {
                 toast({
                     title: "Berhasil",
-                    description: "Pengaturan backup berhasil disimpan",
+                    description: data.message || "Pengaturan backup berhasil disimpan",
                 });
+                console.log('✅ Backup settings saved:', data.data);
             } else {
-                throw new Error('Failed to save settings');
+                throw new Error(data.message || 'Failed to save settings');
             }
         } catch (error) {
-            console.error('Error saving backup settings:', error);
+            console.error('❌ Error saving backup settings:', error);
             toast({
                 title: "Error",
-                description: "Gagal menyimpan pengaturan backup",
+                description: error instanceof Error ? error.message : "Gagal menyimpan pengaturan backup",
                 variant: "destructive"
             });
+        } finally {
+            setLoading(false);
         }
     };
 
@@ -673,15 +653,6 @@ const BackupManagementView: React.FC = () => {
 
     return (
         <div className="space-y-6">
-            {/* Feature Under Development Banner */}
-            <Alert variant="default" className="border-yellow-500 bg-yellow-50">
-                <AlertTriangle className="h-4 w-4 text-yellow-600" />
-                <AlertDescription className="text-yellow-800">
-                    <strong>Fitur Dalam Pengembangan:</strong> Sistem backup dan archive sedang dalam tahap implementasi. 
-                    Fitur ini akan diaktifkan setelah integrasi backend selesai.
-                </AlertDescription>
-            </Alert>
-
             <div className="flex items-center justify-between">
                 <div>
                     <h2 className="text-2xl font-bold tracking-tight">Backup & Archive Management</h2>
@@ -733,13 +704,13 @@ const BackupManagementView: React.FC = () => {
                     )}
                 </div>
                 <div className="flex gap-2">
-                    <Button onClick={loadBackups} variant="outline" size="sm" disabled={true}>
+                    <Button onClick={loadBackups} variant="outline" size="sm" disabled={loading}>
                         <RefreshCw className="h-4 w-4 mr-2" />
                         Refresh
                     </Button>
                     <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
                         <DialogTrigger asChild>
-                            <Button disabled={true}>
+                            <Button disabled={loading}>
                                 <Database className="h-4 w-4 mr-2" />
                                 Buat Backup
                             </Button>
@@ -828,10 +799,10 @@ const BackupManagementView: React.FC = () => {
                                 <Button 
                                     onClick={createBackup} 
                                     className="w-full" 
-                                    disabled={true}
+                                    disabled={backupProgress.isRunning || loading}
                                 >
                                     <Database className="h-4 w-4 mr-2" />
-                                    Buat Backup
+                                    {backupProgress.isRunning ? 'Membuat Backup...' : 'Buat Backup'}
                                 </Button>
                             </div>
                         </DialogContent>
@@ -893,7 +864,7 @@ const BackupManagementView: React.FC = () => {
                                     <p className="text-muted-foreground mb-4">
                                         Buat backup pertama untuk melindungi data Anda
                                     </p>
-                                    <Button onClick={() => setShowCreateDialog(true)} disabled={true}>
+                                    <Button onClick={() => setShowCreateDialog(true)} disabled={loading}>
                                         <Database className="h-4 w-4 mr-2" />
                                         Buat Backup Pertama
                                     </Button>
@@ -949,7 +920,7 @@ const BackupManagementView: React.FC = () => {
                                                             size="sm"
                                                             variant="outline"
                                                             onClick={() => downloadBackup(backup.id)}
-                                                            disabled={true}
+                                                            disabled={loading}
                                                         >
                                                             <Download className="h-4 w-4" />
                                                         </Button>
@@ -957,7 +928,7 @@ const BackupManagementView: React.FC = () => {
                                                             size="sm"
                                                             variant="outline"
                                                             onClick={() => restoreBackup(backup.id)}
-                                                            disabled={true}
+                                                            disabled={loading}
                                                         >
                                                             <RotateCcw className="h-4 w-4" />
                                                         </Button>
@@ -965,7 +936,7 @@ const BackupManagementView: React.FC = () => {
                                                             size="sm"
                                                             variant="outline"
                                                             onClick={() => deleteBackup(backup.id)}
-                                                            disabled={true}
+                                                            disabled={loading}
                                                         >
                                                             <Trash2 className="h-4 w-4" />
                                                         </Button>
@@ -1099,9 +1070,10 @@ const BackupManagementView: React.FC = () => {
                                 </Button>
                                 <Button 
                                     onClick={createTestArchiveData} 
-                                    disabled={archiveLoading}
+                                    disabled={true}
                                     variant="secondary"
                                     className="flex-1 min-w-[180px]"
+                                    title="Fitur test data - endpoint backend belum tersedia"
                                 >
                                     <Database className="h-4 w-4 mr-2" />
                                     Buat Data Test (25 bulan)
@@ -1343,9 +1315,9 @@ const BackupManagementView: React.FC = () => {
                                 </div>
                             </div>
                             
-                            <Button onClick={saveBackupSettings} className="w-full" disabled={true}>
+                            <Button onClick={saveBackupSettings} className="w-full" disabled={loading}>
                                 <Settings className="h-4 w-4 mr-2" />
-                                Simpan Pengaturan
+                                {loading ? 'Menyimpan...' : 'Simpan Pengaturan'}
                             </Button>
                         </CardContent>
                     </Card>
@@ -1425,7 +1397,7 @@ const BackupManagementView: React.FC = () => {
                                                 />
                                                 <Label htmlFor="enabled">Aktifkan jadwal ini</Label>
                                             </div>
-                                            <Button onClick={createCustomSchedule} className="w-full" disabled={true}>
+                                            <Button onClick={createCustomSchedule} className="w-full" disabled={loading}>
                                                 <Calendar className="h-4 w-4 mr-2" />
                                                 Buat Jadwal
                                             </Button>

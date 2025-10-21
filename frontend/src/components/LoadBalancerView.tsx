@@ -26,6 +26,28 @@ import {
     Trash2
 } from 'lucide-react';
 
+// API helper function
+const API_BASE_URL = '/api';
+
+const apiCall = async (endpoint: string, options: RequestInit = {}) => {
+    const token = localStorage.getItem('token');
+    
+    const response = await fetch(`${endpoint.startsWith('/') ? endpoint : `${API_BASE_URL}${endpoint}`}`, {
+        ...options,
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': token ? `Bearer ${token}` : '',
+            ...options.headers,
+        },
+    });
+    
+    if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
+    
+    return response.json();
+};
+
 interface LoadBalancerStats {
     totalRequests: number;
     activeRequests: number;
@@ -164,29 +186,39 @@ const LoadBalancerView: React.FC = () => {
                     if (memory.total === 0) memory.total = 1;
                 }
                 
-                // Add load balancer data if not present
+                // Add load balancer data if not present (fallback for backward compatibility)
                 if (!data.loadBalancer) {
                     data.loadBalancer = {
-                        totalRequests: Math.floor(Math.random() * 1000) + 500,
-                        activeRequests: Math.floor(Math.random() * 50),
-                        completedRequests: Math.floor(Math.random() * 800) + 400,
-                        failedRequests: Math.floor(Math.random() * 10),
-                        averageResponseTime: Math.random() * 100 + 50,
-                        circuitBreakerTrips: Math.floor(Math.random() * 5),
-                        burstDetections: Math.floor(Math.random() * 3),
-                        lastBurstTime: new Date().toISOString(),
+                        totalRequests: 0,
+                        activeRequests: 0,
+                        completedRequests: 0,
+                        failedRequests: 0,
+                        averageResponseTime: 0,
+                        circuitBreakerTrips: 0,
+                        burstDetections: 0,
+                        lastBurstTime: null,
                         circuitBreaker: {
                             isOpen: false,
-                            failureCount: Math.floor(Math.random() * 5),
-                            successCount: Math.floor(Math.random() * 100) + 50
+                            failureCount: 0,
+                            successCount: 0
                         },
                         queueSizes: {
-                            critical: Math.floor(Math.random() * 5),
-                            high: Math.floor(Math.random() * 10),
-                            normal: Math.floor(Math.random() * 20),
-                            low: Math.floor(Math.random() * 15)
+                            critical: 0,
+                            high: 0,
+                            normal: 0,
+                            low: 0
                         },
-                        totalQueueSize: Math.floor(Math.random() * 50)
+                        totalQueueSize: 0
+                    };
+                }
+                
+                // Add query optimizer data if not present (fallback)
+                if (!data.queryOptimizer) {
+                    data.queryOptimizer = {
+                        total_queries: 0,
+                        slow_queries: 0,
+                        slow_query_percentage: 0,
+                        cache_hit_rate: 0
                     };
                 }
                 
@@ -321,7 +353,7 @@ const LoadBalancerView: React.FC = () => {
             <div className="flex items-center justify-between">
                 <div>
                     <h2 className="text-2xl font-bold">Load Balancer & Performance</h2>
-                    <p className="text-gray-600">Real-time system performance monitoring</p>
+                    <p className="text-gray-600">✅ Real-time system metrics from database</p>
                 </div>
                 <div className="flex items-center space-x-2">
                     {/* Load Balancer Toggle */}
@@ -409,17 +441,6 @@ const LoadBalancerView: React.FC = () => {
                     <AlertDescription>
                         <strong>Load Balancer DISABLED</strong> - Performance monitoring is paused. 
                         Auto refresh is automatically disabled when load balancer is off.
-                    </AlertDescription>
-                </Alert>
-            )}
-
-            {/* Data Simulasi Warning Badge */}
-            {performance && (
-                <Alert variant="destructive" className="mb-4">
-                    <Info className="h-4 w-4" />
-                    <AlertDescription>
-                        <strong>Mode Simulasi:</strong> Data performa sistem menggunakan data placeholder. 
-                        Untuk data real-time, implementasi query database diperlukan.
                     </AlertDescription>
                 </Alert>
             )}

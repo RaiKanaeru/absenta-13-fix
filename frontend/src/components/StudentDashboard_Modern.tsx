@@ -869,6 +869,12 @@ const StudentDashboardComponent = ({ userData, onLogout }: StudentDashboardProps
     }
   }, [siswaId, activeTab]);
 
+  // Load jadwal hari ini when opening kehadiran tab
+  useEffect(() => {
+    if (siswaId && activeTab === 'kehadiran' && !isEditMode) {
+      loadJadwalHariIniRef.current();
+    }
+  }, [siswaId, activeTab, isEditMode]);
 
   // Submit kehadiran guru
   const submitKehadiran = useCallback(async () => {

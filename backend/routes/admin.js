@@ -808,40 +808,86 @@ router.get('/backups', async (req, res) => {
 
 router.get('/backup-settings', async (req, res) => {
   try {
+    // In a real implementation, you would retrieve these settings from a database or config file
+    const defaultSettings = {
+      autoBackupSchedule: 'weekly',
+      maxBackups: 10,
+      archiveAge: 24,
+      compression: true,
+      emailNotifications: false,
+      customScheduleDate: '',
+      customScheduleTime: '02:00',
+      customScheduleEnabled: false
+    };
+    
     res.json({
       success: true,
-      data: {
-        autoBackup: false,
-        backupFrequency: 'daily',
-        retentionDays: 30
-      },
-      message: 'Backup settings retrieved successfully'
+      data: defaultSettings,
+      message: 'Pengaturan backup berhasil dimuat'
     });
   } catch (error) {
-    console.error('Backup settings error:', error);
+    console.error('❌ Backup settings error:', error);
     res.status(500).json({
       success: false,
-      error: 'Internal server error'
+      error: 'Internal server error',
+      message: 'Gagal memuat pengaturan backup'
     });
   }
 });
 
 router.post('/backup-settings', async (req, res) => {
   try {
-    const { autoBackup, backupFrequency, retentionDays } = req.body;
+    const {
+      autoBackupSchedule,
+      maxBackups,
+      archiveAge,
+      compression,
+      emailNotifications,
+      customScheduleDate,
+      customScheduleTime,
+      customScheduleEnabled
+    } = req.body;
+    
+    // Validate input
+    if (!autoBackupSchedule) {
+      return res.status(400).json({
+        success: false,
+        error: 'Auto backup schedule is required'
+      });
+    }
     
     // In a real implementation, you would save these settings to a database or config file
-    console.log('Backup settings updated:', { autoBackup, backupFrequency, retentionDays });
+    console.log('✅ Backup settings updated:', {
+      autoBackupSchedule,
+      maxBackups,
+      archiveAge,
+      compression,
+      emailNotifications,
+      customScheduleDate,
+      customScheduleTime,
+      customScheduleEnabled
+    });
     
     res.json({
       success: true,
-      message: 'Backup settings updated successfully'
+      data: {
+        autoBackupSchedule,
+        maxBackups,
+        archiveAge,
+        compression,
+        emailNotifications,
+        customScheduleDate,
+        customScheduleTime,
+        customScheduleEnabled
+      },
+      message: 'Pengaturan backup berhasil disimpan'
     });
   } catch (error) {
-    console.error('Update backup settings error:', error);
+    console.error('❌ Update backup settings error:', error);
     res.status(500).json({
       success: false,
-      error: 'Internal server error'
+      error: 'Internal server error',
+      message: 'Gagal menyimpan pengaturan backup'
     });
   }
 });

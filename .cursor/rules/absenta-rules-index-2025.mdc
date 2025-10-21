@@ -1,0 +1,505 @@
+---
+description: Complete index of all Absenta Cursor Rules (Updated 2025 - Post Cleanup)
+---
+
+# Absenta Cursor Rules - Complete Index 2025
+
+## 📋 Overview
+
+**Last Updated**: 21 Oktober 2025  
+**Total Active Rules**: 20 rules  
+**Status**: ✅ Cleaned up & Consolidated  
+**Removed**: 12 duplicate/outdated rules
+
+---
+
+## 🎯 CRITICAL RULES (Must Read First)
+
+### 1. **absenta-master-2025.mdc** ⭐⭐⭐
+- **Type**: `alwaysApply: true`
+- **Description**: Master reference - Complete system overview
+- **Scope**: All files
+- **Contents**:
+  - System status & architecture
+  - Core database tables (19 active + 2 views)
+  - Critical patterns (multi-guru, nullable user_id, transactions)
+  - Common mistakes to avoid
+  - API endpoints structure
+  - Security patterns
+  - Best practices
+
+**Why Critical**: Memberikan overview lengkap sistem, table structure, dan pattern yang harus diikuti.
+
+---
+
+### 2. **absenta-critical-patterns-2025.mdc** 🔥🔥🔥
+- **Type**: `globs: *.js,*.tsx,*.ts,server*.js`
+- **Description**: Critical query patterns and common mistakes
+- **Scope**: Backend & TypeScript files
+- **Contents**:
+  - 10 critical mistakes yang harus dihindari
+  - Correct patterns untuk setiap mistake
+  - Multi-guru query patterns
+  - Nullable user_id handling
+  - Transaction patterns
+  - Smart delete logic
+  - SQL injection prevention
+  - Daily attendance aggregation
+  - Password hashing
+  - Duplicate prevention
+
+**Why Critical**: Mencegah critical bugs, security issues, dan data corruption.
+
+---
+
+### 3. **absenta-database-schema-2025.mdc**
+- **Type**: `alwaysApply: true`
+- **Description**: Updated database schema after Opsi 2 Full Normalization
+- **Scope**: All files
+- **Contents**:
+  - Complete table schemas (users, guru, siswa, multi-teacher, banding)
+  - Foreign key relationships
+  - Breaking changes dari old schema
+  - Query patterns (correct vs deprecated)
+  - Backend code patterns
+  - Data validation checks
+  - Performance indexes
+
+**Why Critical**: Source of truth untuk database structure dan relationships.
+
+---
+
+### 4. **absenta-api-patterns-2025.mdc**
+- **Type**: `globs: *.js,*.ts,server*.js`
+- **Description**: Updated API patterns after Opsi 2 Full Normalization
+- **Scope**: Backend files
+- **Contents**:
+  - Authentication patterns (updated for SISWA role)
+  - Student management endpoints (transaction-based)
+  - Teacher management endpoints
+  - Multi-guru endpoints
+  - Banding absen endpoints
+  - Export endpoints with daily logic
+  - Error handling patterns
+  - Pagination patterns
+
+**Why Critical**: Standard patterns untuk semua API development.
+
+---
+
+## 🏢 BUSINESS LOGIC RULES
+
+### 5. **absenta-multi-teacher.mdc**
+- **Description**: Multi-teacher system for subjects with multiple teachers
+- **Scope**: Schedule and attendance management
+- **Contents**:
+  - Multi-teacher table structure
+  - Assignment logic
+- Conflict detection
+  - Query patterns for schedules
+  - Attendance recording for multiple teachers
+
+### 6. **absenta-dispute-system.mdc**
+- **Description**: Dispute system for attendance appeals
+- **Scope**: Banding absen feature
+- **Contents**:
+  - Individual vs class banding
+- Duplicate prevention
+  - Multi-guru support for banding
+  - Approval workflow
+- Status transitions
+
+### 7. **absenta-attendance-flow.mdc**
+- **Description**: Attendance flow patterns and business logic
+- **Scope**: Attendance recording & reporting
+- **Contents**:
+  - Teacher attendance flow
+  - Student attendance flow
+  - Status priority logic
+  - Daily aggregation
+  - Validation rules
+
+### 8. **absenta-export-system-2025.mdc**
+- **Description**: Export system patterns and daily attendance logic
+- **Scope**: Report generation & export
+- **Contents**:
+  - 6 export endpoints
+  - Daily attendance aggregation (priority-based)
+  - Letterhead management
+  - Excel generation patterns
+  - Date range handling
+
+### 9. **absenta-business-logic.mdc**
+- **Description**: General business logic patterns and rules
+- **Scope**: All business operations
+- **Contents**:
+  - User role hierarchy
+  - Attendance status rules
+  - Schedule management logic
+  - Validation rules
+
+---
+
+## 🔐 DEVELOPMENT RULES
+
+### 10. **absenta-security-patterns.mdc**
+- **Description**: Security patterns and best practices
+- **Scope**: All code
+- **Contents**:
+  - Authentication & authorization
+  - Password hashing (bcrypt)
+  - JWT token management
+  - Input validation & sanitization
+- SQL injection prevention
+  - XSS & CSRF protection
+  - Rate limiting
+
+### 11. **absenta-error-handling.mdc**
+- **Description**: Error handling patterns and best practices
+- **Scope**: All code
+- **Contents**:
+  - Error classification
+  - Custom error classes
+  - Backend error handling
+  - Frontend error handling
+  - Error logging
+  - User-friendly messages
+
+### 12. **absenta-performance-patterns.mdc**
+- **Description**: Performance optimization patterns
+- **Scope**: All code
+- **Contents**:
+  - Database query optimization
+- Connection pooling
+- Caching strategies
+- Frontend optimization
+  - Pagination
+  - Index management
+
+### 13. **absenta-testing-patterns.mdc**
+- **Description**: Testing patterns and best practices
+- **Scope**: Test files
+- **Contents**:
+  - Test architecture
+  - Unit testing patterns
+- Integration testing
+- E2E testing
+- Test data management
+
+### 14. **absenta-deployment-patterns.mdc**
+- **Description**: Deployment and production patterns
+- **Scope**: Deployment & config
+- **Contents**:
+  - Environment setup
+  - Docker configuration
+  - CI/CD pipeline
+  - Monitoring & logging
+  - Backup strategies
+
+---
+
+## 📱 FRONTEND RULES
+
+### 15. **absenta-frontend-patterns.mdc**
+- **Description**: Frontend development patterns
+- **Scope**: React & TypeScript files
+- **Contents**:
+  - Component architecture
+  - State management
+  - API integration
+  - Form handling
+  - UI component usage
+  - Performance optimization
+
+---
+
+## 🗄️ DATABASE RULES
+
+### 16. **absenta-database-patterns.mdc**
+- **Description**: Database patterns and query optimization
+- **Scope**: Database operations
+- **Contents**:
+  - Connection pool management
+  - Query optimization
+  - Transaction handling
+  - Repository pattern
+  - Performance monitoring
+
+---
+
+## 📚 REFERENCE & UTILITY RULES
+
+### 17. **absenta-quick-reference-2025.mdc**
+- **Description**: Quick reference guide (Post Normalization)
+- **Scope**: Quick lookup
+- **Contents**:
+  - Core tables summary
+  - Critical patterns (condensed)
+  - Common mistakes
+  - Quick checklists
+  - Daily attendance logic
+  - Export endpoint patterns
+
+### 18. **absenta-data-seeding-2025.mdc**
+- **Description**: Data seeding and dummy data generation
+- **Scope**: Testing & development
+- **Contents**:
+  - Seeding scripts
+  - Test data patterns
+  - User account generation
+  - Schedule seeding
+  - Attendance data generation
+
+### 19. **absenta-development-workflow.mdc**
+- **Description**: Development workflow and best practices
+- **Scope**: Development process
+- **Contents**:
+- Git workflow
+- Branch strategy
+  - Commit conventions
+  - PR templates
+  - Code review checklist
+  - Testing workflow
+
+### 20. **absenta-system-architecture-2025.mdc**
+- **Description**: System architecture overview (Updated 2025)
+- **Scope**: Architecture understanding
+- **Contents**:
+  - Technology stack
+  - Architecture layers
+  - Data flow patterns
+  - Integration points
+  - Scalability considerations
+
+---
+
+## 🗑️ REMOVED RULES (Cleanup October 2025)
+
+The following rules were removed due to duplication or being outdated:
+
+1. ~~absenta-system-architecture.mdc~~ → Replaced by absenta-system-architecture-2025.mdc
+2. ~~absenta-api-patterns.mdc~~ → Replaced by absenta-api-patterns-2025.mdc
+3. ~~absenta-performance-optimization.mdc~~ → Duplicate of absenta-performance-patterns.mdc
+4. ~~absenta-testing.mdc~~ → Duplicate of absenta-testing-patterns.mdc
+5. ~~absenta-deployment.mdc~~ → Duplicate of absenta-deployment-patterns.mdc
+6. ~~absenta-database-complete.mdc~~ → Outdated, replaced by 2025 version
+7. ~~absenta-database-schema-final.mdc~~ → Outdated (used `pengguna` table)
+8. ~~absenta-architecture-complete.mdc~~ → Duplicate of system-architecture-2025
+9. ~~absenta-frontend-integration.mdc~~ → Merged into frontend-patterns
+10. ~~absenta-api-endpoints-complete.mdc~~ → Merged into api-patterns-2025
+11. ~~absenta-database-migration.mdc~~ → Migration completed, no longer needed
+12. ~~rules.mdc~~ → Generic file, not specific to Absenta
+
+---
+
+## 📊 RULE APPLICATION MATRIX
+
+| Rule | Always Applied | Globs | Purpose |
+|------|---------------|-------|---------|
+| absenta-master-2025 | ✅ | - | Master reference |
+| absenta-database-schema-2025 | ✅ | - | Database schema |
+| absenta-system-architecture-2025 | ✅ | - | System architecture |
+| absenta-critical-patterns-2025 | ❌ | *.js, *.tsx, *.ts, server*.js | Critical patterns |
+| absenta-api-patterns-2025 | ❌ | *.js, *.ts, server*.js | API patterns |
+| absenta-frontend-patterns | ❌ | *.tsx, *.ts (frontend) | Frontend patterns |
+| absenta-multi-teacher | ❌ | Manual fetch | Multi-teacher logic |
+| absenta-dispute-system | ❌ | Manual fetch | Banding absen |
+| absenta-attendance-flow | ❌ | Manual fetch | Attendance flow |
+| absenta-export-system-2025 | ❌ | Manual fetch | Export system |
+| absenta-business-logic | ❌ | Manual fetch | Business logic |
+| absenta-security-patterns | ❌ | Manual fetch | Security |
+| absenta-error-handling | ❌ | Manual fetch | Error handling |
+| absenta-performance-patterns | ❌ | Manual fetch | Performance |
+| absenta-testing-patterns | ❌ | Manual fetch | Testing |
+| absenta-deployment-patterns | ❌ | Manual fetch | Deployment |
+| absenta-database-patterns | ❌ | Manual fetch | Database ops |
+| absenta-quick-reference-2025 | ❌ | Manual fetch | Quick reference |
+| absenta-data-seeding-2025 | ❌ | Manual fetch | Data seeding |
+| absenta-development-workflow | ❌ | Manual fetch | Dev workflow |
+
+---
+
+## 🎯 RECOMMENDED READING ORDER
+
+### For New Developers:
+1. **absenta-master-2025.mdc** - Start here
+2. **absenta-database-schema-2025.mdc** - Understand database
+3. **absenta-critical-patterns-2025.mdc** - Learn what NOT to do
+4. **absenta-api-patterns-2025.mdc** - API development
+5. **absenta-quick-reference-2025.mdc** - Quick lookup
+
+### For Backend Development:
+1. absenta-master-2025.mdc
+2. absenta-database-schema-2025.mdc
+3. absenta-critical-patterns-2025.mdc
+4. absenta-api-patterns-2025.mdc
+5. absenta-security-patterns.mdc
+6. absenta-error-handling.mdc
+
+### For Frontend Development:
+1. absenta-master-2025.mdc
+2. absenta-frontend-patterns.mdc
+3. absenta-api-patterns-2025.mdc (untuk integrasi)
+4. absenta-error-handling.mdc
+
+### For Feature Development:
+1. absenta-master-2025.mdc
+2. absenta-critical-patterns-2025.mdc
+3. Feature-specific rule (multi-teacher, dispute-system, etc.)
+4. absenta-testing-patterns.mdc
+
+### For Deployment:
+1. absenta-deployment-patterns.mdc
+2. absenta-performance-patterns.mdc
+3. absenta-security-patterns.mdc
+
+---
+
+## 🔍 HOW TO USE THESE RULES
+
+### As a Developer:
+```bash
+# 1. Always-applied rules akan otomatis muncul
+# absenta-master-2025.mdc
+# absenta-database-schema-2025.mdc
+# absenta-system-architecture-2025.mdc
+
+# 2. Rules dengan globs akan muncul saat edit file yang match
+# Misal: edit server_modern.js → absenta-critical-patterns-2025 & absenta-api-patterns-2025 aktif
+
+# 3. Fetch manual rules saat butuh
+# Contoh: @absenta-multi-teacher untuk implementasi multi-teacher
+```
+
+### Best Practices:
+1. ✅ **Read critical rules first** sebelum coding
+2. ✅ **Follow patterns strictly** dari critical-patterns-2025
+3. ✅ **Use transactions** untuk multi-table operations
+4. ✅ **Check database schema** sebelum query
+5. ✅ **Test dengan data real** setelah implementasi
+6. ✅ **Review security patterns** untuk semua endpoints
+7. ✅ **Handle errors properly** mengikuti error-handling patterns
+
+---
+
+## 📚 RULE DEPENDENCIES
+
+### Core Dependencies:
+```
+absenta-master-2025.mdc (master)
+├── absenta-database-schema-2025.mdc (database)
+├── absenta-api-patterns-2025.mdc (API)
+└── absenta-critical-patterns-2025.mdc (patterns)
+```
+
+### Feature Dependencies:
+```
+absenta-multi-teacher.mdc
+├── Requires: absenta-database-schema-2025.mdc
+└── Requires: absenta-critical-patterns-2025.mdc
+
+absenta-dispute-system.mdc
+├── Requires: absenta-database-schema-2025.mdc
+├── Requires: absenta-api-patterns-2025.mdc
+└── Requires: absenta-multi-teacher.mdc (guru support)
+
+absenta-export-system-2025.mdc
+├── Requires: absenta-database-schema-2025.mdc
+├── Requires: absenta-attendance-flow.mdc
+└── Requires: absenta-critical-patterns-2025.mdc (daily logic)
+```
+
+---
+
+## 🎉 KEY UPDATES (October 2025)
+
+### ✅ New Rules:
+1. **absenta-master-2025.mdc** - Consolidated master reference
+2. **absenta-critical-patterns-2025.mdc** - Critical mistakes & patterns
+3. Updated **absenta-rules-index-2025.mdc** (this file)
+
+### ✅ Cleaned Up:
+- Removed 12 duplicate/outdated rules
+- Consolidated architecture rules
+- Merged similar pattern rules
+- Removed completed migration rules
+
+### ✅ Updated:
+- absenta-database-schema-2025.mdc (already up-to-date)
+- absenta-api-patterns-2025.mdc (already up-to-date)
+- absenta-quick-reference-2025.mdc (already up-to-date)
+
+---
+
+## 📖 DOCUMENTATION STRUCTURE
+
+```
+.cursor/rules/
+├── 🔥 CRITICAL (Always read)
+│   ├── absenta-master-2025.mdc
+│   ├── absenta-critical-patterns-2025.mdc
+│   ├── absenta-database-schema-2025.mdc
+│   └── absenta-api-patterns-2025.mdc
+│
+├── 🏢 BUSINESS LOGIC
+│   ├── absenta-multi-teacher.mdc
+│   ├── absenta-dispute-system.mdc
+│   ├── absenta-attendance-flow.mdc
+│   ├── absenta-export-system-2025.mdc
+│   └── absenta-business-logic.mdc
+│
+├── 🔐 DEVELOPMENT
+│   ├── absenta-security-patterns.mdc
+│   ├── absenta-error-handling.mdc
+│   ├── absenta-performance-patterns.mdc
+│   ├── absenta-testing-patterns.mdc
+│   └── absenta-deployment-patterns.mdc
+│
+├── 📱 FRONTEND
+│   └── absenta-frontend-patterns.mdc
+│
+├── 🗄️ DATABASE
+│   └── absenta-database-patterns.mdc
+│
+└── 📚 REFERENCE
+    ├── absenta-quick-reference-2025.mdc
+    ├── absenta-data-seeding-2025.mdc
+    ├── absenta-development-workflow.mdc
+    ├── absenta-system-architecture-2025.mdc
+    └── absenta-rules-index-2025.mdc (this file)
+```
+
+---
+
+## 🆘 QUICK HELP
+
+### Problem: "Tidak tahu harus baca rule yang mana?"
+**Solution**: Mulai dari absenta-master-2025.mdc
+
+### Problem: "Query error atau data corrupt?"
+**Solution**: Check absenta-critical-patterns-2025.mdc untuk common mistakes
+
+### Problem: "Multi-guru tidak work?"
+**Solution**: Read absenta-multi-teacher.mdc + absenta-critical-patterns-2025.mdc
+
+### Problem: "Banding absen error?"
+**Solution**: Read absenta-dispute-system.mdc
+
+### Problem: "Export tidak sesuai?"
+**Solution**: Read absenta-export-system-2025.mdc (daily aggregation logic)
+
+### Problem: "Security issue?"
+**Solution**: Read absenta-security-patterns.mdc
+
+### Problem: "Performance lambat?"
+**Solution**: Read absenta-performance-patterns.mdc
+
+---
+
+**Total Active Rules**: 20  
+**Status**: ✅ Production Ready  
+**Last Cleanup**: 21 Oktober 2025
+
+---
+
+**Remember**: Rules are guidelines, bukan rigid constraints. Gunakan dengan bijak dan adapt sesuai kebutuhan project!
