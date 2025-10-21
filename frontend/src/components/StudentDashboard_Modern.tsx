@@ -18,6 +18,8 @@ import {
   GraduationCap, Settings, Menu, X, Home, Users, FileText, Send, AlertCircle, MessageCircle, Eye, Plus, Edit,
   ChevronLeft, ChevronRight, RefreshCw, Trash2, ChevronDown, ChevronUp
 } from 'lucide-react';
+import { useJadwalKhusus } from '@/hooks/useJadwalKhusus';
+import { mergeSchedules, getTodaySchedules } from '@/utils/jadwalKhususHelpers';
 
 interface StudentDashboardProps {
   userData: {
@@ -100,6 +102,7 @@ interface JadwalHariIni {
   keterangan?: string;
   waktu_catat?: string;
   tanggal_target?: string;
+  jenis_kegiatan?: 'istirahat' | 'upacara' | 'perwalian'; // TAMBAHKAN untuk jadwal khusus
 }
 
 interface KehadiranData {
@@ -271,9 +274,16 @@ const StudentDashboardComponent = ({ userData, onLogout }: StudentDashboardProps
   const [submitting, setSubmitting] = useState(false);
   
   const [siswaId, setSiswaId] = useState<number | null>(null);
+  const [kelasId, setKelasId] = useState<number | null>(null);
   const [kelasInfo, setKelasInfo] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  
+  // Fetch jadwal khusus untuk kelas siswa
+  const { jadwalKhusus, loading: loadingJadwalKhusus } = useJadwalKhusus({
+    kelasId: kelasId || undefined,
+    autoFetch: !!kelasId
+  });
   
   // Helper functions for loading state management
   const setLoading = useCallback((key: keyof typeof loadingStates, value: boolean) => {
@@ -406,6 +416,41 @@ const StudentDashboardComponent = ({ userData, onLogout }: StudentDashboardProps
     Math.ceil(riwayatData.length / riwayatItemsPerPage), [riwayatData.length, riwayatItemsPerPage]
   );
 
+  // Merge jadwal reguler dengan jadwal khusus
+  const mergedJadwal = useMemo(() => {
+    if (!jadwalHariIni || jadwalHariIni.length === 0) {
+      return [];
+    }
+    
+    // Jadwal khusus untuk hari ini
+    const todayJadwalKhusus = getTodaySchedules(jadwalKhusus || []);
+    
+    // Transform jadwal khusus ke format JadwalHariIni
+    const transformedJadwalKhusus = todayJadwalKhusus.map(jk => ({
+      id_jadwal: jk.id * -1, // Negative ID untuk membedakan dari jadwal reguler
+      jam_ke: 0, // Jadwal khusus tidak punya jam_ke
+      jam_mulai: jk.jam_mulai,
+      jam_selesai: jk.jam_selesai,
+      nama_mapel: jk.nama_kegiatan,
+      kode_mapel: jk.jenis_kegiatan.toUpperCase(),
+      nama_guru: jk.nama_guru || '-',
+      nip: '',
+      nama_kelas: kelasInfo,
+      kelas_id: kelasId || undefined,
+      status_kehadiran: '-',
+      keterangan: jk.keterangan || '',
+      jenis_kegiatan: jk.jenis_kegiatan // Tambahkan field ini untuk visual differentiation
+    }));
+    
+    // Merge dan sort berdasarkan jam mulai
+    const merged = [...jadwalHariIni, ...transformedJadwalKhusus];
+    return merged.sort((a, b) => {
+      const timeA = a.jam_mulai.split(':').map(Number);
+      const timeB = b.jam_mulai.split(':').map(Number);
+      return timeA[0] * 60 + timeA[1] - (timeB[0] * 60 + timeB[1]);
+    });
+  }, [jadwalHariIni, jadwalKhusus, kelasInfo, kelasId]);
+
   // Helper functions for expandable rows
   const toggleRowExpansion = useCallback((rowId: number) => {
     setExpandedRows(prev => {
@@ -477,6 +522,7 @@ const StudentDashboardComponent = ({ userData, onLogout }: StudentDashboardProps
           if (siswaData && isMounted) {
           // Batch state updates to prevent multiple re-renders
             setSiswaId(siswaData.id_siswa);
+            setKelasId(siswaData.kelas_id); // Set kelas_id for jadwal khusus
             setKelasInfo(siswaData.nama_kelas);
           setCurrentUserData(prevData => {
             // Only update if data actually changed
@@ -1154,13 +1200,13 @@ const StudentDashboardComponent = ({ userData, onLogout }: StudentDashboardProps
   // Smart array selection: prefer mode-specific array, fallback to the other
   const getActiveJadwalArray = useCallback(() => {
     if (isEditMode) {
-      // In edit mode: prefer dated array, fallback to today if dated is empty
-      return jadwalBerdasarkanTanggal.length > 0 ? jadwalBerdasarkanTanggal : jadwalHariIni;
+      // In edit mode: prefer dated array, fallback to merged today if dated is empty
+      return jadwalBerdasarkanTanggal.length > 0 ? jadwalBerdasarkanTanggal : mergedJadwal;
     } else {
-      // In normal mode: prefer today array, fallback to dated if today is empty
-      return jadwalHariIni.length > 0 ? jadwalHariIni : jadwalBerdasarkanTanggal;
+      // In normal mode: use merged jadwal (reguler + khusus)
+      return mergedJadwal.length > 0 ? mergedJadwal : jadwalBerdasarkanTanggal;
     }
-  }, [isEditMode, jadwalBerdasarkanTanggal, jadwalHariIni]);
+  }, [isEditMode, jadwalBerdasarkanTanggal, mergedJadwal]);
 
   const renderKehadiranContent = () => {
     if (isLoading('jadwal')) {
@@ -1419,12 +1465,40 @@ const StudentDashboardComponent = ({ userData, onLogout }: StudentDashboardProps
                 <div className="text-center py-8">
                   <p className="text-gray-500">Tidak ada jadwal untuk tanggal {selectedDate}</p>
                 </div>
-              ) : getActiveJadwalArray().map((jadwal, index) => (
-                <div key={jadwal.id_jadwal} className="border rounded-lg p-4">
+              ) : getActiveJadwalArray().map((jadwal, index) => {
+                // Tentukan apakah ini jadwal khusus
+                const isJadwalKhusus = jadwal.jenis_kegiatan !== undefined;
+                const jenisKegiatan = jadwal.jenis_kegiatan;
+                
+                // Tentukan warna border dan badge berdasarkan jenis
+                const borderColor = isJadwalKhusus 
+                  ? (jenisKegiatan === 'istirahat' ? 'border-l-4 border-l-yellow-500' :
+                     jenisKegiatan === 'upacara' ? 'border-l-4 border-l-red-500' :
+                     jenisKegiatan === 'perwalian' ? 'border-l-4 border-l-purple-500' :
+                     'border-l-4 border-l-blue-500')
+                  : 'border-l-4 border-l-blue-500';
+                
+                const jenisBadgeColor = isJadwalKhusus
+                  ? (jenisKegiatan === 'istirahat' ? 'bg-yellow-100 text-yellow-800' :
+                     jenisKegiatan === 'upacara' ? 'bg-red-100 text-red-800' :
+                     jenisKegiatan === 'perwalian' ? 'bg-purple-100 text-purple-800' :
+                     'bg-blue-100 text-blue-800')
+                  : 'bg-blue-100 text-blue-800';
+                
+                return (
+                <div key={jadwal.id_jadwal} className={`border rounded-lg p-4 ${borderColor}`}>
                   <div className="flex justify-between items-start mb-4">
                     <div>
                       <div className="flex flex-wrap items-center gap-2 mb-2">
-                        <Badge variant="outline">Jam ke-{jadwal.jam_ke}</Badge>
+                        {!isJadwalKhusus && <Badge variant="outline">Jam ke-{jadwal.jam_ke}</Badge>}
+                        {isJadwalKhusus && (
+                          <Badge className={jenisBadgeColor}>
+                            {jenisKegiatan === 'istirahat' ? '☕ Istirahat' :
+                             jenisKegiatan === 'upacara' ? '🎌 Upacara' :
+                             jenisKegiatan === 'perwalian' ? '👥 Perwalian' :
+                             jenisKegiatan}
+                          </Badge>
+                        )}
                         <Badge variant="outline">{jadwal.jam_mulai} - {jadwal.jam_selesai}</Badge>
                         <Badge className={getStatusBadgeColor(kehadiranData[jadwal.id_jadwal]?.status || jadwal.status_kehadiran || 'belum_diambil')}>
                           {(() => {
@@ -1447,10 +1521,15 @@ const StudentDashboardComponent = ({ userData, onLogout }: StudentDashboardProps
                       </div>
                       <h4 className="font-semibold text-lg text-gray-900 break-words">{jadwal.nama_mapel}</h4>
                       <p className="text-gray-600 break-words">{jadwal.nama_guru}</p>
-                      <p className="text-sm text-gray-500">NIP: {jadwal.nip}</p>
+                      {!isJadwalKhusus && <p className="text-sm text-gray-500">NIP: {jadwal.nip}</p>}
+                      {isJadwalKhusus && jadwal.keterangan && (
+                        <p className="text-sm text-gray-500 mt-2 italic">{jadwal.keterangan}</p>
+                      )}
                     </div>
                   </div>
 
+                  {/* Form absensi guru - hanya untuk jadwal reguler, upacara, dan perwalian (TIDAK untuk istirahat) */}
+                  {(!isJadwalKhusus || (jenisKegiatan !== 'istirahat')) && (
                   <div className="space-y-4">
                     <div>
                       <Label className="text-sm font-medium text-gray-700 mb-3 block">
@@ -1577,8 +1656,11 @@ const StudentDashboardComponent = ({ userData, onLogout }: StudentDashboardProps
                       {/* Tampilkan keterangan yang sudah tersimpan jika ada */}
                     </div>
                   </div>
+                  )}
+                  {/* Akhir conditional form absensi */}
                 </div>
-              ))}
+              );
+              })}
             </div>
 
             <div className="mt-6 pt-6 border-t">

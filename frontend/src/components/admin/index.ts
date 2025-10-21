@@ -3,3 +3,4 @@ export { default as ManageTeacherAccountsView } from './ManageTeacherAccountsVie
 export { default as ManageSubjectsView } from './ManageSubjectsView';
 export { default as ManageClassesView } from './ManageClassesView';
 export { default as RuangKelasManagementView } from './RuangKelasManagementView';
+export { default as JadwalKhususManagement } from './JadwalKhususManagement';

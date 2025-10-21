@@ -2882,6 +2882,301 @@ app.post('/api/attendance/submit', authenticateToken, requireRole(['guru', 'admi
 });
 
 // ================================================
+// JADWAL KHUSUS ENDPOINTS - Special Schedule Management
+// ================================================
+
+// GET /api/admin/jadwal-khusus - Get all jadwal khusus dengan filter
+app.get('/api/admin/jadwal-khusus', authenticateToken, requireRole(['admin']), async (req, res) => {
+    try {
+        const { kelas_id, jenis_kegiatan, hari } = req.query;
+        
+        console.log('📋 Getting jadwal khusus:', { kelas_id, jenis_kegiatan, hari });
+        
+        let query = `
+            SELECT 
+                jk.*,
+                k.nama_kelas,
+                g.nama as nama_guru
+            FROM jadwal_khusus jk
+            LEFT JOIN kelas k ON jk.kelas_id = k.id_kelas
+            LEFT JOIN guru g ON jk.guru_id = g.id_guru
+            WHERE jk.status = 'aktif'
+        `;
+        
+        const params = [];
+        
+        if (kelas_id) {
+            query += ' AND jk.kelas_id = ?';
+            params.push(kelas_id);
+        }
+        
+        if (jenis_kegiatan) {
+            query += ' AND jk.jenis_kegiatan = ?';
+            params.push(jenis_kegiatan);
+        }
+        
+        if (hari) {
+            query += ' AND jk.hari = ?';
+            params.push(hari);
+        }
+        
+        query += ' ORDER BY FIELD(jk.hari, "Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu"), jk.jam_mulai';
+        
+        const [rows] = await db.execute(query, params);
+        
+        console.log(`✅ Found ${rows.length} jadwal khusus`);
+        res.json({ success: true, data: rows });
+        
+    } catch (error) {
+        console.error('❌ Error getting jadwal khusus:', error);
+        res.status(500).json({ error: 'Gagal mendapatkan jadwal khusus' });
+    }
+});
+
+// POST /api/admin/jadwal-khusus - Create new jadwal khusus
+app.post('/api/admin/jadwal-khusus', authenticateToken, requireRole(['admin']), async (req, res) => {
+    try {
+        const { kelas_id, jenis_kegiatan, nama_kegiatan, hari, jam_mulai, jam_selesai, guru_id, keterangan } = req.body;
+        
+        console.log('➕ Creating jadwal khusus:', { kelas_id, jenis_kegiatan, nama_kegiatan, hari });
+        
+        // Validasi field wajib
+        if (!jenis_kegiatan || !nama_kegiatan || !hari || !jam_mulai || !jam_selesai) {
+            return res.status(400).json({ 
+                success: false,
+                error: 'Field wajib tidak lengkap',
+                details: 'jenis_kegiatan, nama_kegiatan, hari, jam_mulai, dan jam_selesai harus diisi'
+            });
+        }
+        
+        // Validasi: perwalian harus punya guru_id
+        if (jenis_kegiatan === 'perwalian' && !guru_id) {
+            return res.status(400).json({ 
+                success: false,
+                error: 'Perwalian harus memiliki guru yang bertanggung jawab'
+            });
+        }
+        
+        // Validasi: upacara tidak boleh punya kelas_id
+        if (jenis_kegiatan === 'upacara' && kelas_id) {
+            return res.status(400).json({ 
+                success: false,
+                error: 'Upacara tidak bisa ditugaskan ke kelas tertentu (harus semua kelas)'
+            });
+        }
+        
+        // Check time conflict untuk kelas yang sama (jika ada kelas_id)
+        if (kelas_id) {
+            const [conflicts] = await db.execute(
+                `SELECT id, nama_kegiatan FROM jadwal_khusus 
+                 WHERE kelas_id = ? AND hari = ? AND status = 'aktif'
+                 AND (
+                   (jam_mulai <= ? AND jam_selesai > ?) OR 
+                   (jam_mulai < ? AND jam_selesai >= ?) OR
+                   (jam_mulai >= ? AND jam_selesai <= ?)
+                 )`,
+                [kelas_id, hari, jam_mulai, jam_mulai, jam_selesai, jam_selesai, jam_mulai, jam_selesai]
+            );
+            
+            if (conflicts.length > 0) {
+                return res.status(400).json({ 
+                    success: false,
+                    error: 'Waktu bertabrakan dengan jadwal khusus lain',
+                    conflict: conflicts[0].nama_kegiatan
+                });
+            }
+        }
+        
+        // Insert jadwal khusus
+        const [result] = await db.execute(
+            `INSERT INTO jadwal_khusus 
+             (kelas_id, jenis_kegiatan, nama_kegiatan, hari, jam_mulai, jam_selesai, guru_id, keterangan, status)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'aktif')`,
+            [kelas_id || null, jenis_kegiatan, nama_kegiatan, hari, jam_mulai, jam_selesai, guru_id || null, keterangan || null]
+        );
+        
+        console.log(`✅ Jadwal khusus created with ID: ${result.insertId}`);
+        res.json({ 
+            success: true, 
+            message: 'Jadwal khusus berhasil ditambahkan', 
+            id: result.insertId 
+        });
+        
+    } catch (error) {
+        console.error('❌ Error creating jadwal khusus:', error);
+        res.status(500).json({ 
+            success: false,
+            error: 'Gagal membuat jadwal khusus',
+            details: error.message
+        });
+    }
+});
+
+// PUT /api/admin/jadwal-khusus/:id - Update jadwal khusus
+app.put('/api/admin/jadwal-khusus/:id', authenticateToken, requireRole(['admin']), async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { kelas_id, jenis_kegiatan, nama_kegiatan, hari, jam_mulai, jam_selesai, guru_id, keterangan } = req.body;
+        
+        console.log(`📝 Updating jadwal khusus ID: ${id}`);
+        
+        // Validasi field wajib
+        if (!jenis_kegiatan || !nama_kegiatan || !hari || !jam_mulai || !jam_selesai) {
+            return res.status(400).json({ 
+                success: false,
+                error: 'Field wajib tidak lengkap'
+            });
+        }
+        
+        // Validasi: perwalian harus punya guru_id
+        if (jenis_kegiatan === 'perwalian' && !guru_id) {
+            return res.status(400).json({ 
+                success: false,
+                error: 'Perwalian harus memiliki guru yang bertanggung jawab'
+            });
+        }
+        
+        // Validasi: upacara tidak boleh punya kelas_id
+        if (jenis_kegiatan === 'upacara' && kelas_id) {
+            return res.status(400).json({ 
+                success: false,
+                error: 'Upacara tidak bisa ditugaskan ke kelas tertentu (harus semua kelas)'
+            });
+        }
+        
+        // Check time conflict (excluding current record)
+        if (kelas_id) {
+            const [conflicts] = await db.execute(
+                `SELECT id, nama_kegiatan FROM jadwal_khusus 
+                 WHERE id != ? AND kelas_id = ? AND hari = ? AND status = 'aktif'
+                 AND (
+                   (jam_mulai <= ? AND jam_selesai > ?) OR 
+                   (jam_mulai < ? AND jam_selesai >= ?) OR
+                   (jam_mulai >= ? AND jam_selesai <= ?)
+                 )`,
+                [id, kelas_id, hari, jam_mulai, jam_mulai, jam_selesai, jam_selesai, jam_mulai, jam_selesai]
+            );
+            
+            if (conflicts.length > 0) {
+                return res.status(400).json({ 
+                    success: false,
+                    error: 'Waktu bertabrakan dengan jadwal khusus lain',
+                    conflict: conflicts[0].nama_kegiatan
+                });
+            }
+        }
+        
+        // Update jadwal khusus
+        const [result] = await db.execute(
+            `UPDATE jadwal_khusus 
+             SET kelas_id = ?, jenis_kegiatan = ?, nama_kegiatan = ?, hari = ?, 
+                 jam_mulai = ?, jam_selesai = ?, guru_id = ?, keterangan = ?
+             WHERE id = ?`,
+            [kelas_id || null, jenis_kegiatan, nama_kegiatan, hari, jam_mulai, jam_selesai, guru_id || null, keterangan || null, id]
+        );
+        
+        if (result.affectedRows === 0) {
+            return res.status(404).json({ 
+                success: false,
+                error: 'Jadwal khusus tidak ditemukan'
+            });
+        }
+        
+        console.log(`✅ Jadwal khusus ${id} updated successfully`);
+        res.json({ 
+            success: true, 
+            message: 'Jadwal khusus berhasil diupdate' 
+        });
+        
+    } catch (error) {
+        console.error('❌ Error updating jadwal khusus:', error);
+        res.status(500).json({ 
+            success: false,
+            error: 'Gagal mengupdate jadwal khusus',
+            details: error.message
+        });
+    }
+});
+
+// DELETE /api/admin/jadwal-khusus/:id - Delete jadwal khusus (soft delete)
+app.delete('/api/admin/jadwal-khusus/:id', authenticateToken, requireRole(['admin']), async (req, res) => {
+    try {
+        const { id } = req.params;
+        
+        console.log(`🗑️ Deleting jadwal khusus ID: ${id}`);
+        
+        // Soft delete
+        const [result] = await db.execute(
+            'UPDATE jadwal_khusus SET status = "tidak_aktif" WHERE id = ?',
+            [id]
+        );
+        
+        if (result.affectedRows === 0) {
+            return res.status(404).json({ 
+                success: false,
+                error: 'Jadwal khusus tidak ditemukan'
+            });
+        }
+        
+        console.log(`✅ Jadwal khusus ${id} deleted successfully`);
+        res.json({ 
+            success: true, 
+            message: 'Jadwal khusus berhasil dihapus' 
+        });
+        
+    } catch (error) {
+        console.error('❌ Error deleting jadwal khusus:', error);
+        res.status(500).json({ 
+            success: false,
+            error: 'Gagal menghapus jadwal khusus',
+            details: error.message
+        });
+    }
+});
+
+// GET /api/jadwal-khusus/kelas/:kelas_id - Get jadwal khusus untuk kelas tertentu (untuk siswa/guru)
+app.get('/api/jadwal-khusus/kelas/:kelas_id', authenticateToken, async (req, res) => {
+    try {
+        const { kelas_id } = req.params;
+        const { hari } = req.query;
+        
+        console.log(`📅 Getting jadwal khusus for kelas: ${kelas_id}, hari: ${hari || 'all'}`);
+        
+        let query = `
+            SELECT 
+                jk.*,
+                g.nama as nama_guru
+            FROM jadwal_khusus jk
+            LEFT JOIN guru g ON jk.guru_id = g.id_guru
+            WHERE jk.status = 'aktif' 
+              AND (jk.kelas_id = ? OR jk.kelas_id IS NULL)
+        `;
+        
+        const params = [kelas_id];
+        
+        if (hari) {
+            query += ' AND jk.hari = ?';
+            params.push(hari);
+        }
+        
+        query += ' ORDER BY jk.jam_mulai';
+        
+        const [rows] = await db.execute(query, params);
+        
+        console.log(`✅ Found ${rows.length} jadwal khusus for kelas ${kelas_id}`);
+        res.json({ success: true, data: rows });
+        
+    } catch (error) {
+        console.error('❌ Error getting jadwal khusus for kelas:', error);
+        res.status(500).json({ 
+            success: false,
+            error: 'Gagal mendapatkan jadwal khusus',
+            details: error.message
+        });
+    }
+});
+
+// ================================================
 // ATTENDANCE RECAP ENDPOINTS - Daily & Range Summaries
 // ================================================
 
@@ -4916,6 +5211,7 @@ app.get('/api/guru/jadwal', authenticateToken, requireRole(['guru', 'admin']), a
     }
 
     try {
+        // ✅ UPDATED: Include jadwal where guru is primary OR additional teacher
         const [jadwal] = await db.execute(`
             SELECT 
                 j.id_jadwal AS id,
@@ -4926,11 +5222,17 @@ app.get('/api/guru/jadwal', authenticateToken, requireRole(['guru', 'admin']), a
                 j.status,
                 mp.nama_mapel,
                 mp.kode_mapel,
-                k.nama_kelas
+                k.nama_kelas,
+                CASE 
+                    WHEN j.guru_id = ? THEN 'primary'
+                    ELSE 'additional'
+                END as teacher_role
             FROM jadwal j
             JOIN mapel mp ON j.mapel_id = mp.id_mapel
             JOIN kelas k ON j.kelas_id = k.id_kelas
-            WHERE j.guru_id = ? AND j.status = 'aktif'
+            LEFT JOIN jadwal_guru jg ON j.id_jadwal = jg.jadwal_id AND jg.guru_id = ? AND jg.status = 'aktif'
+            WHERE (j.guru_id = ? OR jg.guru_id IS NOT NULL) AND j.status = 'aktif'
+            GROUP BY j.id_jadwal
             ORDER BY CASE j.hari 
                 WHEN 'Senin' THEN 1
                 WHEN 'Selasa' THEN 2
@@ -4940,9 +5242,9 @@ app.get('/api/guru/jadwal', authenticateToken, requireRole(['guru', 'admin']), a
                 WHEN 'Sabtu' THEN 6
                 WHEN 'Minggu' THEN 7
             END, j.jam_mulai
-        `, [guruId]);
+        `, [guruId, guruId, guruId]);
 
-        console.log(`✅ Found ${jadwal.length} schedule entries for guru_id: ${guruId}`);
+        console.log(`✅ Found ${jadwal.length} schedule entries for guru_id: ${guruId} (including as primary & additional teacher)`);
         res.json({ success: true, data: jadwal });
     } catch (error) {
         console.error('❌ Error fetching teacher schedule:', error);

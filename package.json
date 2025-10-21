@@ -127,7 +127,7 @@
     "ioredis": "^5.8.0",
     "jsonwebtoken": "^9.0.2",
     "lucide-react": "^0.462.0",
-    "multer": "^1.4.5-lts.1",
+    "multer": "^2.0.2",
     "mysql2": "^3.14.3",
     "next-themes": "^0.3.0",
     "node-cron": "^4.2.1",
@@ -150,7 +150,7 @@
     "tailwindcss-animate": "^1.0.7",
     "vaul": "^0.9.9",
     "winston": "^3.18.3",
-    "xlsx": "^0.18.5",
+    "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz",
     "zod": "^3.25.76"
   },
   "devDependencies": {
@@ -161,7 +161,7 @@
     "@babel/preset-react": "^7.27.1",
     "@babel/preset-typescript": "^7.27.1",
     "@eslint/js": "^9.32.0",
-    "@playwright/test": "^1.56.0",
+    "@playwright/test": "^1.56.1",
     "@tailwindcss/typography": "^0.5.16",
     "@types/jest": "^29.5.8",
     "@types/node": "^22.16.5",
@@ -194,5 +194,10 @@
   "main": "eslint.config.js",
   "keywords": [],
   "author": "",
-  "license": "ISC"
+  "license": "ISC",
+  "overrides": {
+    "validator": "^13.12.0",
+    "esbuild": "^0.21.5",
+    "playwright": "^1.49.0"
+  }
 }

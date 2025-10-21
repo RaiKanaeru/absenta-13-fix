@@ -1,0 +1,454 @@
+# Absenta Jadwal Khusus System - Complete Guide (2025)
+
+## 🎯 Overview
+
+**Jadwal Khusus** adalah sistem untuk mengelola jadwal non-pelajaran di sekolah seperti:
+- **Istirahat** - Waktu istirahat yang dapat berbeda per kelas
+- **Upacara** - Upacara bendera (Senin) atau kegiatan serentak lainnya
+- **Perwalian** - Waktu perwalian kelas dengan wali kelas
+
+**Status**: ✅ Fully Implemented (21 Oktober 2025)
+
+---
+
+## 📊 Database Schema
+
+### Table `jadwal_khusus`
+```sql
+CREATE TABLE `jadwal_khusus` (
+  `id` INT(11) NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  `kelas_id` INT(11) NULL COMMENT 'NULL untuk kegiatan semua kelas (upacara)',
+  `jenis_kegiatan` ENUM('istirahat', 'upacara', 'perwalian') NOT NULL,
+  `nama_kegiatan` VARCHAR(100) NOT NULL COMMENT 'Nama deskriptif (Istirahat 1, Upacara Senin, dll)',
+  `hari` ENUM('Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu') NOT NULL,
+  `jam_mulai` TIME NOT NULL,
+  `jam_selesai` TIME NOT NULL,
+  `guru_id` INT(11) NULL COMMENT 'Untuk perwalian - guru/wali kelas yang bertanggung jawab',
+  `keterangan` TEXT NULL,
+  `status` ENUM('aktif', 'tidak_aktif') DEFAULT 'aktif',
+  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  
+  CONSTRAINT `fk_jadwal_khusus_kelas` 
+    FOREIGN KEY (`kelas_id`) 
+    REFERENCES `kelas`(`id_kelas`) 
+    ON DELETE CASCADE,
+  
+  CONSTRAINT `fk_jadwal_khusus_guru` 
+    FOREIGN KEY (`guru_id`) 
+    REFERENCES `guru`(`id_guru`) 
+    ON DELETE SET NULL,
+  
+  INDEX `idx_kelas_hari` (`kelas_id`, `hari`),
+  INDEX `idx_jenis_hari` (`jenis_kegiatan`, `hari`),
+  INDEX `idx_guru` (`guru_id`),
+  INDEX `idx_status` (`status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+```
+
+---
+
+## 🔑 Business Rules
+
+### 1. **Upacara**
+- ✅ `kelas_id` MUST be NULL (berlaku untuk SEMUA kelas)
+- ✅ `guru_id` MUST be NULL (tidak ada guru penanggung jawab khusus)
+- ✅ Biasanya di hari Senin pagi (07:00 - 07:30)
+- ❌ TIDAK boleh assign ke kelas tertentu
+
+### 2. **Perwalian**
+- ✅ `kelas_id` MUST NOT be NULL (khusus untuk kelas tertentu)
+- ✅ `guru_id` MUST NOT be NULL (harus ada wali kelas yang bertanggung jawab)
+- ✅ Biasanya setelah upacara (07:30 - 08:00)
+- ❌ TIDAK boleh tanpa guru penanggung jawab
+
+### 3. **Istirahat**
+- ✅ `kelas_id` dapat NULL (semua kelas) atau NOT NULL (kelas tertentu)
+- ✅ `guru_id` MUST be NULL (tidak ada guru penanggung jawab)
+- ✅ Dapat berbeda waktu per kelas (contoh: X AK istirahat jam 09:30, X RPL jam 10:00)
+- ✅ Dapat ada multiple istirahat per hari (Istirahat 1, Istirahat 2/Sholat Dzuhur, dll)
+
+### 4. **General**
+- ✅ Tidak ada pencatatan absensi untuk jadwal khusus
+- ✅ Hanya muncul sebagai penanda visual di jadwal
+- ✅ Soft delete (set `status = 'tidak_aktif'` instead of hard delete)
+- ✅ Conflict detection: tidak boleh overlap waktu untuk kelas yang sama
+
+---
+
+## 🔌 API Endpoints
+
+### 1. GET /api/admin/jadwal-khusus
+**Mendapatkan semua jadwal khusus dengan filter**
+
+**Auth**: Admin only  
+**Query Parameters**:
+- `kelas_id` (optional): Filter by class ID
+- `jenis_kegiatan` (optional): Filter by type (istirahat/upacara/perwalian)
+- `hari` (optional): Filter by day
+
+**Response**:
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "id": 1,
+      "kelas_id": null,
+      "jenis_kegiatan": "upacara",
+      "nama_kegiatan": "Upacara Bendera",
+      "hari": "Senin",
+      "jam_mulai": "07:00:00",
+      "jam_selesai": "07:30:00",
+      "guru_id": null,
+      "keterangan": "Upacara bendera setiap hari Senin",
+      "status": "aktif",
+      "nama_kelas": null,
+      "nama_guru": null
+    }
+  ]
+}
+```
+
+### 2. POST /api/admin/jadwal-khusus
+**Membuat jadwal khusus baru**
+
+**Auth**: Admin only  
+**Request Body**:
+```json
+{
+  "kelas_id": 1,
+  "jenis_kegiatan": "istirahat",
+  "nama_kegiatan": "Istirahat 1",
+  "hari": "Senin",
+  "jam_mulai": "09:30:00",
+  "jam_selesai": "09:45:00",
+  "guru_id": null,
+  "keterangan": "Istirahat pagi"
+}
+```
+
+**Validation**:
+- ✅ jenis_kegiatan, nama_kegiatan, hari, jam_mulai, jam_selesai REQUIRED
+- ✅ If jenis_kegiatan = 'perwalian', guru_id REQUIRED
+- ✅ If jenis_kegiatan = 'upacara', kelas_id MUST be NULL
+- ✅ Time conflict check for same class
+
+**Response**:
+```json
+{
+  "success": true,
+  "message": "Jadwal khusus berhasil ditambahkan",
+  "id": 123
+}
+```
+
+### 3. PUT /api/admin/jadwal-khusus/:id
+**Update jadwal khusus**
+
+**Auth**: Admin only  
+**Request Body**: Same as POST  
+**Validation**: Same as POST + exclude current record from conflict check
+
+### 4. DELETE /api/admin/jadwal-khusus/:id
+**Delete jadwal khusus (soft delete)**
+
+**Auth**: Admin only  
+**Response**:
+```json
+{
+  "success": true,
+  "message": "Jadwal khusus berhasil dihapus"
+}
+```
+
+### 5. GET /api/jadwal-khusus/kelas/:kelas_id
+**Mendapatkan jadwal khusus untuk kelas tertentu**
+
+**Auth**: Any authenticated user  
+**Query Parameters**:
+- `hari` (optional): Filter by day
+
+**Description**: Returns jadwal khusus yang relevan untuk kelas tersebut:
+- Jadwal dengan `kelas_id = :kelas_id` (khusus untuk kelas ini)
+- Jadwal dengan `kelas_id = NULL` (untuk semua kelas, seperti upacara)
+
+**Response**:
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "id": 1,
+      "jenis_kegiatan": "upacara",
+      "nama_kegiatan": "Upacara Bendera",
+      "hari": "Senin",
+      "jam_mulai": "07:00:00",
+      "jam_selesai": "07:30:00",
+      "nama_guru": null
+    },
+    {
+      "id": 2,
+      "jenis_kegiatan": "perwalian",
+      "nama_kegiatan": "Perwalian X AK",
+      "hari": "Senin",
+      "jam_mulai": "07:30:00",
+      "jam_selesai": "08:00:00",
+      "nama_guru": "Jaya Ramadhan"
+    }
+  ]
+}
+```
+
+---
+
+## 🎨 Frontend Integration
+
+### Display Jadwal Khusus di Jadwal Reguler
+
+**Query Pattern**:
+```javascript
+// Get jadwal reguler + jadwal khusus untuk kelas tertentu
+const getScheduleWithSpecial = async (kelasId, hari) => {
+  // 1. Get jadwal reguler
+  const regularSchedule = await fetch(
+    `/api/siswa/jadwal?kelas_id=${kelasId}&hari=${hari}`
+  );
+  
+  // 2. Get jadwal khusus
+  const specialSchedule = await fetch(
+    `/api/jadwal-khusus/kelas/${kelasId}?hari=${hari}`
+  );
+  
+  // 3. Merge dan sort by jam_mulai
+  const combined = [
+    ...regularSchedule.data.map(s => ({ ...s, type: 'regular' })),
+    ...specialSchedule.data.map(s => ({ ...s, type: 'special' }))
+  ].sort((a, b) => a.jam_mulai.localeCompare(b.jam_mulai));
+  
+  return combined;
+};
+```
+
+### Visual Differentiation (Colors)
+
+Berikan warna berbeda untuk setiap jenis jadwal:
+
+```typescript
+const getScheduleColor = (type: string, jenisKegiatan?: string) => {
+  if (type === 'regular') {
+    return 'bg-blue-100 border-blue-300'; // Jadwal pelajaran: Biru
+  }
+  
+  // Jadwal khusus
+  switch (jenisKegiatan) {
+    case 'istirahat':
+      return 'bg-yellow-100 border-yellow-300'; // Istirahat: Kuning
+    case 'upacara':
+      return 'bg-red-100 border-red-300'; // Upacara: Merah
+    case 'perwalian':
+      return 'bg-purple-100 border-purple-300'; // Perwalian: Ungu
+    default:
+      return 'bg-gray-100 border-gray-300';
+  }
+};
+```
+
+### Example Component
+
+```typescript
+interface ScheduleCardProps {
+  schedule: {
+    type: 'regular' | 'special';
+    jenis_kegiatan?: string;
+    nama_kegiatan?: string;
+    nama_mapel?: string;
+    nama_guru?: string;
+    jam_mulai: string;
+    jam_selesai: string;
+  };
+}
+
+const ScheduleCard: React.FC<ScheduleCardProps> = ({ schedule }) => {
+  const colorClass = getScheduleColor(schedule.type, schedule.jenis_kegiatan);
+  
+  return (
+    <div className={`p-3 rounded border-2 ${colorClass}`}>
+      <div className="flex justify-between items-start">
+        <div>
+          <h4 className="font-semibold">
+            {schedule.type === 'regular' 
+              ? schedule.nama_mapel 
+              : schedule.nama_kegiatan}
+          </h4>
+          {schedule.nama_guru && (
+            <p className="text-sm text-gray-600">{schedule.nama_guru}</p>
+          )}
+        </div>
+        <div className="text-right text-sm">
+          <div>{schedule.jam_mulai.substring(0, 5)}</div>
+          <div>{schedule.jam_selesai.substring(0, 5)}</div>
+        </div>
+      </div>
+      
+      {schedule.type === 'special' && (
+        <div className="mt-2 text-xs">
+          <span className="px-2 py-1 rounded bg-white bg-opacity-50">
+            {schedule.jenis_kegiatan?.toUpperCase()}
+          </span>
+        </div>
+      )}
+    </div>
+  );
+};
+```
+
+---
+
+## 📝 Query Patterns
+
+### ✅ CORRECT Patterns
+
+```javascript
+// 1. Get all jadwal khusus for admin
+const [jadwalKhusus] = await db.execute(
+  `SELECT jk.*, k.nama_kelas, g.nama as nama_guru
+   FROM jadwal_khusus jk
+   LEFT JOIN kelas k ON jk.kelas_id = k.id_kelas
+   LEFT JOIN guru g ON jk.guru_id = g.id_guru
+   WHERE jk.status = 'aktif'
+   ORDER BY FIELD(jk.hari, 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'), 
+            jk.jam_mulai`
+);
+
+// 2. Get jadwal khusus for specific class (includes global schedules)
+const [jadwalKhusus] = await db.execute(
+  `SELECT jk.*, g.nama as nama_guru
+   FROM jadwal_khusus jk
+   LEFT JOIN guru g ON jk.guru_id = g.id_guru
+   WHERE jk.status = 'aktif' 
+     AND (jk.kelas_id = ? OR jk.kelas_id IS NULL)
+   ORDER BY jk.jam_mulai`,
+  [kelasId]
+);
+
+// 3. Check time conflict for same class
+const [conflicts] = await db.execute(
+  `SELECT id, nama_kegiatan 
+   FROM jadwal_khusus 
+   WHERE kelas_id = ? AND hari = ? AND status = 'aktif'
+     AND (
+       (jam_mulai <= ? AND jam_selesai > ?) OR 
+       (jam_mulai < ? AND jam_selesai >= ?) OR
+       (jam_mulai >= ? AND jam_selesai <= ?)
+     )`,
+  [kelasId, hari, jamMulai, jamMulai, jamSelesai, jamSelesai, jamMulai, jamSelesai]
+);
+
+// 4. Get upacara schedule (kelas_id = NULL)
+const [upacara] = await db.execute(
+  `SELECT * FROM jadwal_khusus 
+   WHERE jenis_kegiatan = 'upacara' 
+     AND kelas_id IS NULL 
+     AND status = 'aktif'`
+);
+
+// 5. Get perwalian for specific class
+const [perwalian] = await db.execute(
+  `SELECT jk.*, g.nama as nama_wali
+   FROM jadwal_khusus jk
+   JOIN guru g ON jk.guru_id = g.id_guru
+   WHERE jk.jenis_kegiatan = 'perwalian' 
+     AND jk.kelas_id = ? 
+     AND jk.status = 'aktif'`,
+  [kelasId]
+);
+```
+
+### ❌ WRONG Patterns
+
+```javascript
+// JANGAN: Assume kelas_id always NOT NULL
+SELECT * FROM jadwal_khusus WHERE kelas_id = ?; // Will miss upacara!
+
+// JANGAN: Allow upacara with kelas_id
+INSERT INTO jadwal_khusus (kelas_id, jenis_kegiatan, ...) 
+VALUES (1, 'upacara', ...); // ERROR: Upacara must be NULL
+
+// JANGAN: Allow perwalian without guru_id
+INSERT INTO jadwal_khusus (guru_id, jenis_kegiatan, ...) 
+VALUES (NULL, 'perwalian', ...); // ERROR: Perwalian needs guru
+
+// JANGAN: Hard delete
+DELETE FROM jadwal_khusus WHERE id = ?; // Use soft delete instead
+```
+
+---
+
+## 🧪 Testing Checklist
+
+### Create Operations
+- [ ] Create istirahat untuk kelas tertentu ✅
+- [ ] Create upacara untuk semua kelas (kelas_id = NULL) ✅
+- [ ] Create perwalian dengan guru assignment ✅
+- [ ] Reject upacara dengan kelas_id ✅
+- [ ] Reject perwalian tanpa guru_id ✅
+- [ ] Detect time conflict untuk kelas yang sama ✅
+
+### Read Operations
+- [ ] Get all jadwal khusus dengan filter ✅
+- [ ] Get jadwal khusus untuk kelas tertentu (include upacara) ✅
+- [ ] Get jadwal khusus by hari ✅
+- [ ] Get jadwal khusus by jenis_kegiatan ✅
+
+### Update Operations
+- [ ] Update jadwal khusus ✅
+- [ ] Validate business rules saat update ✅
+- [ ] Check conflict saat update (exclude current record) ✅
+
+### Delete Operations
+- [ ] Soft delete jadwal khusus ✅
+- [ ] Verify status changed to 'tidak_aktif' ✅
+
+### Integration
+- [ ] Display jadwal khusus di siswa dashboard ⏳
+- [ ] Display jadwal khusus di guru dashboard ⏳
+- [ ] Visual differentiation (colors) working ⏳
+- [ ] Merged schedule (regular + special) sorted correctly ⏳
+
+---
+
+## 📊 Sample Data
+
+Sistem sudah di-seed dengan 100 records:
+- **1x Upacara Senin** (semua kelas)
+- **9x Perwalian** (satu per kelas dengan wali kelas)
+- **45x Istirahat 1** (berbeda waktu per kelas, setiap hari Senin-Jumat)
+- **36x Istirahat 2/Sholat Dzuhur** (semua kelas, Senin-Kamis)
+- **9x Istirahat Jumat** (semua kelas, lebih panjang untuk Sholat Jumat)
+
+---
+
+## 🔍 Related Documentation
+
+- [Database Schema 2025](.cursor/rules/absenta-database-schema-2025.mdc)
+- [API Patterns 2025](.cursor/rules/absenta-api-patterns-2025.mdc)
+- [Quick Reference 2025](.cursor/rules/absenta-quick-reference-2025.mdc)
+
+---
+
+## 🎯 Key Takeaways
+
+1. **ALWAYS check kelas_id NULL** untuk upacara
+2. **ALWAYS check guru_id NOT NULL** untuk perwalian
+3. **Use LEFT JOIN** saat query dengan kelas/guru (bisa NULL)
+4. **Include upacara** saat get jadwal untuk kelas (`OR kelas_id IS NULL`)
+5. **Visual differentiation** penting untuk UX
+6. **No absensi** untuk jadwal khusus (hanya visual marker)
+7. **Soft delete** untuk preserve history
+8. **Conflict detection** untuk same class + day + time
+
+---
+
+**Last Updated**: 21 Oktober 2025  
+**Status**: ✅ Backend Complete, ⏳ Frontend Integration Pending

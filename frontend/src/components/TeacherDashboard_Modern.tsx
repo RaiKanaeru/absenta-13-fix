@@ -21,6 +21,8 @@ import ExcelPreview from './ExcelPreview';
 import { EditProfile } from './EditProfile';
 import { VIEW_TO_REPORT_KEY } from '@/utils/reportKeys';
 import { apiCall } from '@/utils/api';
+import { useJadwalKhusus } from '@/hooks/useJadwalKhusus';
+import { getTodaySchedules } from '@/utils/jadwalKhususHelpers';
 
 interface TeacherDashboardProps {
   userData: {
@@ -46,6 +48,8 @@ interface Schedule {
   jam_selesai: string;
   nama_kelas: string;
   status?: ScheduleStatus;
+  jenis_kegiatan?: 'istirahat' | 'upacara' | 'perwalian'; // Tambahkan untuk jadwal khusus
+  keterangan?: string; // Tambahkan untuk keterangan jadwal khusus
 }
 
 // Tipe data mentah dari backend (bisa id atau id_jadwal, dst.)
@@ -176,11 +180,34 @@ const ScheduleListView = ({ schedules, onSelectSchedule, isLoading }: {
         </div>
       ) : (
         <div className="space-y-3">
-          {schedules.map((schedule) => (
+          {schedules.map((schedule) => {
+            // Tentukan apakah ini jadwal khusus
+            const isJadwalKhusus = schedule.jenis_kegiatan !== undefined;
+            const jenisKegiatan = schedule.jenis_kegiatan;
+            
+            // Tentukan warna border berdasarkan jenis
+            const borderColor = isJadwalKhusus 
+              ? (jenisKegiatan === 'istirahat' ? 'border-l-4 border-l-yellow-500' :
+                 jenisKegiatan === 'upacara' ? 'border-l-4 border-l-red-500' :
+                 jenisKegiatan === 'perwalian' ? 'border-l-4 border-l-purple-500' :
+                 'border-l-4 border-l-blue-500')
+              : 'border-l-4 border-l-blue-500';
+            
+            const jenisBadgeColor = isJadwalKhusus
+              ? (jenisKegiatan === 'istirahat' ? 'bg-yellow-100 text-yellow-800' :
+                 jenisKegiatan === 'upacara' ? 'bg-red-100 text-red-800' :
+                 jenisKegiatan === 'perwalian' ? 'bg-purple-100 text-purple-800' :
+                 'bg-blue-100 text-blue-800')
+              : '';
+            
+            // Jadwal istirahat tidak bisa di-klik untuk absensi
+            const isClickable = !isJadwalKhusus || jenisKegiatan !== 'istirahat';
+            
+            return (
             <div
               key={schedule.id}
-              className="border rounded-lg p-4 hover:bg-gray-50 cursor-pointer transition-colors"
-              onClick={() => onSelectSchedule(schedule)}
+              className={`border rounded-lg p-4 ${borderColor} ${isClickable ? 'hover:bg-gray-50 cursor-pointer' : 'bg-gray-50 cursor-default'} transition-colors`}
+              onClick={() => isClickable && onSelectSchedule(schedule)}
             >
               <div className="flex justify-between items-start">
                 <div className="flex-1">
@@ -188,20 +215,36 @@ const ScheduleListView = ({ schedules, onSelectSchedule, isLoading }: {
                     <Badge variant="outline" className="text-xs">
                       {schedule.jam_mulai} - {schedule.jam_selesai}
                     </Badge>
-                    <Badge className={statusColors[schedule.status || 'upcoming']}>
-                      {schedule.status === 'current' ? 'Sedang Berlangsung' : 
-                       schedule.status === 'completed' ? 'Selesai' : 'Akan Datang'}
-                    </Badge>
+                    {isJadwalKhusus && (
+                      <Badge className={jenisBadgeColor}>
+                        {jenisKegiatan === 'istirahat' ? '☕ Istirahat' :
+                         jenisKegiatan === 'upacara' ? '🎌 Upacara' :
+                         jenisKegiatan === 'perwalian' ? '👥 Perwalian' :
+                         jenisKegiatan}
+                      </Badge>
+                    )}
+                    {!isJadwalKhusus && (
+                      <Badge className={statusColors[schedule.status || 'upcoming']}>
+                        {schedule.status === 'current' ? 'Sedang Berlangsung' : 
+                         schedule.status === 'completed' ? 'Selesai' : 'Akan Datang'}
+                      </Badge>
+                    )}
                   </div>
                   <h4 className="font-medium text-gray-900">{schedule.nama_mapel}</h4>
                   <p className="text-sm text-gray-600">{schedule.nama_kelas}</p>
+                  {isJadwalKhusus && schedule.keterangan && (
+                    <p className="text-xs text-gray-500 mt-1 italic">{schedule.keterangan}</p>
+                  )}
                 </div>
-                <Button variant="outline" size="sm">
-                  {schedule.status === 'current' ? 'Ambil Absensi' : 'Lihat Detail'}
-                </Button>
+                {isClickable && (
+                  <Button variant="outline" size="sm">
+                    {schedule.status === 'current' ? 'Ambil Absensi' : 'Lihat Detail'}
+                  </Button>
+                )}
               </div>
             </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </CardContent>
@@ -3606,7 +3649,63 @@ export const TeacherDashboard = ({ userData, onLogout }: TeacherDashboardProps) 
       });
 
       console.log('📅 Final schedules with status:', schedulesWithStatus);
-      setSchedules(schedulesWithStatus);
+      
+      // Fetch jadwal khusus untuk hari ini
+      try {
+        const jadwalKhususRes = await apiCall(`/api/admin/jadwal-khusus?hari=${todayName}`);
+        let jadwalKhususList = [];
+        
+        if (jadwalKhususRes.success && Array.isArray(jadwalKhususRes.data)) {
+          jadwalKhususList = jadwalKhususRes.data;
+        } else if (Array.isArray(jadwalKhususRes)) {
+          jadwalKhususList = jadwalKhususRes;
+        }
+        
+        // Filter: hanya upacara (semua kelas) dan perwalian yang ditugaskan ke guru ini
+        const relevantJadwalKhusus = jadwalKhususList.filter((jk: any) => 
+          jk.jenis_kegiatan === 'upacara' || 
+          (jk.jenis_kegiatan === 'perwalian' && jk.guru_id === user.guru_id)
+        );
+        
+        // Transform jadwal khusus ke format Schedule
+        const transformedJadwalKhusus = relevantJadwalKhusus.map((jk: any) => {
+          const [startHour, startMinute] = String(jk.jam_mulai).split(':').map(Number);
+          const [endHour, endMinute] = String(jk.jam_selesai).split(':').map(Number);
+          const startTime = startHour * 60 + startMinute;
+          const endTime = endHour * 60 + endMinute;
+          
+          let status: ScheduleStatus;
+          if (currentTime < startTime) status = 'upcoming';
+          else if (currentTime <= endTime) status = 'current';
+          else status = 'completed';
+          
+          return {
+            id: jk.id * -1, // Negative ID untuk membedakan
+            nama_mapel: jk.nama_kegiatan,
+            hari: jk.hari,
+            jam_mulai: jk.jam_mulai,
+            jam_selesai: jk.jam_selesai,
+            nama_kelas: jk.kelas_id ? jk.nama_kelas : 'Semua Kelas',
+            status,
+            jenis_kegiatan: jk.jenis_kegiatan, // Tambahkan field untuk visual differentiation
+            keterangan: jk.keterangan
+          } as Schedule & { jenis_kegiatan?: string; keterangan?: string };
+        });
+        
+        // Merge dan sort berdasarkan jam mulai
+        const allSchedules = [...schedulesWithStatus, ...transformedJadwalKhusus];
+        const sortedSchedules = allSchedules.sort((a, b) => {
+          const timeA = a.jam_mulai.split(':').map(Number);
+          const timeB = b.jam_mulai.split(':').map(Number);
+          return timeA[0] * 60 + timeA[1] - (timeB[0] * 60 + timeB[1]);
+        });
+        
+        console.log('📅 Merged schedules (reguler + khusus):', sortedSchedules);
+        setSchedules(sortedSchedules);
+      } catch (jadwalKhususError) {
+        console.warn('⚠️ Failed to fetch jadwal khusus, using only regular schedules:', jadwalKhususError);
+        setSchedules(schedulesWithStatus);
+      }
     } catch (error) {
       console.error('Error fetching schedules:', error);
       toast({ title: 'Error', description: 'Gagal memuat jadwal', variant: 'destructive' });
