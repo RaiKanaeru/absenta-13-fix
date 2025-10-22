@@ -1,243 +1,319 @@
-# Sistem Kop Laporan Dinamis - Status Implementasi
+# 📊 Status Implementasi Sistem Letterhead
 
-## ✅ COMPLETED: Infrastructure & Admin System
-
-### 1. ✅ Database Table
-- **Table**: `system_config` sudah ada di `database/schema/absenta13.sql` (line 8800)
-- **Migration**: Migration file sudah dibuat di `database/migrations/2025-10-22-ensure-system-config-table.sql`
-- **Status**: READY TO USE
-
-### 2. ✅ Backend Admin API Endpoints
-**Location**: `server_modern.js` lines 5629-5846
-
-**Endpoints**:
-- `GET /api/admin/letterhead` (line 5629) ✅ READY
-  - Fetch letterhead config from database
-  - Fallback to default config if not found
-  
-- `POST /api/admin/letterhead` (line 5679) ✅ READY
-  - Save letterhead config to database
-  - Auto-compress images (max 500KB)
-  - Validate config format
-  
-- `GET /api/admin/letterhead/preview` (line 5781) ✅ READY
-  - Generate HTML preview of letterhead
-
-**Status**: FULLY FUNCTIONAL
-
-### 3. ✅ Frontend Admin Page
-- **Page**: "Pengaturan Kop Laporan"
-- **Features**:
-  - Upload logo (kiri, kanan, tengah)
-  - Configure text lines
-  - Set alignment
-  - Save to database
-  - Preview HTML
-- **Status**: READY TO USE
-
-### 4. ✅ Documentation
-**Created Files**:
-- `LETTERHEAD_SYSTEM_IMPLEMENTATION.md` - Complete implementation guide
-- `RUN_LETTERHEAD_MIGRATION.md` - Migration instructions
-- `LETTERHEAD_TESTING_GUIDE.md` - Testing procedures
-- `LETTERHEAD_IMPLEMENTATION_SUMMARY.md` - Quick reference
-- `LETTERHEAD_IMPLEMENTATION_STATUS.md` - This file
-
-**Status**: COMPLETE
+**Date**: 22 Oktober 2025  
+**Status**: ✅ **DATABASE LAYER COMPLETE** → 🔧 **BACKEND INTEGRATION IN PROGRESS**
 
 ---
 
-## ⚠️ TODO: Export Endpoints Integration
+## ✅ COMPLETED (Database Layer)
 
-### Export Endpoints Found
-Saya menemukan **2 export endpoints** yang perlu diupdate:
+### 1. **Database Setup** ✅
+- [x] Created `database/migrations/2025-10-22-system-config-letterhead.sql`
+- [x] `system_config` table created with `LONGTEXT` column
+- [x] Table structure verified
+- [x] Indexes added for performance
 
-1. **`/api/export/rekap-ketidakhadiran-guru`** (line 4474)
-   - Status: ❌ BELUM menggunakan letterhead dari database
-   - Perlu: Fetch letterhead dan tambahkan ke Excel header
+### 2. **Helper Utilities** ✅
+- [x] `backend/utils/letterheadHelper.js` - Centralized letterhead management
+  - `fetchLetterheadConfig(reportKey)` - Fetch with fallback
+  - `validateLetterheadConfig(config)` - Schema validation
+  - `saveLetterheadConfig(reportKey, config)` - Save to database
+  - `deleteLetterheadConfig(reportKey)` - Delete config
+  - `listLetterheadConfigs()` - List all configs
 
-2. **`/api/export/absensi`** (line 4666)
-   - Status: ❌ BELUM menggunakan letterhead dari database
-   - Perlu: Fetch letterhead dan tambahkan ke Excel header
+### 3. **Scripts** ✅
+- [x] `scripts/seed-letterhead.cjs` - Seed letterhead configurations
+  - Auto-creates table if not exists
+  - Auto-upgrades column to LONGTEXT
+  - Seeds 9 letterhead configurations
+  - Comprehensive error handling
+  
+- [x] `scripts/verify-letterhead.cjs` - Verify system setup
+  - Checks database connection
+  - Checks table structure
+  - Validates all letterhead configs
+  - Validates JSON schemas
+  - Provides troubleshooting guide
+  
+- [x] `scripts/cleanup-invalid-letterhead.cjs` - Cleanup invalid configs
+  - Removes empty configs
+  - Removes old underscore format
+  - Removes invalid JSON
 
-### Missing Export Endpoints
-Berdasarkan plan, endpoints berikut mungkin BELUM ada atau dengan nama berbeda:
+### 4. **Documentation** ✅
+- [x] `LETTERHEAD_SYSTEM_ANALYSIS_COMPLETE.md` - Complete system analysis
+- [x] `LETTERHEAD_SYNC_ANALYSIS.md` - Synchronization analysis
+- [x] `LETTERHEAD_QUICK_START.md` - User quick start guide
+- [x] `database/migrations/2025-10-22-system-config-letterhead.sql` - Migration SQL
 
-1. `/api/export/teacher-summary` - NOT FOUND
-2. `/api/export/student-summary` - NOT FOUND
-3. `/api/export/presensi-siswa` - NOT FOUND
-4. `/api/export/rekap-ketidakhadiran` (siswa) - NOT FOUND
-5. `/api/export/banding-absen` - NOT FOUND
+### 5. **Database Population** ✅
+- [x] 9 letterhead configurations seeded:
+  - `letterhead_global`
+  - `letterhead_presensi-siswa`
+  - `letterhead_rekap-ketidakhadiran`
+  - `letterhead_rekap-ketidakhadiran-guru`
+  - `letterhead_banding-absen`
+  - `letterhead_jadwal-global`
+  - `letterhead_jadwal-smkn13`
+  - `letterhead_teacher-summary`
+  - `letterhead_student-summary`
 
-**Note**: Mungkin endpoint-endpoint ini ada dengan nama berbeda atau belum diimplementasikan.
-
----
-
-## 🎯 Next Steps
-
-### Step 1: ⚠️ Update Existing Export Endpoints
-
-#### A. Update `/api/export/rekap-ketidakhadiran-guru`
-
-**Current Code** (line 4474-4663):
-```javascript
-app.get('/api/export/rekap-ketidakhadiran-guru', authenticateToken, requireRole(['admin']), async (req, res) => {
-    try {
-        // ... existing code ...
-        
-        // Create Excel workbook
-        const workbook = new ExcelJS.Workbook();
-        const worksheet = workbook.addWorksheet('Rekap Ketidakhadiran Guru');
-
-        // ❌ HARDCODED TITLE (line 4556-4560)
-        worksheet.mergeCells('A1:K1');
-        worksheet.getCell('A1').value = 'REKAP KETIDAKHADIRAN GURU';
-        // ... no letterhead from database
-    }
-});
+### 6. **Verification Results** ✅
+```
+🔍 Verification Summary:
+   ✅ Database connected: absenta13
+   ✅ system_config table exists
+   ✅ config_value column is LONGTEXT
+   ✅ 9 letterhead configurations found
+   ✅ All JSON schemas valid
+   ✅ Sample fetch successful
 ```
 
-**Need to Add** (BEFORE creating Excel):
+---
+
+## 🔧 IN PROGRESS (Backend Integration)
+
+### 7. **Backend Endpoints** 🔧
+Currently, backend endpoints at `server_modern.js` (lines 6231-6448) need to:
+- [ ] Import `letterheadHelper` functions
+- [ ] Replace inline letterhead fetch with `fetchLetterheadConfig()`
+- [ ] Use standardized schema (lines property, not textLines)
+- [ ] Ensure consistent error handling
+
+**Current Endpoints**:
+- `GET /api/admin/letterhead?reportKey=X` - Load letterhead
+- `POST /api/admin/letterhead` - Save letterhead
+- `GET /api/admin/letterhead/preview?reportKey=X` - Preview letterhead
+
+**Required Changes**:
 ```javascript
-// 1. GET LETTERHEAD FROM DATABASE
+// Before (inline fetch)
+const [rows] = await db.execute('SELECT config_value FROM system_config WHERE config_key = ?', ['letterhead_X']);
+let config = rows.length > 0 ? JSON.parse(rows[0].config_value) : defaultConfig;
+
+// After (using helper)
+const { fetchLetterheadConfig } = require('./utils/letterheadHelper');
+const config = await fetchLetterheadConfig('X');
+```
+
+---
+
+## 🚧 PENDING (Export Routes Integration)
+
+### 8. **Export Routes** 🚧
+`backend/routes/export.js` has 6-8 export endpoints that need updating:
+
+**Endpoints to Update**:
+1. `GET /api/export/presensi-siswa/excel`
+2. `GET /api/export/rekap-ketidakhadiran/excel`
+3. `GET /api/export/rekap-ketidakhadiran-guru/excel`
+4. `GET /api/export/teacher-summary/excel`
+5. `GET /api/export/student-summary/excel`
+6. `GET /api/export/banding-absen/excel`
+7. `GET /api/export/jadwal-global/excel`
+8. `GET /api/export/jadwal-smkn13/excel`
+
+**Required Changes**:
+- [ ] Import `fetchLetterheadConfig` helper
+- [ ] Replace inline letterhead fetch
+- [ ] Use `lines` property (not `textLines`)
+- [ ] Ensure consistent letterhead rendering
+
+**Example**:
+```javascript
+// OLD (in export routes)
 const [configRows] = await db.execute(
     'SELECT config_value FROM system_config WHERE config_key = ?',
     ['letterhead_rekap_guru']
 );
-
 let letterheadConfig = null;
-if (configRows.length > 0 && configRows[0].config_value) {
+if (configRows.length > 0) {
     letterheadConfig = JSON.parse(configRows[0].config_value);
-} else {
-    // Fallback to global letterhead
-    const [globalConfig] = await db.execute(
-        'SELECT config_value FROM system_config WHERE config_key = ?',
-        ['letterhead_global']
-    );
-    if (globalConfig.length > 0 && globalConfig[0].config_value) {
-        letterheadConfig = JSON.parse(globalConfig[0].config_value);
-    }
 }
 
-// 2. ADD LETTERHEAD TO EXCEL (if config exists)
-if (letterheadConfig && letterheadConfig.enabled) {
-    // Add letterhead section before title
-    let currentRow = 1;
-    
-    // Add logos if present
-    if (letterheadConfig.logoLeftUrl || letterheadConfig.logoRightUrl) {
-        // Add logo row
-        currentRow++;
-    }
-    
-    // Add text lines
-    if (letterheadConfig.textLines && letterheadConfig.textLines.length > 0) {
-        letterheadConfig.textLines.forEach(line => {
-            worksheet.mergeCells(`A${currentRow}:K${currentRow}`);
-            worksheet.getCell(`A${currentRow}`).value = line;
-            worksheet.getCell(`A${currentRow}`).font = { bold: true, size: 12 };
-            worksheet.getCell(`A${currentRow}`).alignment = { 
-                horizontal: 'center', 
-                vertical: 'middle' 
-            };
-            currentRow++;
-        });
-    }
-    
-    // Add separator
-    currentRow++;
-    
-    // Update title row number
-    // Then continue with existing title...
-}
+// NEW (using helper)
+const letterheadConfig = await fetchLetterheadConfig('rekap-ketidakhadiran-guru');
 ```
 
-#### B. Update `/api/export/absensi`
+---
 
-Same pattern as above - fetch letterhead from database and add to Excel header.
+## 📋 ROADMAP
 
-### Step 2: Test Updated Endpoints
+### Phase 1: Database Layer ✅ DONE
+- [x] Create migration SQL
+- [x] Create helper utilities
+- [x] Create seed & verification scripts
+- [x] Populate database
+- [x] Verify setup
 
-After updating, test:
-1. Export rekap guru → Check letterhead muncul
-2. Export absensi → Check letterhead muncul
-3. Test dengan konfigurasi global
-4. Test dengan konfigurasi per-report
-5. Test fallback mechanism
+### Phase 2: Backend Integration 🔧 IN PROGRESS
+- [ ] Update backend endpoints (`server_modern.js`)
+- [ ] Refactor to use `letterheadHelper`
+- [ ] Test with Postman/curl
+
+### Phase 3: Export Routes Integration 🚧 PENDING
+- [ ] Update all export routes
+- [ ] Replace inline fetch with helper
+- [ ] Standardize property names
+- [ ] Test all exports (Excel & PDF)
+
+### Phase 4: Frontend Integration 🔜 UPCOMING
+- [ ] Test `ReportLetterheadSettings.tsx` component
+- [ ] Test logo upload
+- [ ] Test letterhead preview
+- [ ] Test save functionality
+- [ ] Verify letterhead appears in exports
+
+### Phase 5: Testing & Deployment 🔜 UPCOMING
+- [ ] End-to-end testing
+- [ ] Performance testing
+- [ ] User acceptance testing
+- [ ] Deploy to production
 
 ---
 
-## 📊 Implementation Summary
+## 🧪 Testing Checklist
 
-### ✅ What's COMPLETE (100%):
-1. Database table `system_config` ✅
-2. Migration file ✅
-3. Backend admin API (GET/POST/Preview) ✅
-4. Frontend admin page ✅
-5. Documentation (4 comprehensive files) ✅
+### Database Layer ✅
+- [x] Table exists
+- [x] Correct schema
+- [x] Data seeded
+- [x] Validation works
 
-### ⚠️ What's PENDING (Export Integration):
-1. Update `/api/export/rekap-ketidakhadiran-guru` to use letterhead ⏳
-2. Update `/api/export/absensi` to use letterhead ⏳
-3. Find/verify other export endpoints ⏳
-4. Update any additional export endpoints ⏳
+### Backend Endpoints 🔧
+- [ ] GET letterhead returns correct data
+- [ ] POST letterhead saves correctly
+- [ ] Preview generates HTML correctly
+- [ ] Error handling works
+- [ ] Authentication works
+
+### Export Routes 🚧
+- [ ] Letterhead appears in Excel exports
+- [ ] Letterhead appears in PDF exports
+- [ ] Logos render correctly
+- [ ] Text alignment correct
+- [ ] Fallback to global works
+
+### Frontend Component 🔜
+- [ ] Component loads
+- [ ] Load letterhead works
+- [ ] Upload logo works
+- [ ] Image compression works
+- [ ] Save letterhead works
+- [ ] Preview opens correctly
+- [ ] Error messages clear
 
 ---
 
-## 🎉 Overall Progress
+## 📚 Quick Reference
 
-**Infrastructure**: 100% COMPLETE ✅  
-**Admin System**: 100% COMPLETE ✅  
-**Documentation**: 100% COMPLETE ✅  
-**Export Integration**: 0% PENDING ⏳  
+### Run Scripts
+```bash
+# Seed letterhead configurations
+node scripts/seed-letterhead.cjs
 
-**Overall**: 75% COMPLETE
+# Verify letterhead system
+node scripts/verify-letterhead.cjs
+
+# Cleanup invalid configs
+node scripts/cleanup-invalid-letterhead.cjs
+```
+
+### Check Database
+```sql
+-- View all letterhead configs
+SELECT config_key, LENGTH(config_value) as size_bytes, updated_at 
+FROM system_config 
+WHERE config_key LIKE 'letterhead_%';
+
+-- View specific letterhead
+SELECT config_key, config_value 
+FROM system_config 
+WHERE config_key = 'letterhead_global';
+```
+
+### Test API
+```bash
+# Get letterhead
+curl -X GET "http://localhost:3001/api/admin/letterhead?reportKey=global" \
+  -H "Authorization: Bearer TOKEN"
+
+# Save letterhead
+curl -X POST "http://localhost:3001/api/admin/letterhead" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer TOKEN" \
+  -d '{"reportKey":"global","config":{...}}'
+```
 
 ---
 
-## 📋 User Action Items
+## 🎯 Next Actions
 
-### Immediate Actions:
-
-1. **Run Migration** ⚠️ CRITICAL
+1. **Backend Integration** (Current Priority)
    ```bash
-   # Via MySQL Workbench or phpMyAdmin
-   # Run: database/migrations/2025-10-22-ensure-system-config-table.sql
+   # Next step: Update server_modern.js to use letterheadHelper
+   # File: server_modern.js (lines 6231-6448)
+   # Import letterheadHelper and replace inline fetch
    ```
 
-2. **Configure Letterhead** via Admin UI
-   - Login as admin
-   - Open "Pengaturan Kop Laporan"
-   - Upload logo sekolah
-   - Set text kop surat
-   - Save configuration
+2. **Export Routes Update**
+   ```bash
+   # After backend: Update export routes
+   # File: backend/routes/export.js
+   # Replace all inline letterhead fetch with helper
+   ```
 
-3. **Notify Developer** about Export Endpoints
-   - 2 endpoints perlu diupdate
-   - Pattern sudah jelas (lihat Step 1 di atas)
-   - Estimate: 30-60 menit untuk update
+3. **Testing**
+   ```bash
+   # After integration: Test all endpoints
+   # Use Postman or curl to test each endpoint
+   ```
 
-### Testing After Export Update:
+4. **Frontend Testing**
+   ```bash
+   # Final step: Test UI
+   # Open http://localhost:3000 → Login → Kop Laporan
+   # Test upload, save, preview, export
+   ```
 
-1. Test export rekap guru
-2. Test export absensi
-3. Verify letterhead muncul di semua export
-4. Verify fallback mechanism bekerja
+---
+
+## 🐛 Known Issues
+
+### Database
+✅ **RESOLVED**: Column `config_value` was `TEXT`, upgraded to `LONGTEXT`  
+✅ **RESOLVED**: Old format with underscores, cleaned up  
+✅ **RESOLVED**: Empty configs, removed
+
+### Backend
+⚠️ **PENDING**: Endpoints use different property names (`textLines` vs `lines`)  
+⚠️ **PENDING**: Inline letterhead fetch (need to use helper)
+
+### Export Routes
+⚠️ **PENDING**: Some routes use `letterhead_xxx_yyy` (underscore) instead of `letterhead_xxx-yyy` (dash)  
+⚠️ **PENDING**: Inconsistent letterhead fetch logic
 
 ---
 
 ## 📞 Support
 
-Jika ada pertanyaan:
-1. Lihat documentation di folder root project
-2. Check migration file untuk struktur database
-3. Check `server_modern.js` line 5629-5846 untuk contoh implementasi
+### Documentation
+- **Complete Analysis**: `LETTERHEAD_SYSTEM_ANALYSIS_COMPLETE.md`
+- **Sync Analysis**: `LETTERHEAD_SYNC_ANALYSIS.md`
+- **Quick Start**: `LETTERHEAD_QUICK_START.md`
+- **Migration SQL**: `database/migrations/2025-10-22-system-config-letterhead.sql`
+
+### Helper Utility
+- **File**: `backend/utils/letterheadHelper.js`
+- **Functions**: `fetchLetterheadConfig`, `validateLetterheadConfig`, `saveLetterheadConfig`, `deleteLetterheadConfig`, `listLetterheadConfigs`
+
+### Scripts
+- **Seed**: `scripts/seed-letterhead.cjs`
+- **Verify**: `scripts/verify-letterhead.cjs`
+- **Cleanup**: `scripts/cleanup-invalid-letterhead.cjs`
 
 ---
 
-**Last Updated**: 22 Oktober 2025  
-**Status**: Infrastructure Complete, Export Integration Pending  
-**Next Action**: Update export endpoints untuk menggunakan letterhead dari database
-
-
-
+**Last Updated**: 22 Oktober 2025, 13:02 WIB  
+**Current Status**: ✅ Database Complete → 🔧 Backend Integration In Progress  
+**Progress**: 60% Complete (8/12 tasks done)
