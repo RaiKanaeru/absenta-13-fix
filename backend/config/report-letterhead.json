@@ -1,13 +1,13 @@
 {
   "enabled": true,
-  "logo": "",
-  "logoKiri": "",
-  "logoKanan": "",
+  "logoLeftUrl": "/uploads/letterheads/logo-jawa-barat.png",
+  "logoRightUrl": "/uploads/letterheads/logo-smk.png",
   "lines": [
-    "PEMERINTAH DAERAH PROVINSI DKI JAKARTA",
+    "PEMERINTAH PROVINSI DKI JAKARTA",
     "DINAS PENDIDIKAN",
     "SMK NEGERI 13 JAKARTA",
-    "Jl. Raya Bekasi Km. 18, Cakung, Jakarta Timur 13910"
+    "Jl. Raya Bekasi Km. 18, Cakung, Jakarta Timur 13910",
+    "Telp: (021) 4600005 | Email: smkn13jakarta@jakarta.go.id"
   ],
   "alignment": "center"
 }
