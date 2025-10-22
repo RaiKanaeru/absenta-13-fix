@@ -9,6 +9,7 @@ import { buildExcel } from '../export/excelBuilder.js';
 import { buildPDF } from '../export/pdfBuilder.js';
 import teacherSummarySchema from '../export/schemas/teacher-summary.js';
 import studentSummarySchema from '../export/schemas/student-summary.js';
+import { fetchLetterheadConfig } from '../utils/letterheadHelper.js';
 
 const router = express.Router();
 
