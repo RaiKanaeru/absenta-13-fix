@@ -1,11 +1,9 @@
 import React, { useState } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Calendar, CalendarDays, AlertTriangle, Eye, FileUp, Download } from 'lucide-react';
+import { Calendar, CalendarDays } from 'lucide-react';
 import JadwalKhususManagement from './JadwalKhususManagement';
-import GlobalScheduleView from './GlobalScheduleView';
-import SchedulePreviewGrid from '../SchedulePreviewGrid';
 
 interface KelolaJadwalViewProps {
   onBack?: () => void;
@@ -19,10 +17,6 @@ const KelolaJadwalView: React.FC<KelolaJadwalViewProps> = ({
   ManageSchedulesView
 }) => {
   const [activeTab, setActiveTab] = useState('jadwal-regular');
-  const [showConflicts, setShowConflicts] = useState(false);
-  const [showPreview, setShowPreview] = useState(false);
-  const [showImport, setShowImport] = useState(false);
-  const [showAdvancedImport, setShowAdvancedImport] = useState(false);
 
   const handleBack = () => {
     if (onBack) onBack();
@@ -34,140 +28,61 @@ const KelolaJadwalView: React.FC<KelolaJadwalViewProps> = ({
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
-          <div>
-            <CardTitle className="text-2xl font-bold flex items-center gap-2">
-              <Calendar className="h-6 w-6" />
-              Kelola Jadwal
-            </CardTitle>
-            <p className="text-sm text-muted-foreground mt-1">
-              Atur jadwal pelajaran untuk setiap kelas dengan mudah
-            </p>
+      {/* Clean Header */}
+      <Card className="border-none shadow-sm">
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between">
+            <div className="space-y-1">
+              <CardTitle className="text-2xl font-bold flex items-center gap-3">
+                <div className="p-2 bg-primary/10 rounded-lg">
+                  <Calendar className="h-6 w-6 text-primary" />
+                </div>
+                Kelola Jadwal
+              </CardTitle>
+              <CardDescription className="text-base">
+                Atur jadwal pelajaran untuk setiap kelas dengan mudah
+              </CardDescription>
+            </div>
+            {onBack && (
+              <Button onClick={handleBack} variant="outline" size="sm">
+                ← Kembali
+              </Button>
+            )}
           </div>
-          {onBack && (
-            <Button onClick={handleBack} variant="outline">
-              ← Kembali
-            </Button>
-          )}
         </CardHeader>
-        
-        {/* Action Buttons Header */}
-        <CardContent className="border-t pt-4">
-          <div className="flex flex-wrap gap-2">
-            <Button
-              variant={showConflicts ? "default" : "outline"}
-              size="sm"
-              onClick={() => {
-                setShowConflicts(!showConflicts);
-                setShowPreview(false);
-                setShowImport(false);
-                setShowAdvancedImport(false);
-              }}
-            >
-              <AlertTriangle className="h-4 w-4 mr-2" />
-              Cek Bentrok
-            </Button>
-            
-            <Button
-              variant={showPreview ? "default" : "outline"}
-              size="sm"
-              onClick={() => {
-                setShowPreview(!showPreview);
-                setShowConflicts(false);
-                setShowImport(false);
-                setShowAdvancedImport(false);
-              }}
-            >
-              <Eye className="h-4 w-4 mr-2" />
-              Preview Jadwal
-            </Button>
-            
-            <Button
-              variant={showAdvancedImport ? "default" : "outline"}
-              size="sm"
-              onClick={() => {
-                setShowAdvancedImport(!showAdvancedImport);
-                setShowConflicts(false);
-                setShowPreview(false);
-                setShowImport(false);
-              }}
-            >
-              <FileUp className="h-4 w-4 mr-2" />
-              Import Advanced
-            </Button>
-            
-            <Button
-              variant={showImport ? "default" : "outline"}
-              size="sm"
-              onClick={() => {
-                setShowImport(!showImport);
-                setShowConflicts(false);
-                setShowPreview(false);
-                setShowAdvancedImport(false);
-              }}
-            >
-              <Download className="h-4 w-4 mr-2" />
-              Import Excel
-            </Button>
-          </div>
-        </CardContent>
       </Card>
 
-      {/* Tabs for Different Schedule Types */}
+      {/* Tabs - Cleaner Design */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        <TabsList className="grid w-full grid-cols-2 lg:w-[400px]">
-          <TabsTrigger value="jadwal-regular" className="flex items-center gap-2">
+        <TabsList className="grid w-full grid-cols-2 h-12 bg-muted/50">
+          <TabsTrigger 
+            value="jadwal-regular" 
+            className="flex items-center gap-2 data-[state=active]:bg-background data-[state=active]:shadow-sm"
+          >
             <Calendar className="h-4 w-4" />
-            <span>Jadwal Regular</span>
+            <span className="font-medium">Jadwal Regular</span>
           </TabsTrigger>
-          <TabsTrigger value="jadwal-khusus" className="flex items-center gap-2">
+          <TabsTrigger 
+            value="jadwal-khusus" 
+            className="flex items-center gap-2 data-[state=active]:bg-background data-[state=active]:shadow-sm"
+          >
             <CalendarDays className="h-4 w-4" />
-            <span>Jadwal Khusus</span>
+            <span className="font-medium">Jadwal Khusus</span>
           </TabsTrigger>
         </TabsList>
 
         {/* Jadwal Regular Tab */}
-        <TabsContent value="jadwal-regular" className="space-y-4">
+        <TabsContent value="jadwal-regular" className="mt-6 space-y-4">
           {ManageSchedulesView && (
             <ManageSchedulesView onBack={handleBack} onLogout={handleLogout} />
           )}
         </TabsContent>
 
         {/* Jadwal Khusus Tab */}
-        <TabsContent value="jadwal-khusus" className="space-y-4">
+        <TabsContent value="jadwal-khusus" className="mt-6 space-y-4">
           <JadwalKhususManagement onBack={handleBack} onLogout={handleLogout} />
         </TabsContent>
       </Tabs>
-
-      {/* Conditional Renders for Action Buttons */}
-      {showPreview && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Preview Jadwal</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <SchedulePreviewGrid />
-          </CardContent>
-        </Card>
-      )}
-
-      {showConflicts && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <AlertTriangle className="h-5 w-5 text-yellow-600" />
-              Deteksi Konflik Jadwal
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <GlobalScheduleView />
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Import modals will be triggered from ManageSchedulesView component */}
     </div>
   );
 };
