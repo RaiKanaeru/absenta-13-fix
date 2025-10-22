@@ -1934,5 +1934,167 @@ router.get('/jadwal-global/pdf', async (req, res) => {
   }
 });
 
+// ================================================
+// JADWAL SMKN 13 FORMAT EXPORT
+// ================================================
+
+// GET /api/export/jadwal-smkn13/excel - Export jadwal dalam format SMKN 13
+router.get('/jadwal-smkn13/excel', async (req, res) => {
+  try {
+    console.log('📊 Exporting jadwal in SMKN 13 standard format...');
+    
+    const { kelas_id } = req.query;
+    
+    // Build filter conditions
+    let kelasFilter = '';
+    let params = [];
+    
+    if (kelas_id && kelas_id !== 'all') {
+      kelasFilter = 'AND k.id_kelas = ?';
+      params.push(parseInt(kelas_id));
+    }
+    
+    // Fetch jadwal data grouped by kelas
+    const [jadwalData] = await db.execute(`
+      SELECT 
+        k.id_kelas,
+        k.nama_kelas,
+        k.tingkat,
+        j.id_jadwal,
+        j.hari,
+        j.jam_ke,
+        j.jam_mulai,
+        j.jam_selesai,
+        j.mapel_id,
+        m.nama_mapel,
+        m.kode_mapel,
+        j.guru_id,
+        g.nama as nama_guru,
+        g.nip,
+        'jadwal' as type,
+        NULL as jenis_kegiatan,
+        NULL as nama_kegiatan,
+        k2.ruang as ruang,
+        k2.kode_ruang
+      FROM kelas k
+      LEFT JOIN jadwal j ON k.id_kelas = j.kelas_id AND j.status = 'aktif'
+      LEFT JOIN mapel m ON j.mapel_id = m.id_mapel
+      LEFT JOIN guru g ON j.guru_id = g.id_guru
+      LEFT JOIN kelas k2 ON j.kelas_id = k2.id_kelas
+      WHERE k.status = 'aktif' ${kelasFilter}
+      
+      UNION ALL
+      
+      SELECT 
+        COALESCE(jk.kelas_id, 0) as id_kelas,
+        COALESCE(k.nama_kelas, 'Semua Kelas') as nama_kelas,
+        COALESCE(k.tingkat, '') as tingkat,
+        jk.id as id_jadwal,
+        jk.hari,
+        NULL as jam_ke,
+        jk.jam_mulai,
+        jk.jam_selesai,
+        NULL as mapel_id,
+        NULL as nama_mapel,
+        NULL as kode_mapel,
+        NULL as guru_id,
+        jk.guru_wali_kelas as nama_guru,
+        NULL as nip,
+        'jadwal_khusus' as type,
+        jk.jenis_kegiatan,
+        jk.nama_kegiatan,
+        NULL as ruang,
+        NULL as kode_ruang
+      FROM jadwal_khusus jk
+      LEFT JOIN kelas k ON jk.kelas_id = k.id_kelas
+      WHERE jk.status = 'aktif' 
+        ${kelasFilter ? 'AND (jk.kelas_id IS NULL OR jk.kelas_id = ?)' : ''}
+      
+      ORDER BY tingkat, nama_kelas, FIELD(hari, 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'), jam_ke
+    `, kelasFilter ? [...params, ...params] : []);
+    
+    // Group by kelas
+    const kelasMap = new Map();
+    
+    for (const row of jadwalData) {
+      const kelasId = row.id_kelas;
+      
+      if (!kelasMap.has(kelasId)) {
+        kelasMap.set(kelasId, {
+          kelas: {
+            id_kelas: row.id_kelas,
+            nama_kelas: row.nama_kelas,
+            tingkat: row.tingkat
+          },
+          jadwal: []
+        });
+      }
+      
+      if (row.id_jadwal) {
+        kelasMap.get(kelasId).jadwal.push(row);
+      }
+    }
+    
+    const kelasArray = Array.from(kelasMap.values()).filter(item => item.kelas.id_kelas > 0);
+    
+    // Fetch letterhead config
+    let letterheadConfig = null;
+    try {
+      const [letterheadData] = await db.execute(
+        'SELECT config_value FROM system_config WHERE config_key = ? LIMIT 1',
+        ['letterhead_jadwal-smkn13']
+      );
+      
+      if (letterheadData.length > 0) {
+        letterheadConfig = JSON.parse(letterheadData[0].config_value);
+      }
+    } catch (error) {
+      console.log('⚠️ No custom letterhead for jadwal-smkn13');
+    }
+    
+    // Default letterhead
+    if (!letterheadConfig) {
+      letterheadConfig = {
+        enabled: true,
+        logoLeftUrl: "/uploads/letterheads/logo-jawa-barat.png",
+        logoRightUrl: "/uploads/letterheads/logo-smk.png",
+        lines: [
+          "PEMERINTAH PROVINSI DKI JAKARTA",
+          "DINAS PENDIDIKAN",
+          "SMK NEGERI 13 JAKARTA",
+          "Jl. Raya Bekasi Km. 18, Cakung, Jakarta Timur 13910",
+          "Telp: (021) 4600005 | Email: smkn13jakarta@jakarta.go.id"
+        ],
+        alignment: "center"
+      };
+    }
+    
+    // Build Excel workbook using SMKN 13 builder
+    const { default: buildJadwalSMKN13Excel } = await import('../export/builders/jadwalSMKN13Builder.js');
+    const workbook = await buildJadwalSMKN13Excel(kelasArray, {
+      letterhead: letterheadConfig
+    });
+    
+    // Set response headers
+    const filename = `Jadwal_SMKN13_${new Date().toISOString().split('T')[0]}.xlsx`;
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    
+    // Write and send
+    await workbook.xlsx.write(res);
+    res.end();
+    
+    console.log(`✅ Excel export successful: ${filename}`);
+    
+  } catch (error) {
+    console.error('❌ Export error:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: 'Export failed', 
+      message: error.message 
+    });
+  }
+});
+
 export default router;
 
