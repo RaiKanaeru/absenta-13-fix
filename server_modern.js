@@ -16,6 +16,8 @@ import { db, pool } from './db.js';
 import adminRouter from './backend/routes/admin.js';
 import backupRouter from './backend/routes/backup.js';
 import exportRouter from './backend/routes/export.js';
+import importRouter from './backend/routes/import.js';
+import templateRouter from './backend/routes/templates.js';
 import redisClient from './backend/utils/redisClient.js';
 import { cacheMiddleware, invalidateCache, CachePatterns } from './backend/middleware/cacheMiddleware.js';
 
@@ -2053,7 +2055,30 @@ app.post('/api/admin/jadwal', authenticateToken, requireRole(['admin']), async (
             });
         }
 
-        // Check for schedule conflicts - same class, day, and time slot
+        // ================================================
+        // ENHANCED CONFLICT DETECTION (with jadwal_khusus)
+        // ================================================
+        const { checkJadwalConflicts } = await import('./backend/utils/scheduleConflictDetector.js');
+        
+        const conflictCheck = await checkJadwalConflicts({
+            hari,
+            jam_mulai,
+            jam_selesai,
+            kelas_id
+        });
+        
+        if (conflictCheck.hasConflict) {
+            const conflictMessages = conflictCheck.conflicts.map(c => c.message).join('; ');
+            return res.status(409).json({ 
+                success: false,
+                error: 'Jadwal bentrok dengan jadwal lain',
+                details: conflictMessages,
+                conflicts: conflictCheck.conflicts,
+                totalConflicts: conflictCheck.totalConflicts
+            });
+        }
+        
+        // Legacy check for same jam_ke
         const [conflicts] = await db.execute(
             `SELECT id_jadwal FROM jadwal 
              WHERE kelas_id = ? AND hari = ? AND jam_ke = ? AND status = 'aktif'`,
@@ -2933,6 +2958,68 @@ app.get('/api/admin/jadwal-khusus', authenticateToken, requireRole(['admin']), a
     }
 });
 
+// GET /api/admin/jadwal-overview - Get combined schedule overview for a day
+app.get('/api/admin/jadwal-overview', authenticateToken, requireRole(['admin']), async (req, res) => {
+    try {
+        const { hari, kelas_id } = req.query;
+        
+        if (!hari) {
+            return res.status(400).json({ 
+                success: false,
+                error: 'Parameter hari diperlukan'
+            });
+        }
+        
+        console.log('📊 Getting schedule overview for:', { hari, kelas_id: kelas_id || 'all' });
+        
+        const { getDayScheduleOverview } = await import('./backend/utils/scheduleConflictDetector.js');
+        
+        const schedules = await getDayScheduleOverview(hari, kelas_id || null);
+        
+        // Group by time slots
+        const timeSlots = {};
+        for (const schedule of schedules) {
+            const key = `${schedule.jam_mulai}-${schedule.jam_selesai}`;
+            if (!timeSlots[key]) {
+                timeSlots[key] = {
+                    jam_mulai: schedule.jam_mulai,
+                    jam_selesai: schedule.jam_selesai,
+                    schedules: []
+                };
+            }
+            timeSlots[key].schedules.push(schedule);
+        }
+        
+        // Convert to array and sort by time
+        const groupedSchedules = Object.values(timeSlots).sort((a, b) => {
+            const timeA = a.jam_mulai.split(':').map(Number);
+            const timeB = b.jam_mulai.split(':').map(Number);
+            return (timeA[0] * 60 + timeA[1]) - (timeB[0] * 60 + timeB[1]);
+        });
+        
+        console.log(`✅ Found ${schedules.length} schedules (${groupedSchedules.length} time slots)`);
+        res.json({ 
+            success: true, 
+            data: {
+                hari,
+                kelas_id: kelas_id || 'all',
+                schedules,
+                groupedSchedules,
+                totalSchedules: schedules.length,
+                totalTimeSlots: groupedSchedules.length
+            }
+        });
+        
+    } catch (error) {
+        console.error('❌ Error getting schedule overview:', error);
+        res.status(500).json({ 
+            success: false,
+            error: 'Gagal mendapatkan overview jadwal',
+            details: error.message
+        });
+    }
+});
+
 // POST /api/admin/jadwal-khusus - Create new jadwal khusus
 app.post('/api/admin/jadwal-khusus', authenticateToken, requireRole(['admin']), async (req, res) => {
     try {
@@ -2965,26 +3052,30 @@ app.post('/api/admin/jadwal-khusus', authenticateToken, requireRole(['admin']), 
             });
         }
         
-        // Check time conflict untuk kelas yang sama (jika ada kelas_id)
-        if (kelas_id) {
-            const [conflicts] = await db.execute(
-                `SELECT id, nama_kegiatan FROM jadwal_khusus 
-                 WHERE kelas_id = ? AND hari = ? AND status = 'aktif'
-                 AND (
-                   (jam_mulai <= ? AND jam_selesai > ?) OR 
-                   (jam_mulai < ? AND jam_selesai >= ?) OR
-                   (jam_mulai >= ? AND jam_selesai <= ?)
-                 )`,
-                [kelas_id, hari, jam_mulai, jam_mulai, jam_selesai, jam_selesai, jam_mulai, jam_selesai]
-            );
-            
-            if (conflicts.length > 0) {
-                return res.status(400).json({ 
-                    success: false,
-                    error: 'Waktu bertabrakan dengan jadwal khusus lain',
-                    conflict: conflicts[0].nama_kegiatan
-                });
-            }
+        // ================================================
+        // ENHANCED CONFLICT DETECTION (check both jadwal_khusus and jadwal)
+        // ================================================
+        const { checkJadwalKhususConflicts } = await import('./backend/utils/scheduleConflictDetector.js');
+        
+        const conflictCheck = await checkJadwalKhususConflicts({
+            hari,
+            jam_mulai,
+            jam_selesai,
+            kelas_id,
+            jenis_kegiatan
+        });
+        
+        if (conflictCheck.hasConflict) {
+            const conflictMessages = conflictCheck.conflicts.map(c => c.message).join('; ');
+            return res.status(409).json({ 
+                success: false,
+                error: 'Jadwal khusus bentrok dengan jadwal lain',
+                details: conflictMessages,
+                conflicts: conflictCheck.conflicts,
+                totalConflicts: conflictCheck.totalConflicts,
+                warning: jenis_kegiatan === 'upacara' ? 
+                    'Upacara menimpa semua jadwal pelajaran di waktu ini' : null
+            });
         }
         
         // Insert jadwal khusus
@@ -8067,6 +8158,12 @@ app.use('/api/admin', adminRouter);
 // Register backup router
 app.use('/api/admin/backup', backupRouter);
 
+// Register import router (Excel/CSV import endpoints)
+app.use('/api/admin/import', importRouter);
+
+// Register template router (Excel template generation)
+app.use('/api/admin/templates', templateRouter);
+
 // ================================================
 // BACKUP SCHEDULE ENDPOINTS
 // ================================================
@@ -8229,6 +8326,133 @@ app.delete('/api/admin/custom-schedules/:id', authenticateToken, requireRole(['a
             error: 'Failed to delete custom schedule'
         });
     }
+});
+
+// ================================================
+// JADWAL GLOBAL ENDPOINT
+// ================================================
+
+// GET /api/admin/jadwal-global - Get all schedules in grid format with conflicts
+app.get('/api/admin/jadwal-global', authenticateToken, requireRole(['admin', 'guru']), async (req, res) => {
+  try {
+    const { kelas_id, guru_id, hari } = req.query;
+    console.log('📊 Getting global schedule with filters:', { kelas_id, guru_id, hari });
+    
+    // Build query dengan filter
+    let whereConditions = ['j.status = "aktif"'];
+    let params = [];
+    
+    if (kelas_id && kelas_id !== 'all') {
+      whereConditions.push('j.kelas_id = ?');
+      params.push(kelas_id);
+    }
+    
+    if (guru_id && guru_id !== 'all') {
+      whereConditions.push('(j.guru_id = ? OR jg.guru_id = ?)');
+      params.push(guru_id, guru_id);
+    }
+    
+    if (hari && hari !== 'all') {
+      whereConditions.push('j.hari = ?');
+      params.push(hari);
+    }
+    
+    const whereClause = whereConditions.length > 0 
+      ? 'WHERE ' + whereConditions.join(' AND ') 
+      : '';
+    
+    // Get jadwal pelajaran
+    const [jadwal] = await db.execute(`
+      SELECT 
+        j.id_jadwal as id,
+        'jadwal' as type,
+        j.hari,
+        j.jam_ke,
+        j.jam_mulai,
+        j.jam_selesai,
+        j.kelas_id,
+        k.nama_kelas,
+        j.mapel_id,
+        m.nama_mapel,
+        j.guru_id,
+        g.nama as nama_guru,
+        GROUP_CONCAT(DISTINCT g2.nama SEPARATOR ', ') as guru_tambahan
+      FROM jadwal j
+      JOIN kelas k ON j.kelas_id = k.id_kelas
+      JOIN mapel m ON j.mapel_id = m.id_mapel
+      JOIN guru g ON j.guru_id = g.id_guru
+      LEFT JOIN jadwal_guru jg ON j.id_jadwal = jg.jadwal_id AND jg.status = 'aktif'
+      LEFT JOIN guru g2 ON jg.guru_id = g2.id_guru
+      ${whereClause}
+      GROUP BY j.id_jadwal
+      ORDER BY FIELD(j.hari, 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'), j.jam_ke
+    `, params);
+    
+    // Get jadwal_khusus
+    let khususWhereConditions = ['jk.status = "aktif"'];
+    let khususParams = [];
+    
+    if (kelas_id && kelas_id !== 'all') {
+      khususWhereConditions.push('(jk.kelas_id IS NULL OR jk.kelas_id = ?)');
+      khususParams.push(kelas_id);
+    }
+    
+    if (hari && hari !== 'all') {
+      khususWhereConditions.push('jk.hari = ?');
+      khususParams.push(hari);
+    }
+    
+    const khususWhereClause = 'WHERE ' + khususWhereConditions.join(' AND ');
+    
+    const [jadwalKhusus] = await db.execute(`
+      SELECT 
+        jk.id,
+        'jadwal_khusus' as type,
+        jk.hari,
+        NULL as jam_ke,
+        jk.jam_mulai,
+        jk.jam_selesai,
+        jk.kelas_id,
+        COALESCE(k.nama_kelas, 'Semua Kelas') as nama_kelas,
+        NULL as mapel_id,
+        jk.nama_kegiatan as nama_mapel,
+        NULL as guru_id,
+        jk.jenis_kegiatan as nama_guru,
+        NULL as guru_tambahan
+      FROM jadwal_khusus jk
+      LEFT JOIN kelas k ON jk.kelas_id = k.id_kelas
+      ${khususWhereClause}
+      ORDER BY FIELD(jk.hari, 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu')
+    `, khususParams);
+    
+    // Combine dan detect conflicts
+    const allSchedules = [...jadwal, ...jadwalKhusus];
+    
+    // Import detectAllConflicts
+    const { detectAllConflicts } = await import('./backend/utils/scheduleConflictDetector.js');
+    const schedulesWithConflicts = await detectAllConflicts(allSchedules);
+    
+    console.log(`✅ Retrieved ${schedulesWithConflicts.length} schedules (${jadwal.length} regular, ${jadwalKhusus.length} special)`);
+    
+    res.json({
+      success: true,
+      data: schedulesWithConflicts,
+      summary: {
+        total: allSchedules.length,
+        jadwal_pelajaran: jadwal.length,
+        jadwal_khusus: jadwalKhusus.length,
+        conflicts: schedulesWithConflicts.filter(s => s.hasConflict).length
+      }
+    });
+    
+  } catch (error) {
+    console.error('❌ Error fetching global schedule:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: 'Failed to fetch global schedule',
+      message: error.message
+    });
+  }
 });
 
 // Register export router (with authentication and admin role)

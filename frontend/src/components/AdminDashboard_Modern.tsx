@@ -25,6 +25,7 @@ import SchedulePreviewGrid from "./SchedulePreviewGrid";
 import SimpleRestoreView from "./SimpleRestoreView";
 import RuangKelasManagement from "./RuangKelasManagement";
 import JadwalKhususManagement from "./admin/JadwalKhususManagement";
+import GlobalScheduleView from "./admin/GlobalScheduleView";
 import { printReport } from "@/utils/printLayouts";
 import ExcelPreview from './ExcelPreview';
 // import ReportHeader from './ReportHeader';
@@ -244,6 +245,7 @@ const menuItems = [
   { id: 'room-management', title: 'Ruang Kelas', icon: Building, description: 'Kelola ruang kelas dan alokasi', gradient: 'from-yellow-500 to-yellow-700' },
   { id: 'add-schedule', title: 'Jadwal', icon: Calendar, description: 'Atur jadwal pelajaran', gradient: 'from-teal-500 to-teal-700' },
   { id: 'jadwal-khusus', title: 'Jadwal Khusus', icon: Calendar, description: 'Kelola jadwal istirahat, upacara, dan perwalian', gradient: 'from-fuchsia-500 to-fuchsia-700' },
+  { id: 'jadwal-global', title: 'Jadwal Global', icon: Calendar, description: 'Tampilan semua jadwal dengan deteksi konflik', gradient: 'from-rose-500 to-rose-700' },
   { id: 'backup-management', title: 'Backup & Archive', icon: Database, description: 'Kelola backup dan arsip data', gradient: 'from-cyan-500 to-cyan-700' },
   { id: 'load-balancer', title: 'Load Balancer', icon: Activity, description: 'Monitoring performa sistem', gradient: 'from-emerald-500 to-emerald-700' },
   { id: 'monitoring', title: 'System Monitoring', icon: Monitor, description: 'Real-time monitoring & alerting', gradient: 'from-violet-500 to-violet-700' },
@@ -4686,50 +4688,173 @@ const LiveStudentAttendanceView = ({ onBack, onLogout }: { onBack: () => void; o
     );
   };
 
-  const handleExport = () => {
+  const handleExportExcel = async () => {
     try {
       if (!attendanceData || attendanceData.length === 0) {
-        alert('Tidak ada data untuk diekspor');
+        toast({
+          title: "Info",
+          description: "Tidak ada data untuk diekspor"
+        });
         return;
       }
 
-      console.log('📤 Exporting live student attendance data...');
+      console.log('📤 Exporting live student attendance to Excel...');
 
-      // Prepare data for Excel export
-      const exportData = attendanceData.map((student: LiveStudentRow, index: number) => ({
-        'No': index + 1,
-        'Nama Siswa': student.nama || '',
-        'NIS': student.nis || '',
-        'Kelas': student.nama_kelas || '',
-        'Status': student.status || '',
-        'Waktu Absen': student.waktu_absen || '',
-        'Ket. Waktu': student.keterangan_waktu || '',
-        'Periode': student.periode_absen || '',
-        'Keterangan': student.keterangan || ''
-      }));
-
-      // Create CSV content with UTF-8 BOM
-      const BOM = '\uFEFF';
-      const headers = Object.keys(exportData[0]).join(',');
-      const rows = exportData.map(row =>
-        Object.values(row).map(value =>
-          typeof value === 'string' && value.includes(',') ? `"${value}"` : value
-        ).join(',')
-      );
-      const csvContent = BOM + headers + '\n' + rows.join('\n');
-
-      // Download CSV file
-      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8' });
+      // Dynamic import ExcelJS
+      const ExcelJS = (await import('exceljs')).default;
+      
+      // Create workbook and worksheet
+      const workbook = new ExcelJS.Workbook();
+      const worksheet = workbook.addWorksheet('Pemantauan Siswa Live');
+      
+      // Add title
+      worksheet.mergeCells('A1:I1');
+      const titleCell = worksheet.getCell('A1');
+      titleCell.value = 'PEMANTAUAN SISWA LANGSUNG';
+      titleCell.font = { bold: true, size: 14 };
+      titleCell.alignment = { horizontal: 'center', vertical: 'middle' };
+      
+      // Add date
+      worksheet.mergeCells('A2:I2');
+      const dateCell = worksheet.getCell('A2');
+      dateCell.value = `Tanggal: ${new Date().toLocaleDateString('id-ID', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}`;
+      dateCell.alignment = { horizontal: 'center' };
+      
+      // Add headers (row 4)
+      worksheet.getRow(4).values = ['No', 'Nama Siswa', 'NIS', 'Kelas', 'Status', 'Waktu Absen', 'Ket. Waktu', 'Periode', 'Keterangan'];
+      worksheet.getRow(4).font = { bold: true };
+      worksheet.getRow(4).fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: 'FFE6F3FF' }
+      };
+      
+      // Add data
+      attendanceData.forEach((student: LiveStudentRow, index: number) => {
+        worksheet.addRow([
+          index + 1,
+          student.nama || '',
+          student.nis || '',
+          student.nama_kelas || '',
+          student.status || '',
+          student.waktu_absen || '',
+          student.keterangan_waktu || '',
+          student.periode_absen || '',
+          student.keterangan || ''
+        ]);
+      });
+      
+      // Auto-fit columns
+      worksheet.columns.forEach(column => {
+        column.width = 15;
+      });
+      
+      // Save and download
+      const buffer = await workbook.xlsx.writeBuffer();
+      const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
       const link = document.createElement('a');
       link.href = URL.createObjectURL(blob);
-      link.download = `pemantauan_siswa_live_${new Date().toISOString().split('T')[0]}.csv`;
+      link.download = `pemantauan_siswa_live_${new Date().toISOString().split('T')[0]}.xlsx`;
       link.click();
 
-      console.log('✅ Live student attendance exported successfully');
+      toast({
+        title: "Berhasil",
+        description: "Data siswa berhasil diekspor ke Excel"
+      });
+      console.log('✅ Live student attendance exported to Excel successfully');
     } catch (error: unknown) {
-      console.error('❌ Error exporting live student attendance:', error);
+      console.error('❌ Error exporting live student attendance to Excel:', error);
       const message = error instanceof Error ? error.message : String(error);
-      alert('Gagal mengekspor data: ' + message);
+      toast({
+        title: "Error",
+        description: "Gagal mengekspor data: " + message,
+        variant: "destructive"
+      });
+    }
+  };
+
+  const handleExportPDF = async () => {
+    try {
+      if (!attendanceData || attendanceData.length === 0) {
+        toast({
+          title: "Info",
+          description: "Tidak ada data untuk diekspor"
+        });
+        return;
+      }
+
+      console.log('📄 Exporting live student attendance to PDF...');
+
+      // Dynamic import jsPDF and autotable
+      const { jsPDF } = (await import('jspdf'));
+      await import('jspdf-autotable');
+      
+      // Create PDF document
+      const doc = new jsPDF({
+        orientation: 'landscape',
+        unit: 'mm',
+        format: 'a4'
+      });
+      
+      // Add title
+      doc.setFontSize(16);
+      doc.setFont('helvetica', 'bold');
+      doc.text('PEMANTAUAN SISWA LANGSUNG', doc.internal.pageSize.getWidth() / 2, 15, { align: 'center' });
+      
+      // Add date
+      doc.setFontSize(10);
+      doc.setFont('helvetica', 'normal');
+      const dateText = `Tanggal: ${new Date().toLocaleDateString('id-ID', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}`;
+      doc.text(dateText, doc.internal.pageSize.getWidth() / 2, 22, { align: 'center' });
+      
+      // Prepare table data
+      const tableData = attendanceData.map((student: LiveStudentRow, index: number) => ([
+        index + 1,
+        student.nama || '',
+        student.nis || '',
+        student.nama_kelas || '',
+        student.status || '',
+        student.waktu_absen || '',
+        student.keterangan_waktu || '',
+        student.periode_absen || '',
+        student.keterangan || ''
+      ]));
+      
+      // Add table
+      doc.autoTable({
+        startY: 28,
+        head: [['No', 'Nama Siswa', 'NIS', 'Kelas', 'Status', 'Waktu Absen', 'Ket. Waktu', 'Periode', 'Keterangan']],
+        body: tableData,
+        theme: 'grid',
+        headStyles: {
+          fillColor: [66, 139, 202],
+          textColor: 255,
+          fontSize: 8,
+          fontStyle: 'bold',
+          halign: 'center'
+        },
+        bodyStyles: {
+          fontSize: 7
+        },
+        margin: { top: 10, left: 10, right: 10 }
+      });
+      
+      // Save PDF
+      doc.save(`pemantauan_siswa_live_${new Date().toISOString().split('T')[0]}.pdf`);
+
+      toast({
+        title: "Berhasil",
+        description: "Data siswa berhasil diekspor ke PDF"
+      });
+      console.log('✅ Live student attendance exported to PDF successfully');
+    } catch (error: unknown) {
+      console.error('❌ Error exporting live student attendance to PDF:', error);
+      const message = error instanceof Error ? error.message : String(error);
+      toast({
+        title: "Error",
+        description: "Gagal mengekspor data: " + message,
+        variant: "destructive"
+      });
     }
   };
 
@@ -4812,10 +4937,16 @@ const LiveStudentAttendanceView = ({ onBack, onLogout }: { onBack: () => void; o
                 Daftar absensi siswa secara realtime untuk hari ini. Data diperbarui setiap 30 detik.
               </CardDescription>
             </div>
-            <Button onClick={handleExport} size="sm" disabled={!attendanceData?.length}>
+            <div className="flex gap-2">
+              <Button onClick={handleExportExcel} size="sm" disabled={!attendanceData?.length} variant="outline">
               <Download className="w-4 h-4 mr-2" />
-              Export ke CSV
+                Export Excel
+              </Button>
+              <Button onClick={handleExportPDF} size="sm" disabled={!attendanceData?.length}>
+                <Download className="w-4 h-4 mr-2" />
+                Export PDF
             </Button>
+            </div>
           </div>
         </CardHeader>
         <CardContent>
@@ -5057,6 +5188,71 @@ const BandingAbsenReportView = ({ onBack, onLogout }: { onBack: () => void; onLo
     };
 
 
+    const downloadPDF = async () => {
+      if (reportData.length === 0) {
+        setError('Tidak ada data untuk diunduh');
+        return;
+      }
+
+      if (!dateRange || !dateRange.startDate || !dateRange.endDate) {
+        setError('Mohon pilih tanggal mulai dan tanggal selesai');
+        toast({
+          title: "Error",
+          description: "Mohon pilih tanggal mulai dan tanggal selesai",
+          variant: "destructive"
+        });
+        return;
+      }
+
+      try {
+        const params = new URLSearchParams();
+        params.append('startDate', dateRange.startDate);
+        params.append('endDate', dateRange.endDate);
+        
+        if (selectedKelas && selectedKelas !== "all") {
+          params.append('kelas_id', selectedKelas);
+        }
+        
+        if (selectedStatus && selectedStatus !== 'all') {
+          params.append('status', selectedStatus);
+        }
+
+        const url = `/api/export/banding-absen/pdf?${params.toString()}`;
+        const response = await fetch(url, { 
+          credentials: 'include',
+          headers: {
+            'Authorization': `Bearer ${localStorage.getItem('token') || ''}`
+          }
+        });
+        
+        if (!response.ok) {
+          throw new Error('Gagal mengunduh file PDF');
+        }
+        
+        const blob = await response.blob();
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = `banding-absen-${dateRange.startDate}-${dateRange.endDate}.pdf`;
+        link.click();
+        
+        // Clean up
+        setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+        
+        toast({
+          title: "Berhasil!",
+          description: "File PDF berhasil diunduh"
+        });
+      } catch (err) {
+        console.error('Error downloading PDF:', err);
+        setError(`Gagal mengunduh file PDF: ${err.message}`);
+        toast({
+          title: "Error",
+          description: "Gagal mengunduh file PDF",
+          variant: "destructive"
+        });
+      }
+    };
+
     const downloadSMKN13Format = async (exportType: string) => {
       if (reportData.length === 0) {
         setError('Tidak ada data untuk diunduh');
@@ -5270,6 +5466,7 @@ const BandingAbsenReportView = ({ onBack, onLogout }: { onBack: () => void; onLo
               { key: 'catatan_guru', label: 'Catatan Guru', width: 200, align: 'left' },
               { key: 'tanggal_keputusan', label: 'Tanggal Keputusan', width: 120, align: 'center', format: 'date' }
             ]}
+            onExportPDF={downloadPDF}
             onExportSMKN13={() => downloadSMKN13Format('banding-absen')}
           />
         )}
@@ -5553,7 +5750,7 @@ const LiveTeacherAttendanceView = ({ onBack, onLogout }: { onBack: () => void; o
       );
     };
 
-    const handleExport = () => {
+    const handleExportExcel = async () => {
       try {
         if (!attendanceData || attendanceData.length === 0) {
           toast({
@@ -5563,47 +5760,160 @@ const LiveTeacherAttendanceView = ({ onBack, onLogout }: { onBack: () => void; o
           return;
         }
 
-        console.log('📤 Exporting live teacher attendance data...');
+        console.log('📤 Exporting live teacher attendance to Excel...');
         
-        // Prepare data for Excel export
-        const exportData = attendanceData.map((teacher, index) => ({
-          'No': index + 1,
-          'Nama Guru': teacher.nama || '',
-          'NIP': teacher.nip || '',
-          'Mata Pelajaran': teacher.nama_mapel || '',
-          'Kelas': teacher.nama_kelas || '',
-          'Jadwal': `${teacher.jam_mulai || ''} - ${teacher.jam_selesai || ''}`,
-          'Status': teacher.status || '',
-          'Waktu Absen': teacher.waktu_absen || '',
-          'Ket. Waktu': teacher.keterangan_waktu || '',
-          'Periode': teacher.periode_absen || '',
-          'Keterangan': teacher.keterangan || ''
-        }));
-
-        // Create CSV content with UTF-8 BOM
-        const BOM = '\uFEFF';
-        const headers = Object.keys(exportData[0]).join(',');
-        const rows = exportData.map(row => 
-          Object.values(row).map(value => 
-            typeof value === 'string' && value.includes(',') ? `"${value}"` : value
-          ).join(',')
-        );
-        const csvContent = BOM + headers + '\n' + rows.join('\n');
-
-        // Download CSV file
-        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8' });
+        // Dynamic import ExcelJS
+        const ExcelJS = (await import('exceljs')).default;
+        
+        // Create workbook and worksheet
+        const workbook = new ExcelJS.Workbook();
+        const worksheet = workbook.addWorksheet('Pemantauan Guru Live');
+        
+        // Add title
+        worksheet.mergeCells('A1:K1');
+        const titleCell = worksheet.getCell('A1');
+        titleCell.value = 'PEMANTAUAN GURU LANGSUNG';
+        titleCell.font = { bold: true, size: 14 };
+        titleCell.alignment = { horizontal: 'center', vertical: 'middle' };
+        
+        // Add date
+        worksheet.mergeCells('A2:K2');
+        const dateCell = worksheet.getCell('A2');
+        dateCell.value = `Tanggal: ${new Date().toLocaleDateString('id-ID', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}`;
+        dateCell.alignment = { horizontal: 'center' };
+        
+        // Add headers (row 4)
+        worksheet.getRow(4).values = ['No', 'Nama Guru', 'NIP', 'Mata Pelajaran', 'Kelas', 'Jadwal', 'Status', 'Waktu Absen', 'Ket. Waktu', 'Periode', 'Keterangan'];
+        worksheet.getRow(4).font = { bold: true };
+        worksheet.getRow(4).fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: { argb: 'FFE6F3FF' }
+        };
+        
+        // Add data
+        attendanceData.forEach((teacher, index) => {
+          worksheet.addRow([
+            index + 1,
+            teacher.nama || '',
+            teacher.nip || '',
+            teacher.nama_mapel || '',
+            teacher.nama_kelas || '',
+            `${teacher.jam_mulai || ''} - ${teacher.jam_selesai || ''}`,
+            teacher.status || '',
+            teacher.waktu_absen || '',
+            teacher.keterangan_waktu || '',
+            teacher.periode_absen || '',
+            teacher.keterangan || ''
+          ]);
+        });
+        
+        // Auto-fit columns
+        worksheet.columns.forEach(column => {
+          column.width = 15;
+        });
+        
+        // Save and download
+        const buffer = await workbook.xlsx.writeBuffer();
+        const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
         const link = document.createElement('a');
         link.href = URL.createObjectURL(blob);
-        link.download = `pemantauan_guru_live_${new Date().toISOString().split('T')[0]}.csv`;
+        link.download = `pemantauan_guru_live_${new Date().toISOString().split('T')[0]}.xlsx`;
         link.click();
         
         toast({
           title: "Berhasil",
-          description: "Data guru berhasil diekspor ke CSV"
+          description: "Data guru berhasil diekspor ke Excel"
         });
-        console.log('✅ Live teacher attendance exported successfully');
+        console.log('✅ Live teacher attendance exported to Excel successfully');
       } catch (error) {
-        console.error('❌ Error exporting live teacher attendance:', error);
+        console.error('❌ Error exporting live teacher attendance to Excel:', error);
+        toast({
+          title: "Error",
+          description: "Gagal mengekspor data: " + error.message,
+          variant: "destructive"
+        });
+      }
+    };
+
+    const handleExportPDF = async () => {
+      try {
+        if (!attendanceData || attendanceData.length === 0) {
+          toast({
+            title: "Info",
+            description: "Tidak ada data untuk diekspor"
+          });
+          return;
+        }
+
+        console.log('📄 Exporting live teacher attendance to PDF...');
+        
+        // Dynamic import jsPDF and autotable
+        const { jsPDF } = (await import('jspdf'));
+        await import('jspdf-autotable');
+        
+        // Create PDF document
+        const doc = new jsPDF({
+          orientation: 'landscape',
+          unit: 'mm',
+          format: 'a4'
+        });
+        
+        // Add title
+        doc.setFontSize(16);
+        doc.setFont('helvetica', 'bold');
+        doc.text('PEMANTAUAN GURU LANGSUNG', doc.internal.pageSize.getWidth() / 2, 15, { align: 'center' });
+        
+        // Add date
+        doc.setFontSize(10);
+        doc.setFont('helvetica', 'normal');
+        const dateText = `Tanggal: ${new Date().toLocaleDateString('id-ID', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}`;
+        doc.text(dateText, doc.internal.pageSize.getWidth() / 2, 22, { align: 'center' });
+        
+        // Prepare table data
+        const tableData = attendanceData.map((teacher, index) => ([
+          index + 1,
+          teacher.nama || '',
+          teacher.nip || '',
+          teacher.nama_mapel || '',
+          teacher.nama_kelas || '',
+          `${teacher.jam_mulai || ''} - ${teacher.jam_selesai || ''}`,
+          teacher.status || '',
+          teacher.waktu_absen || '',
+          teacher.keterangan_waktu || '',
+          teacher.periode_absen || '',
+          teacher.keterangan || ''
+        ]));
+        
+        // Add table
+        doc.autoTable({
+          startY: 28,
+          head: [['No', 'Nama Guru', 'NIP', 'Mata Pelajaran', 'Kelas', 'Jadwal', 'Status', 'Waktu', 'Ket. Waktu', 'Periode', 'Keterangan']],
+          body: tableData,
+          theme: 'grid',
+          headStyles: {
+            fillColor: [66, 139, 202],
+            textColor: 255,
+            fontSize: 8,
+            fontStyle: 'bold',
+            halign: 'center'
+          },
+          bodyStyles: {
+            fontSize: 7
+          },
+          margin: { top: 10, left: 10, right: 10 }
+        });
+        
+        // Save PDF
+        doc.save(`pemantauan_guru_live_${new Date().toISOString().split('T')[0]}.pdf`);
+        
+        toast({
+          title: "Berhasil",
+          description: "Data guru berhasil diekspor ke PDF"
+        });
+        console.log('✅ Live teacher attendance exported to PDF successfully');
+      } catch (error) {
+        console.error('❌ Error exporting live teacher attendance to PDF:', error);
         toast({
           title: "Error",
           description: "Gagal mengekspor data: " + error.message,
@@ -5697,10 +6007,16 @@ const LiveTeacherAttendanceView = ({ onBack, onLogout }: { onBack: () => void; o
                   Daftar validasi kehadiran guru secara realtime untuk hari ini. Data diperbarui setiap 30 detik.
                 </CardDescription>
               </div>
-              <Button onClick={handleExport} size="sm" disabled={!attendanceData?.length}>
+              <div className="flex gap-2">
+                <Button onClick={handleExportExcel} size="sm" disabled={!attendanceData?.length} variant="outline">
                 <Download className="w-4 h-4 mr-2" />
-                Export ke CSV
+                  Export Excel
+                </Button>
+                <Button onClick={handleExportPDF} size="sm" disabled={!attendanceData?.length}>
+                  <Download className="w-4 h-4 mr-2" />
+                  Export PDF
               </Button>
+              </div>
             </div>
           </CardHeader>
           <CardContent>
@@ -6861,6 +7177,53 @@ const StudentAttendanceSummaryView = ({ onBack, onLogout }: { onBack: () => void
     }
   };
 
+  const downloadPDF = async () => {
+    if (reportData.length === 0) {
+      setError('Tidak ada data untuk diunduh');
+      return;
+    }
+
+    try {
+      const params = new URLSearchParams({
+        startDate: dateRange.startDate,
+        endDate: dateRange.endDate
+      });
+      
+      if (selectedKelas && selectedKelas !== 'all') {
+        params.append('kelas_id', selectedKelas);
+      }
+
+      const url = `/api/export/student-summary/pdf?${params.toString()}`;
+      const response = await fetch(url, { 
+        credentials: 'include',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token') || ''}`
+        }
+      });
+      
+      if (!response.ok) {
+        throw new Error('Gagal mengunduh file PDF');
+      }
+      
+      const blob = await response.blob();
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = `ringkasan-kehadiran-siswa-${dateRange.startDate}-${dateRange.endDate}.pdf`;
+      link.click();
+      
+      // Clean up
+      setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+      
+      toast({
+        title: "Berhasil!",
+        description: "File PDF berhasil diunduh"
+      });
+    } catch (err) {
+      console.error('Error downloading PDF:', err);
+      setError(`Gagal mengunduh file PDF: ${err.message}`);
+    }
+  };
+
   const downloadSMKN13Format = async (exportType) => {
     if (reportData.length === 0) {
       setError('Tidak ada data untuk diunduh');
@@ -7035,6 +7398,7 @@ const StudentAttendanceSummaryView = ({ onBack, onLogout }: { onBack: () => void
             { key: 'dispen', label: 'D', width: 80, align: 'center', format: 'number' },
             { key: 'presentase', label: 'Presentase', width: 100, align: 'center', format: 'percentage' }
           ]}
+          onExportPDF={downloadPDF}
           onExportSMKN13={() => downloadSMKN13Format('student-summary')}
         />
       )}
@@ -7143,6 +7507,49 @@ const TeacherAttendanceSummaryView = ({ onBack, onLogout }: { onBack: () => void
     } catch (err) {
       console.error('Error downloading excel:', err);
       setError(`Gagal mengunduh file Excel: ${err.message}`);
+    }
+  };
+
+  const downloadPDF = async () => {
+    if (reportData.length === 0) {
+      setError('Tidak ada data untuk diunduh');
+      return;
+    }
+
+    try {
+      const params = new URLSearchParams({
+        startDate: dateRange.startDate,
+        endDate: dateRange.endDate
+      });
+      
+      const url = `/api/export/teacher-summary/pdf?${params.toString()}`;
+      const response = await fetch(url, { 
+        credentials: 'include',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token') || ''}`
+        }
+      });
+      
+      if (!response.ok) {
+        throw new Error('Gagal mengunduh file PDF');
+      }
+      
+      const blob = await response.blob();
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = `ringkasan-kehadiran-guru-${dateRange.startDate}-${dateRange.endDate}.pdf`;
+      link.click();
+      
+      // Clean up
+      setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+      
+      toast({
+        title: "Berhasil!",
+        description: "File PDF berhasil diunduh"
+      });
+    } catch (err) {
+      console.error('Error downloading PDF:', err);
+      setError(`Gagal mengunduh file PDF: ${err.message}`);
     }
   };
 
@@ -7304,6 +7711,7 @@ const TeacherAttendanceSummaryView = ({ onBack, onLogout }: { onBack: () => void
             { key: 'alpa', label: 'A', width: 80, align: 'center', format: 'number' },
             { key: 'presentase', label: 'Presentase', width: 100, align: 'center', format: 'percentage' }
           ]}
+          onExportPDF={downloadPDF}
           onExportSMKN13={() => downloadSMKN13Format('teacher-summary')}
           showLetterhead={true}
           reportPeriod={`${new Date(dateRange.startDate).toLocaleDateString('id-ID')} - ${new Date(dateRange.endDate).toLocaleDateString('id-ID')}`}
@@ -8698,6 +9106,8 @@ export const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
         return <ManageSchedulesView onBack={handleBack} onLogout={onLogout} />;
       case 'jadwal-khusus':
         return <ErrorBoundary><JadwalKhususManagement onBack={handleBack} onLogout={onLogout} /></ErrorBoundary>;
+      case 'jadwal-global':
+        return <ErrorBoundary><GlobalScheduleView /></ErrorBoundary>;
       case 'backup-management':
         return <ErrorBoundary><BackupManagementView /></ErrorBoundary>;
       case 'load-balancer':

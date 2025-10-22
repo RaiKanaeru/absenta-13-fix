@@ -269,6 +269,69 @@ const PresensiSiswaView: React.FC<{ onBack: () => void; onLogout: () => void }> 
     }
   };
 
+  // Export to PDF
+  const handleExportPDF = async () => {
+    if (!selectedKelas || !selectedBulan || !selectedTahun) {
+      toast({
+        title: "Error",
+        description: "Pilih kelas, bulan, dan tahun terlebih dahulu",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      setLoading(true);
+      const token = localStorage.getItem('token');
+      
+      const params = new URLSearchParams({
+        kelas_id: selectedKelas,
+        bulan: selectedBulan,
+        tahun: selectedTahun,
+      });
+
+      const response = await fetch(`/api/export/presensi-siswa/pdf?${params}`, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error('Export PDF failed');
+      }
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      
+      const kelasName = classes.find(c => c.id.toString() === selectedKelas)?.nama_kelas || 'Unknown';
+      const bulanName = new Date(parseInt(selectedTahun), parseInt(selectedBulan) - 1).toLocaleDateString('id-ID', { month: 'long' });
+      const fileName = `Presensi_Siswa_${kelasName}_${bulanName}_${selectedTahun}.pdf`;
+      
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+
+      toast({
+        title: "Success",
+        description: "Data presensi berhasil diekspor ke PDF",
+      });
+    } catch (error) {
+      console.error('Export PDF error:', error);
+      toast({
+        title: "Error",
+        description: "Gagal mengekspor data presensi ke PDF",
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const daysInMonth = getDaysInMonth(selectedBulan, selectedTahun);
   const { lakiLaki, perempuan } = countByGender();
 
@@ -382,6 +445,15 @@ const PresensiSiswaView: React.FC<{ onBack: () => void; onLogout: () => void }> 
                 >
                   <Download className="w-4 h-4" />
                   {loading ? 'Exporting...' : 'Export Excel'}
+                </Button>
+                <Button
+                  onClick={handleExportPDF}
+                  disabled={loading || !selectedKelas || !selectedBulan || !selectedTahun}
+                  size="sm"
+                  className="flex items-center gap-2"
+                >
+                  <Download className="w-4 h-4" />
+                  {loading ? 'Exporting...' : 'Export PDF'}
                 </Button>
               </div>
             </CardTitle>

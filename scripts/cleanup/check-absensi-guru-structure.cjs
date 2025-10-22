@@ -21,3 +21,5 @@ async function checkAbsensiGuruStructure() {
 checkAbsensiGuruStructure().catch(console.error);
 
 
+
+

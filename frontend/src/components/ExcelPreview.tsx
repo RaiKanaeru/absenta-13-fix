@@ -16,6 +16,7 @@ interface ExcelPreviewProps {
   }[];
   showPreview?: boolean;
   onExport?: () => void;
+  onExportPDF?: () => void;
   onExportSMKN13?: () => void;
   className?: string;
   teacherName?: string;
@@ -31,6 +32,7 @@ const ExcelPreview: React.FC<ExcelPreviewProps> = ({
   columns,
   showPreview = true,
   onExport,
+  onExportPDF,
   onExportSMKN13,
   className = "",
   teacherName,
@@ -120,7 +122,18 @@ const ExcelPreview: React.FC<ExcelPreviewProps> = ({
                 className="flex items-center gap-2"
               >
                 <Download className="w-4 h-4" />
-                Download Excel
+                Export Excel
+              </Button>
+            )}
+            {onExportPDF && (
+              <Button
+                variant="default"
+                size="sm"
+                onClick={onExportPDF}
+                className="flex items-center gap-2"
+              >
+                <FileText className="w-4 h-4" />
+                Export PDF
               </Button>
             )}
             {onExportSMKN13 && (

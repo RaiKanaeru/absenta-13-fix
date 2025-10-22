@@ -271,3 +271,283 @@ export const validateRequiredFields = (data, requiredFields) => {
         message: 'Semua field wajib terisi'
     };
 };
+
+// ========================================================================
+// IMPORT VALIDATION FUNCTIONS (Added for Excel/CSV Import Feature)
+// ========================================================================
+
+/**
+ * Validate Mapel (Subject) row data for import
+ * @param {Object} data - Row data object
+ * @param {number} rowNumber - Excel row number (for error reporting)
+ * @returns {Object} {isValid: boolean, errors: string[]}
+ */
+export const validateMapelRow = (data, rowNumber) => {
+    const errors = [];
+    
+    // Required fields
+    if (!data.kode_mapel || (typeof data.kode_mapel === 'string' && data.kode_mapel.trim() === '')) {
+        errors.push('Kode Mapel wajib diisi');
+    }
+    
+    if (!data.nama_mapel || (typeof data.nama_mapel === 'string' && data.nama_mapel.trim() === '')) {
+        errors.push('Nama Mapel wajib diisi');
+    }
+    
+    // Format validation
+    if (data.kode_mapel && /\s/.test(data.kode_mapel)) {
+        errors.push('Kode Mapel tidak boleh mengandung spasi');
+    }
+    
+    // Length validation
+    if (data.kode_mapel && data.kode_mapel.length > 20) {
+        errors.push('Kode Mapel maksimal 20 karakter');
+    }
+    
+    if (data.nama_mapel && data.nama_mapel.length > 100) {
+        errors.push('Nama Mapel maksimal 100 karakter');
+    }
+    
+    // Status validation
+    if (data.status && !['aktif', 'tidak_aktif'].includes(data.status.toLowerCase())) {
+        errors.push('Status harus: aktif atau tidak_aktif');
+    }
+    
+    return {
+        isValid: errors.length === 0,
+        errors: errors
+    };
+};
+
+/**
+ * Validate Kelas (Class) row data for import
+ * @param {Object} data - Row data object
+ * @param {number} rowNumber - Excel row number
+ * @returns {Object} {isValid: boolean, errors: string[]}
+ */
+export const validateKelasRow = (data, rowNumber) => {
+    const errors = [];
+    
+    // Required fields
+    if (!data.nama_kelas || (typeof data.nama_kelas === 'string' && data.nama_kelas.trim() === '')) {
+        errors.push('Nama Kelas wajib diisi');
+    }
+    
+    // Length validation
+    if (data.nama_kelas && data.nama_kelas.length > 50) {
+        errors.push('Nama Kelas maksimal 50 karakter');
+    }
+    
+    if (data.tingkat && data.tingkat.length > 10) {
+        errors.push('Tingkat maksimal 10 karakter');
+    }
+    
+    // Status validation
+    if (data.status && !['aktif', 'tidak_aktif'].includes(data.status.toLowerCase())) {
+        errors.push('Status harus: aktif atau tidak_aktif');
+    }
+    
+    return {
+        isValid: errors.length === 0,
+        errors: errors
+    };
+};
+
+/**
+ * Validate Guru (Teacher) row data for import
+ * @param {Object} data - Row data object
+ * @param {number} rowNumber - Excel row number
+ * @returns {Object} {isValid: boolean, errors: string[]}
+ */
+export const validateGuruRow = (data, rowNumber) => {
+    const errors = [];
+    
+    // Required fields
+    if (!data.nip || (typeof data.nip === 'string' && data.nip.trim() === '')) {
+        errors.push('NIP wajib diisi');
+    }
+    
+    if (!data.nama || (typeof data.nama === 'string' && data.nama.trim() === '')) {
+        errors.push('Nama wajib diisi');
+    }
+    
+    // NIP format validation (8-18 digits)
+    if (data.nip && !/^\d{8,18}$/.test(String(data.nip))) {
+        errors.push('NIP harus 8-18 digit angka');
+    }
+    
+    // Length validation
+    if (data.nama && data.nama.length > 100) {
+        errors.push('Nama maksimal 100 karakter');
+    }
+    
+    // Gender validation
+    if (data.jenis_kelamin && !['L', 'P', 'l', 'p'].includes(data.jenis_kelamin)) {
+        errors.push('Jenis Kelamin harus: L atau P');
+    }
+    
+    // Email validation
+    if (data.email && !isValidEmail(data.email)) {
+        errors.push('Format email tidak valid');
+    }
+    
+    // Phone validation
+    if (data.no_telp && !isValidPhone(data.no_telp)) {
+        errors.push('Format nomor telepon tidak valid');
+    }
+    
+    // Status validation
+    if (data.status && !['aktif', 'tidak_aktif', 'pensiun'].includes(data.status.toLowerCase())) {
+        errors.push('Status harus: aktif, tidak_aktif, atau pensiun');
+    }
+    
+    // Username format (if provided)
+    if (data.username && !isValidUsername(data.username)) {
+        errors.push('Username harus 3-20 karakter alfanumerik dan underscore');
+    }
+    
+    return {
+        isValid: errors.length === 0,
+        errors: errors
+    };
+};
+
+/**
+ * Validate Siswa (Student) row data for import
+ * @param {Object} data - Row data object
+ * @param {number} rowNumber - Excel row number
+ * @returns {Object} {isValid: boolean, errors: string[]}
+ */
+export const validateSiswaRow = (data, rowNumber) => {
+    const errors = [];
+    
+    // Required fields
+    if (!data.nis || (typeof data.nis === 'string' && data.nis.trim() === '')) {
+        errors.push('NIS wajib diisi');
+    }
+    
+    if (!data.nama || (typeof data.nama === 'string' && data.nama.trim() === '')) {
+        errors.push('Nama wajib diisi');
+    }
+    
+    if (!data.kelas_id || data.kelas_id === '') {
+        errors.push('Kelas ID wajib diisi');
+    }
+    
+    // NIS format validation (8-15 digits)
+    if (data.nis && !/^\d{8,15}$/.test(String(data.nis))) {
+        errors.push('NIS harus 8-15 digit angka');
+    }
+    
+    // Length validation
+    if (data.nama && data.nama.length > 100) {
+        errors.push('Nama maksimal 100 karakter');
+    }
+    
+    // Gender validation
+    if (data.jenis_kelamin && !['L', 'P', 'l', 'p'].includes(data.jenis_kelamin)) {
+        errors.push('Jenis Kelamin harus: L atau P');
+    }
+    
+    // Email validation
+    if (data.email && !isValidEmail(data.email)) {
+        errors.push('Format email tidak valid');
+    }
+    
+    // Phone validation
+    if (data.telepon_siswa && !isValidPhone(data.telepon_siswa)) {
+        errors.push('Format telepon siswa tidak valid');
+    }
+    
+    if (data.telepon_orangtua && !isValidPhone(data.telepon_orangtua)) {
+        errors.push('Format telepon orang tua tidak valid');
+    }
+    
+    // Status validation
+    if (data.status && !['aktif', 'tidak_aktif', 'lulus', 'pindah', 'alumni', 'keluar'].includes(data.status.toLowerCase())) {
+        errors.push('Status harus: aktif, tidak_aktif, lulus, pindah, alumni, atau keluar');
+    }
+    
+    // Username format (if provided)
+    if (data.username && !isValidUsername(data.username)) {
+        errors.push('Username harus 3-20 karakter alfanumerik dan underscore');
+    }
+    
+    return {
+        isValid: errors.length === 0,
+        errors: errors
+    };
+};
+
+/**
+ * Validate Jadwal (Schedule) row data for import
+ * @param {Object} data - Row data object
+ * @param {number} rowNumber - Excel row number
+ * @returns {Object} {isValid: boolean, errors: string[]}
+ */
+export const validateJadwalRow = (data, rowNumber) => {
+    const errors = [];
+    
+    // Required fields
+    if (!data.kelas_id || data.kelas_id === '') {
+        errors.push('Kelas ID wajib diisi');
+    }
+    
+    if (!data.mapel_id || data.mapel_id === '') {
+        errors.push('Mapel ID wajib diisi');
+    }
+    
+    if (!data.guru_id || data.guru_id === '') {
+        errors.push('Guru ID wajib diisi');
+    }
+    
+    if (!data.hari || (typeof data.hari === 'string' && data.hari.trim() === '')) {
+        errors.push('Hari wajib diisi');
+    }
+    
+    if (!data.jam_ke || data.jam_ke === '') {
+        errors.push('Jam Ke wajib diisi');
+    }
+    
+    if (!data.jam_mulai || (typeof data.jam_mulai === 'string' && data.jam_mulai.trim() === '')) {
+        errors.push('Jam Mulai wajib diisi');
+    }
+    
+    if (!data.jam_selesai || (typeof data.jam_selesai === 'string' && data.jam_selesai.trim() === '')) {
+        errors.push('Jam Selesai wajib diisi');
+    }
+    
+    // Hari validation
+    const validDays = ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
+    if (data.hari && !validDays.includes(data.hari)) {
+        errors.push(`Hari harus salah satu dari: ${validDays.join(', ')}`);
+    }
+    
+    // Jam ke validation (1-12)
+    const jamKe = parseInt(data.jam_ke);
+    if (isNaN(jamKe) || jamKe < 1 || jamKe > 12) {
+        errors.push('Jam Ke harus angka antara 1-12');
+    }
+    
+    // Time format validation (HH:MM:SS or HH:MM)
+    const timeRegex = /^([01]\d|2[0-3]):([0-5]\d)(:[0-5]\d)?$/;
+    if (data.jam_mulai && !timeRegex.test(String(data.jam_mulai))) {
+        errors.push('Format Jam Mulai harus HH:MM:SS atau HH:MM (contoh: 07:00:00 atau 07:00)');
+    }
+    
+    if (data.jam_selesai && !timeRegex.test(String(data.jam_selesai))) {
+        errors.push('Format Jam Selesai harus HH:MM:SS atau HH:MM (contoh: 07:45:00 atau 07:45)');
+    }
+    
+    // Status validation
+    if (data.status && !['aktif', 'tidak_aktif'].includes(data.status.toLowerCase())) {
+        errors.push('Status harus: aktif atau tidak_aktif');
+    }
+    
+    return {
+        isValid: errors.length === 0,
+        errors: errors
+    };
+};
+
+console.log('✅ Validator functions loaded (including import validators)');

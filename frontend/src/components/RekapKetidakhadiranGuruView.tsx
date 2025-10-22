@@ -148,6 +148,57 @@ const RekapKetidakhadiranGuruView: React.FC<RekapKetidakhadiranGuruViewProps> = 
     }
   };
 
+  const handleExportPDF = async () => {
+    try {
+      setLoading(true);
+      const params = new URLSearchParams({ tahun: selectedTahun });
+      
+      if (viewMode === 'bulanan' && selectedBulan) {
+        params.append('bulan', selectedBulan);
+      }
+      
+      if (viewMode === 'tanggal' && selectedTanggalAwal && selectedTanggalAkhir) {
+        params.append('tanggal_awal', selectedTanggalAwal);
+        params.append('tanggal_akhir', selectedTanggalAkhir);
+      }
+
+      const response = await fetch(`/api/export/rekap-ketidakhadiran-guru/pdf?${params}`, {
+        credentials: 'include',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        }
+      });
+
+      if (response.ok) {
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `Rekap_Ketidakhadiran_Guru_${selectedTahun}.pdf`;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+        
+        toast({
+          title: "Success",
+          description: "File PDF berhasil diunduh"
+        });
+      } else {
+        throw new Error('Export PDF failed');
+      }
+    } catch (error) {
+      console.error('Export PDF error:', error);
+      toast({
+        title: "Error",
+        description: "Gagal mengunduh file PDF",
+        variant: "destructive"
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleExportSMKN13 = async () => {
     try {
       const response = await fetch(`http://localhost:3001/api/export/rekap-ketidakhadiran-guru-smkn13?tahun=${selectedTahun}`, {
@@ -268,6 +319,14 @@ const RekapKetidakhadiranGuruView: React.FC<RekapKetidakhadiranGuruViewProps> = 
           >
             <Download className="w-4 h-4" />
             {loading ? 'Exporting...' : 'Export Excel'}
+          </Button>
+          <Button
+            onClick={handleExportPDF}
+            disabled={loading || !selectedTahun}
+            className="flex items-center gap-2"
+          >
+            <Download className="w-4 h-4" />
+            {loading ? 'Exporting...' : 'Export PDF'}
           </Button>
         </div>
       </div>

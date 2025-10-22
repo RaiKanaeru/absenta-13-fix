@@ -302,6 +302,84 @@ const RekapKetidakhadiranView: React.FC<{ onBack: () => void; onLogout: () => vo
     }
   };
 
+  // Export to PDF
+  const handleExportPDF = async () => {
+    if (!selectedKelas || !selectedTahun) {
+      toast({
+        title: "Error",
+        description: "Pilih kelas dan tahun terlebih dahulu",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      setLoading(true);
+      const token = localStorage.getItem('token');
+      
+      const params = new URLSearchParams({
+        kelas_id: selectedKelas,
+        tahun: selectedTahun,
+      });
+      
+      if (viewMode === 'bulanan' && selectedBulan) {
+        params.append('bulan', selectedBulan);
+      }
+      
+      if (viewMode === 'tanggal' && selectedTanggalAwal && selectedTanggalAkhir) {
+        params.append('tanggal_awal', selectedTanggalAwal);
+        params.append('tanggal_akhir', selectedTanggalAkhir);
+      }
+
+      const response = await fetch(`/api/export/rekap-ketidakhadiran-siswa/pdf?${params}`, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error('Export PDF failed');
+      }
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      
+      const kelasName = classes.find(c => c.id.toString() === selectedKelas)?.nama_kelas || 'Unknown';
+      let fileName = `Rekap_Ketidakhadiran_Siswa_${kelasName}_${selectedTahun}`;
+      
+      if (viewMode === 'bulanan' && selectedBulan) {
+        fileName += `_${selectedBulan}`;
+      } else if (viewMode === 'tanggal' && selectedTanggalAwal && selectedTanggalAkhir) {
+        fileName += `_${selectedTanggalAwal}_${selectedTanggalAkhir}`;
+      }
+      
+      fileName += '.pdf';
+      
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+
+      toast({
+        title: "Success",
+        description: "Data berhasil diekspor ke PDF",
+      });
+    } catch (error) {
+      console.error('Export PDF error:', error);
+      toast({
+        title: "Error",
+        description: "Gagal mengekspor data ke PDF",
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // Get hari efektif for month
   const getHariEfektif = (monthNumber: number) => {
     // Ini bisa disesuaikan dengan kalender akademik
@@ -343,6 +421,14 @@ const RekapKetidakhadiranView: React.FC<{ onBack: () => void; onLogout: () => vo
           >
             <Download className="w-4 h-4" />
             {loading ? 'Exporting...' : 'Export Excel'}
+          </Button>
+          <Button
+            onClick={handleExportPDF}
+            disabled={loading || !selectedKelas || !selectedTahun}
+            className="flex items-center gap-2"
+          >
+            <Download className="w-4 h-4" />
+            {loading ? 'Exporting...' : 'Export PDF'}
           </Button>
         </div>
       </div>
