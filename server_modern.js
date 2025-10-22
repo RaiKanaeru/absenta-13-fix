@@ -20,6 +20,7 @@ import importRouter from './backend/routes/import.js';
 import templateRouter from './backend/routes/templates.js';
 import redisClient from './backend/utils/redisClient.js';
 import { cacheMiddleware, invalidateCache, CachePatterns } from './backend/middleware/cacheMiddleware.js';
+import { fetchLetterheadConfig, validateLetterheadConfig, saveLetterheadConfig as saveLetterheadHelper } from './backend/utils/letterheadHelper.js';
 
 const app = express();
 const port = 3001;
