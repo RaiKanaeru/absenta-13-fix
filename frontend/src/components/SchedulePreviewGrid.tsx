@@ -329,11 +329,13 @@ const SchedulePreviewGrid: React.FC<SchedulePreviewProps> = ({ onBack }) => {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">Semua Kelas</SelectItem>
-                  {classes && Array.isArray(classes) ? classes.map((kelas) => (
-                    <SelectItem key={kelas.id_kelas} value={kelas.id_kelas.toString()}>
-                      {kelas.nama_kelas}
-                    </SelectItem>
-                  )) : null}
+                  {classes && Array.isArray(classes) ? classes
+                    .filter(kelas => kelas?.id_kelas)
+                    .map((kelas) => (
+                      <SelectItem key={kelas.id_kelas} value={String(kelas.id_kelas)}>
+                        {kelas.nama_kelas || 'Nama kelas tidak tersedia'}
+                      </SelectItem>
+                    )) : null}
                 </SelectContent>
               </Select>
             </div>
