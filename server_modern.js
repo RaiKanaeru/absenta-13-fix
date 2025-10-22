@@ -2793,6 +2793,66 @@ app.get('/api/schedule/:id/students', authenticateToken, requireRole(['guru', 'a
     }
 });
 
+// Alias route for guru-specific endpoint (frontend compatibility)
+app.get('/api/guru/schedule/:id/students', authenticateToken, requireRole(['guru', 'admin']), async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { tanggal } = req.query;
+        const targetDate = tanggal || new Date().toISOString().split('T')[0];
+        
+        console.log(`👥 [GURU] Getting students for schedule ID: ${id}, date: ${targetDate}`);
+
+        // First, get the schedule details to get the class ID
+        const [scheduleData] = await db.execute(
+            'SELECT kelas_id FROM jadwal WHERE id_jadwal = ? AND status = "aktif"',
+            [id]
+        );
+
+        if (scheduleData.length === 0) {
+            return res.status(404).json({ 
+                success: false, 
+                error: 'Jadwal tidak ditemukan' 
+            });
+        }
+
+        const kelasId = scheduleData[0].kelas_id;
+
+        // Get all students in the class with their existing attendance for the specified date
+        const [students] = await db.execute(
+            `SELECT 
+                s.id_siswa as id,
+                s.nis,
+                s.nama,
+                s.jenis_kelamin,
+                s.jabatan,
+                s.status,
+                k.nama_kelas,
+                a.id as attendance_id,
+                COALESCE(a.status, NULL) as attendance_status,
+                a.keterangan as attendance_note,
+                a.waktu_absen
+            FROM siswa s
+            JOIN kelas k ON s.kelas_id = k.id_kelas
+            LEFT JOIN absensi_siswa a ON s.id_siswa = a.siswa_id 
+                AND a.jadwal_id = ? 
+                AND DATE(a.tanggal) = ?
+            WHERE s.kelas_id = ? AND s.status = 'aktif'
+            ORDER BY s.nama ASC`,
+            [id, targetDate, kelasId]
+        );
+
+        console.log(`✅ [GURU] Found ${students.length} students for schedule ${id}, date ${targetDate}`);
+        res.json(students);
+    } catch (error) {
+        console.error('❌ [GURU] Error getting students for schedule:', error);
+        res.status(500).json({ 
+            success: false, 
+            error: 'Internal server error',
+            message: error.message 
+        });
+    }
+});
+
 // Get students for a specific schedule by date (for edit mode)
 app.get('/api/schedule/:id/students-by-date', authenticateToken, requireRole(['guru', 'admin']), async (req, res) => {
     try {
