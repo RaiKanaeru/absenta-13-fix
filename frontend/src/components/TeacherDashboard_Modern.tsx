@@ -2744,10 +2744,24 @@ const HistoryView = ({ user }: { user: TeacherDashboardProps['userData'] }) => {
   };
 
   const handleSaveEdit = async () => {
-    if (!editingAttendance || !editingAttendance.absensi_id) return;
+    if (!editingAttendance || !editingAttendance.absensi_id) {
+      toast({
+        title: "Error",
+        description: "Data absensi tidak valid",
+        variant: "destructive"
+      });
+      return;
+    }
 
     try {
-      const response = await apiCall(`/api/guru/edit-attendance/${editingAttendance.absensi_id}`, {
+      console.log('🔄 Updating attendance:', {
+        absensi_id: editingAttendance.absensi_id,
+        status: editStatus,
+        keterangan: editKeterangan
+      });
+
+      // Endpoint yang benar: /api/guru/attendance/:id (bukan edit-attendance)
+      const response = await apiCall(`/api/guru/attendance/${editingAttendance.absensi_id}`, {
         method: 'PUT',
         body: JSON.stringify({
           status: editStatus,
@@ -2755,14 +2769,16 @@ const HistoryView = ({ user }: { user: TeacherDashboardProps['userData'] }) => {
         })
       });
 
+      console.log('✅ Update response:', response);
+
       if (response.success) {
         toast({
           title: "Berhasil",
           description: "Absensi berhasil diperbarui",
         });
         setEditDialogOpen(false);
-        // Refresh data
-        window.location.reload();
+        // Refresh data without full page reload
+        fetchHistory();
       } else {
         toast({
           title: "Error",
@@ -2770,11 +2786,11 @@ const HistoryView = ({ user }: { user: TeacherDashboardProps['userData'] }) => {
           variant: "destructive",
         });
       }
-    } catch (error) {
-      console.error('Error updating attendance:', error);
+    } catch (error: any) {
+      console.error('❌ Error updating attendance:', error);
       toast({
         title: "Error",
-        description: "Gagal memperbarui absensi",
+        description: error.message || "Gagal memperbarui absensi",
         variant: "destructive",
       });
     }
@@ -3048,7 +3064,31 @@ const HistoryView = ({ user }: { user: TeacherDashboardProps['userData'] }) => {
                   <div>
                     <span className="text-gray-600">Waktu:</span>
                     <p className="font-medium">
-                      {editingAttendance.jam_mulai} - {editingAttendance.jam_selesai}
+                      {(() => {
+                        if (!editingAttendance.waktu_absen) return '-';
+                        
+                        try {
+                          // Handle different time formats
+                          const timeStr = editingAttendance.waktu_absen;
+                          
+                          // If it's already in HH:mm format, use it directly
+                          if (typeof timeStr === 'string' && /^\d{2}:\d{2}/.test(timeStr)) {
+                            return timeStr.slice(0, 5); // Get HH:mm only
+                          }
+                          
+                          // If it's a full datetime string, extract the time part
+                          if (typeof timeStr === 'string' && timeStr.includes(' ')) {
+                            const timePart = timeStr.split(' ')[1];
+                            return timePart ? timePart.slice(0, 5) : '-';
+                          }
+                          
+                          // Fallback to showing the raw value
+                          return timeStr.toString().slice(0, 5);
+                        } catch (error) {
+                          console.error('Error formatting waktu_absen:', error, editingAttendance.waktu_absen);
+                          return '-';
+                        }
+                      })()}
                     </p>
                   </div>
                 </div>
