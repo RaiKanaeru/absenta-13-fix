@@ -26,6 +26,7 @@ import SimpleRestoreView from "./SimpleRestoreView";
 import RuangKelasManagement from "./RuangKelasManagement";
 import JadwalKhususManagement from "./admin/JadwalKhususManagement";
 import GlobalScheduleView from "./admin/GlobalScheduleView";
+import KelolaJadwalView from "./admin/KelolaJadwalView";
 import { printReport } from "@/utils/printLayouts";
 import ExcelPreview from './ExcelPreview';
 // import ReportHeader from './ReportHeader';
@@ -243,9 +244,7 @@ const menuItems = [
   { id: 'add-subject', title: 'Mata Pelajaran', icon: BookOpen, description: 'Kelola mata pelajaran', gradient: 'from-red-500 to-red-700' },
   { id: 'add-class', title: 'Kelas', icon: Home, description: 'Kelola kelas', gradient: 'from-indigo-500 to-indigo-700' },
   { id: 'room-management', title: 'Ruang Kelas', icon: Building, description: 'Kelola ruang kelas dan alokasi', gradient: 'from-yellow-500 to-yellow-700' },
-  { id: 'add-schedule', title: 'Jadwal', icon: Calendar, description: 'Atur jadwal pelajaran', gradient: 'from-teal-500 to-teal-700' },
-  { id: 'jadwal-khusus', title: 'Jadwal Khusus', icon: Calendar, description: 'Kelola jadwal istirahat, upacara, dan perwalian', gradient: 'from-fuchsia-500 to-fuchsia-700' },
-  { id: 'jadwal-global', title: 'Jadwal Global', icon: Calendar, description: 'Tampilan semua jadwal dengan deteksi konflik', gradient: 'from-rose-500 to-rose-700' },
+  { id: 'kelola-jadwal', title: 'Kelola Jadwal', icon: Calendar, description: 'Kelola semua jenis jadwal (regular, khusus, global)', gradient: 'from-teal-500 to-teal-700' },
   { id: 'backup-management', title: 'Backup & Archive', icon: Database, description: 'Kelola backup dan arsip data', gradient: 'from-cyan-500 to-cyan-700' },
   { id: 'load-balancer', title: 'Load Balancer', icon: Activity, description: 'Monitoring performa sistem', gradient: 'from-emerald-500 to-emerald-700' },
   { id: 'monitoring', title: 'System Monitoring', icon: Monitor, description: 'Real-time monitoring & alerting', gradient: 'from-violet-500 to-violet-700' },
@@ -9102,12 +9101,8 @@ export const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
         return <ManageClassesView onBack={handleBack} onLogout={onLogout} />;
       case 'room-management':
         return <RuangKelasManagementView onBack={handleBack} onLogout={onLogout} />;
-      case 'add-schedule':
-        return <ManageSchedulesView onBack={handleBack} onLogout={onLogout} />;
-      case 'jadwal-khusus':
-        return <ErrorBoundary><JadwalKhususManagement onBack={handleBack} onLogout={onLogout} /></ErrorBoundary>;
-      case 'jadwal-global':
-        return <ErrorBoundary><GlobalScheduleView /></ErrorBoundary>;
+      case 'kelola-jadwal':
+        return <ErrorBoundary><KelolaJadwalView onBack={handleBack} onLogout={onLogout} ManageSchedulesView={ManageSchedulesView} /></ErrorBoundary>;
       case 'backup-management':
         return <ErrorBoundary><BackupManagementView /></ErrorBoundary>;
       case 'load-balancer':
