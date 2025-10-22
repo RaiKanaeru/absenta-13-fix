@@ -25,6 +25,67 @@ const app = express();
 const port = 3001;
 
 // ================================================
+// TIMEZONE UTILITIES - WIB (UTC+7)
+// ================================================
+
+/**
+ * Get current date and time in WIB (UTC+7)
+ * @returns {Object} Object with date and time strings in WIB
+ */
+function getWIBDateTime() {
+    const now = new Date();
+    const wibOffset = 7 * 60; // 7 hours in minutes
+    const wibTime = new Date(now.getTime() + (wibOffset * 60 * 1000));
+    
+    return {
+        date: wibTime.toISOString().split('T')[0],
+        time: wibTime.toISOString().slice(11, 19),
+        datetime: wibTime.toISOString().replace('T', ' ').slice(0, 19),
+        full: wibTime
+    };
+}
+
+/**
+ * Format time string to HH:MM format (WIB)
+ * @param {string|Date} timeInput - Time input (HH:MM:SS, HH:MM, or Date object)
+ * @returns {string} Formatted time in HH:MM
+ */
+function formatTimeWIB(timeInput) {
+    if (!timeInput) return '-';
+    
+    try {
+        if (timeInput instanceof Date) {
+            const wib = getWIBDateTime();
+            return wib.time.slice(0, 5);
+        }
+        
+        if (typeof timeInput === 'string') {
+            // If already in HH:MM format
+            if (/^\d{2}:\d{2}$/.test(timeInput)) {
+                return timeInput;
+            }
+            // If in HH:MM:SS format
+            if (/^\d{2}:\d{2}:\d{2}$/.test(timeInput)) {
+                return timeInput.slice(0, 5);
+            }
+            // If in ISO format
+            if (timeInput.includes('T')) {
+                const timePart = timeInput.split('T')[1];
+                return timePart ? timePart.slice(0, 5) : '-';
+            }
+        }
+        
+        return timeInput.toString().slice(0, 5);
+    } catch (error) {
+        console.error('Error formatting time:', error);
+        return '-';
+    }
+}
+
+console.log('🌏 Timezone: WIB (UTC+7)');
+console.log('⏰ Current WIB Time:', getWIBDateTime().datetime);
+
+// ================================================
 // GLOBAL ERROR HANDLERS
 // ================================================
 
@@ -2841,7 +2902,10 @@ app.post('/api/attendance/submit', authenticateToken, requireRole(['guru', 'admi
 
         // Insert attendance records for each student
         const attendanceEntries = Object.entries(attendance);
-        const currentTime = new Date().toISOString().slice(11, 19);
+        
+        // Get current date and time in WIB (UTC+7)
+        const wibDateTime = getWIBDateTime();
+        const currentTime = wibDateTime.time;
 
         for (const [studentId, status] of attendanceEntries) {
             const note = notes[studentId] || '';
@@ -4753,11 +4817,14 @@ app.post('/api/absensi', authenticateToken, requireRole(['siswa']), async (req, 
         }
 
         // Record attendance to NEW table (absensi_guru_jadwal)
+        // Get WIB date and time
+        const wibDateTime = getWIBDateTime();
+        
         await db.execute(
             `INSERT INTO absensi_guru_jadwal 
              (jadwal_id, guru_id, guru_pencatat_id, tanggal, jam_ke, status, keterangan, siswa_pencatat_id, metode_absen, waktu_catat)
-             VALUES (?, ?, NULL, CURDATE(), ?, ?, ?, ?, 'manual', NOW())`,
-            [jadwal_id, guru_id, jadwalData[0].jam_ke, status, keterangan, req.user.siswa_id]
+             VALUES (?, ?, NULL, ?, ?, ?, ?, ?, 'manual', ?)`,
+            [jadwal_id, guru_id, wibDateTime.date, jadwalData[0].jam_ke, status, keterangan, req.user.siswa_id, wibDateTime.datetime]
         );
 
         console.log(`✅ Attendance recorded by ${req.user.nama} for guru_id: ${guru_id}, status: ${status}`);
@@ -5402,10 +5469,11 @@ app.put('/api/guru/edit-attendance/:id', authenticateToken, requireRole(['guru',
             return res.status(403).json({ error: 'Tidak memiliki izin untuk mengedit absensi ini' });
         }
 
-        // Update attendance
+        // Update attendance with WIB time
+        const wibDateTime = getWIBDateTime();
         await db.execute(
-            'UPDATE absensi_siswa SET status = ?, keterangan = ?, waktu_absen = NOW() WHERE id = ?',
-            [status, keterangan, id]
+            'UPDATE absensi_siswa SET status = ?, keterangan = ?, waktu_absen = ? WHERE id = ?',
+            [status, keterangan, wibDateTime.datetime, id]
         );
 
         console.log(`✅ Attendance updated for ID ${id} by guru ${guruId}`);
@@ -6678,19 +6746,22 @@ app.post('/api/siswa/submit-kehadiran-guru', authenticateToken, requireRole(['si
             
             let absensiGuruJadwalId;
             
+            // Get WIB time for attendance recording
+            const wibDateTime = getWIBDateTime();
+            
             if (existingRecord.length > 0) {
                 // Update existing record
                 absensiGuruJadwalId = existingRecord[0].id;
                 await connection.execute(
-                    'UPDATE absensi_guru_jadwal SET status = ?, keterangan = ?, siswa_pencatat_id = ?, waktu_catat = NOW() WHERE id = ?',
-                    [status, keterangan, siswa_id, absensiGuruJadwalId]
+                    'UPDATE absensi_guru_jadwal SET status = ?, keterangan = ?, siswa_pencatat_id = ?, waktu_catat = ? WHERE id = ?',
+                    [status, keterangan, siswa_id, wibDateTime.datetime, absensiGuruJadwalId]
                 );
                 console.log(`    Updated existing attendance record for jadwal ${jadwalId}`);
             } else {
                 // Create new attendance record
                 const [insertResult] = await connection.execute(
-                    'INSERT INTO absensi_guru_jadwal (jadwal_id, guru_pencatat_id, tanggal, jam_ke, status, keterangan, siswa_pencatat_id, metode_absen) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-                    [jadwalId, guru_id, targetDate, jam_ke, status, keterangan, siswa_id, 'manual']
+                    'INSERT INTO absensi_guru_jadwal (jadwal_id, guru_pencatat_id, tanggal, jam_ke, status, keterangan, siswa_pencatat_id, metode_absen, waktu_catat) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                    [jadwalId, guru_id, targetDate, jam_ke, status, keterangan, siswa_id, 'manual', wibDateTime.datetime]
                 );
                 absensiGuruJadwalId = insertResult.insertId;
                 console.log(`    Created new attendance record for jadwal ${jadwalId}`);
