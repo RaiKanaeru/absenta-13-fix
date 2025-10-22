@@ -230,6 +230,47 @@ const GlobalScheduleView: React.FC = () => {
     }
   };
   
+  const handleExportSMKN13Excel = async () => {
+    try {
+      setLoading(true);
+      const params = new URLSearchParams();
+      if (filters.kelas_id !== 'all') params.append('kelas_id', filters.kelas_id);
+
+      const response = await fetch(`/api/export/jadwal-smkn13/excel?${params.toString()}`, {
+        credentials: 'include',
+        headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+      });
+
+      if (!response.ok) {
+        throw new Error('Export SMKN 13 Excel failed');
+      }
+
+      const blob = await response.blob();
+      const filename = `Jadwal_SMKN13_${new Date().toISOString().split('T')[0]}.xlsx`;
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(link.href);
+
+      toast({
+        title: "Berhasil",
+        description: "Jadwal SMKN 13 berhasil diekspor ke Excel",
+      });
+    } catch (err: any) {
+      console.error("Error exporting SMKN 13 Excel:", err);
+      toast({
+        title: "Error",
+        description: err.message || "Gagal mengekspor jadwal SMKN 13 ke Excel",
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+  
   return (
     <div className="space-y-4">
       {/* Header & Filters */}
@@ -298,6 +339,10 @@ const GlobalScheduleView: React.FC = () => {
               <Button onClick={handleExportPDF} variant="outline" size="sm" disabled={loading}>
                 <Download className="w-4 h-4 mr-2" />
                 PDF
+              </Button>
+              <Button onClick={handleExportSMKN13Excel} variant="default" size="sm" disabled={loading}>
+                <Download className="w-4 h-4 mr-2" />
+                Export SMKN 13
               </Button>
             </div>
           </div>
