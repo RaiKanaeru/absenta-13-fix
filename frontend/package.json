@@ -105,7 +105,7 @@
     "@types/bcrypt": "^6.0.0",
     "@types/recharts": "^1.8.29",
     "archiver": "^7.0.1",
-    "axios": "^1.12.2",
+    "axios": "^1.13.5",
     "bcrypt": "^6.0.0",
     "browser-image-compression": "^2.0.2",
     "bull": "^4.16.5",
